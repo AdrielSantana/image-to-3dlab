@@ -7,24 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **A runnable manifest template.** Every manifest in `manifests/` points at source art
-  that is not part of the repository, so a new user following the documented
-  "preferred, traceable way to run" hit a missing-input error with no explanation.
-  `manifests/example-trellis2.json` is a copy-and-edit starting point, and
-  `manifests/README.md` says plainly that the others are run records rather than examples.
-  Also notes the easily-missed detail that manifest paths resolve relative to the manifest
-  file, not the working directory.
-
 ### Removed
-- **Local working material is no longer tracked.** The promo-video project, the
-  backend-comparison meshes and the per-creature rigs and animations now sit in
-  `.gitignore`; nothing was deleted from disk. Per-creature work lives in a git-ignored
-  `characters/<name>/` folder with its own tests, so `scripts/` and `tests/` describe the
-  image → 3D pipeline and nothing else. A fresh clone is 8.7 MB against 244 MB before.
+- **The repository was slimmed from 244 MB to 8.5 MB and its history rewritten.** This is
+  an image → 3D pipeline people clone and run, and 96% of what it carried was not that:
+  a promo-video project with its own brief, bug notes, audio masters and renders; 90 MB of
+  backend-comparison meshes; screenshots from working sessions; per-creature rigs and
+  animations; and 49 run manifests pointing at source art the repository does not contain,
+  so none of them could run for anyone else.
+
+  All of it still exists for us — `videos/`, `assets_to_test/`, `manifests/*.json` and
+  `characters/<name>/` are git-ignored rather than deleted. Per-creature rigs and
+  animations moved into `characters/<name>/` alongside their own tests, so `scripts/` and
+  `tests/` now describe the pipeline and nothing else.
+
+  **Two consequences worth knowing.** The history was rewritten with `git-filter-repo` and
+  force-pushed, so anyone holding an existing clone or fork needs a fresh clone — an old
+  copy cannot be reconciled with the rewritten history. And **entries further down this
+  file reference files that are no longer in the repository**; they were accurate when
+  written, and nothing in the pipeline depends on them.
+
+### Added
+- **A runnable manifest template.** `manifests/example-trellis2.json` is a copy-and-edit
+  starting point and the only tracked manifest, with `manifests/README.md` explaining why
+  the rest are ignored. It also documents the detail that is easiest to get wrong: paths
+  inside a manifest resolve relative to the manifest file, not the working directory.
+- **`docs/browser-workshop.md` is linked from the README.** It is the product and
+  architecture boundary for the browser workshop — upload a creature image, generate a 3D
+  asset, make it deformable with a known rig, paint it, author an animation, export a GLB
+  — and nothing pointed at it.
 
 ### Changed
 - `blender_joint_markers.send` takes an optional read timeout; it was hard-coded to 300s.
+
 
 ### Added
 - **A local, non-blocking TinyCLIP advisor for TRELLIS.2 inputs.** The Generate page now
