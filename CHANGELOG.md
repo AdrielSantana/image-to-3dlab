@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file reference files that are no longer in the repository**; they were accurate when
   written, and nothing in the pipeline depends on them.
 
+### Fixed
+- **Bone heat weighting failed on every bone at once when the voxel proxy had loose
+  islands.** A voxel remesh of a generated decode routinely leaves a few orphan specks
+  floating off the body -- one moss fox produced 13 isolated 8-vertex cubes. Bone heat
+  solves a single linear system across the whole surface, so an island with no bone inside
+  it makes that system singular: Blender reported "failed to find solution for one or more
+  bones" and left *all* 34 vertex groups empty, not just the islands'. `transfer_weights`
+  now reduces the throwaway proxy to its largest connected island first, which took that
+  fox from 0 of 34 groups weighted to 34 of 34 with no unweighted vertices.
+
 ### Added
 - **`scripts/README.md` indexes every tool in `scripts/`, and a test keeps it honest.**
   Ninety-odd scripts had no index, so the only way to find out whether a tool already

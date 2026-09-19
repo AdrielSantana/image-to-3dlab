@@ -42,3 +42,31 @@ def test_weight_transfer_is_fail_closed_and_uses_a_disposable_proxy():
     assert "POLYINTERP_NEAREST" in source
     assert "produced no non-empty weight groups" in source
     assert "bpy.data.objects.remove(proxy, do_unlink=True)" in source
+
+
+def test_largest_component_picks_the_body_over_the_specks():
+    """The moss fox's proxy came out as one 17,526-vertex body plus 13 loose 8-vertex
+    voxel specks; bone heat solves one global system, so those specks made it singular
+    and every one of the 34 groups came back empty."""
+    module = load_module()
+    body = [(i, i + 1) for i in range(9)]          # 10 verts, 0..9
+    speck = [(10, 11), (11, 12)]                   # 3 verts, 10..12
+    assert module.largest_component(13, body + speck) == set(range(10))
+
+
+def test_largest_component_handles_one_island_and_isolated_vertices():
+    module = load_module()
+    assert module.largest_component(3, [(0, 1), (1, 2)]) == {0, 1, 2}
+    assert module.largest_component(1, []) == {0}
+    assert module.largest_component(0, []) == set()
+
+
+def test_largest_component_breaks_ties_deterministically():
+    module = load_module()
+    assert module.largest_component(4, [(0, 1), (2, 3)]) == {0, 1}
+
+
+def test_loose_islands_are_stripped_before_the_heat_solve():
+    source = MODULE.read_text()
+    assert "strip_loose_islands" in source
+    assert source.index("strip_loose_islands") < source.index("ARMATURE_AUTO")
