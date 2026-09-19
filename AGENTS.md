@@ -14,9 +14,9 @@ route) behind one CLI, with license provenance as a first-class concern.
 | `pipeline.py` | CLI entry point (sets MPS env, delegates to `image_to_3dlab.cli`) |
 | `image_to_3dlab/` | The package: `cli.py`, `provenance.py`, and one `*_backend.py` per backend |
 | `manifests/` | Versioned run manifests (schema v1) — the preferred, traceable way to run |
-| `scripts/` | Bootstrap + patch scripts, Blender render helper |
+| `scripts/` | Every command-line tool: generation, repair, texture, measurement, Blender, vendor patches. **`scripts/README.md` indexes all of them** and a test fails if a new script is not listed there |
 | `workflows/` | ComfyUI API-format workflow JSON for the Hunyuan `--quality` path |
-| `tests/` | pytest suite (currently `provenance`, `comfyui_backend`) |
+| `tests/` | pytest suite — one `test_*.py` per script or module it covers; run it with `PYTHONPATH=. pytest -q` |
 | `journal/` | Investigation logs and session history (git-ignored — local only, not part of the shipped repo) |
 | `hunyuan_mlx/` | Xiong's Hunyuan3D-MLX shape+paint port (MIT) — **tracked in-repo**, moved out of `vendor/` 2026-08-19 so a clone alone has the code. `shape/` and `paint/` each need `uv sync`; `weights/` under each is git-ignored, fetched via `download_weights.py`. No patch-reapply dance needed here — fixes are just part of the tracked source |
 | `vendor/` | Vendored backend checkouts — **git-ignored**, cloned by the bootstrap scripts (or manually, for `hunyuan-mlx`). `trellis-mac` is a clone of `shivampkumar/trellis-mac` (~1.1 GB of code, weights and compiled Metal kernels); `hunyuan-mlx` is dgrauet's shape port, kept vendored on purpose since it's Tencent-licensed code, not just weights (see `docs/info_and_credits.md`). Ignored because these are someone else's repos at multi-GB scale; the cost is that patches vanish on re-bootstrap, so they live in `scripts/patch_*.py` — except `hunyuan-mlx-paint`, retired 2026-08-19 once its code moved to `hunyuan_mlx/` |

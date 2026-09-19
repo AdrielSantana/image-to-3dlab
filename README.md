@@ -120,7 +120,9 @@ adding to `viewer/`.
 
 The reusable Blender tooling lives in `scripts/blender_*.py` — import, inspect,
 stage, bake, render, rig and rebind helpers that work on any mesh this pipeline
-produces.
+produces. **[`scripts/README.md`](scripts/README.md) indexes every tool in the
+repository**, grouped by what you are trying to do, and is kept honest by a test
+that reads each script's own docstring.
 
 Per-creature rigs and animations are **not** shipped. They lived here once and
 were model-specific references rather than drop-in tools, so they now sit in a

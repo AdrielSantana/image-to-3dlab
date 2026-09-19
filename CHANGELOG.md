@@ -27,6 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written, and nothing in the pipeline depends on them.
 
 ### Added
+- **`scripts/README.md` indexes every tool in `scripts/`, and a test keeps it honest.**
+  Ninety-odd scripts had no index, so the only way to find out whether a tool already
+  existed was to read the directory listing and guess from filenames. The new registry
+  groups them by what you are trying to do — generate, pre-flight, repair the mesh,
+  texture and material, measure and judge, Blender staging, Blender geometry, rig and
+  animate, vendor patches.
+
+  It is generated from the scripts' own docstrings rather than written beside them,
+  because a hand-maintained index of that size is wrong within a month and a wrong
+  index is worse than none. `tests/test_scripts_registry.py` fails if a script is
+  missing from the registry, if the registry names a script that no longer exists, or
+  if a summary has drifted from its docstring — so a new script is not finished until
+  it is listed. It honours `.gitignore`, so deliberately local tools stay unlisted.
+
 - **`scripts/paint_eyes.py` repaints a generated head's eyes at a usable resolution.**
   No image-to-3D backend models eyes; they paint them into the same atlas that carries
   the whole body, and eyes are small, so they get almost nothing. A clay render of the
