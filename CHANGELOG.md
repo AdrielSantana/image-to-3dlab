@@ -27,6 +27,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written, and nothing in the pipeline depends on them.
 
 ### Added
+- **`scripts/paint_eyes.py` repaints a generated head's eyes at a usable resolution.**
+  No image-to-3D backend models eyes; they paint them into the same atlas that carries
+  the whole body, and eyes are small, so they get almost nothing. A clay render of the
+  moss fox's head shows a smooth muzzle with a faint mound where each eye belongs, and
+  its 1024x1024 atlas spends about a 25x25 patch on each one — no iris edge, no pupil,
+  no highlight, and the two sides do not match, because the generator hallucinated each
+  independently. Every backend here fails this way; the fox is just where it was measured.
+
+  The script gives each eye its own planar UV projection and a small dedicated material,
+  so an eye gets ~300 texels across without growing the shared atlas. The patch starts as
+  a resample of the original texture, so the fur around the eye and the boundary with the
+  atlas material are unchanged; only the eye is painted over it. Placement is measured,
+  not guessed: image moments fit the dark almond the generator painted, so the new eye
+  lands where the old one was and stays consistent with the eyelid shading around it.
+  That fit is also what makes it work on an unfamiliar creature — the only per-asset
+  input is a rough point inside each eye. The roughness map is painted too, so the eye
+  is wet and catches a real specular highlight rather than a baked white dot.
+
+  Everything about the eye is a knob (`--iris "#6f9ec4"`, `--pupil-scale`, `--iris-scale`,
+  `--sclera`, `--forward`), one iris colour derives its own rim and limbal ring, and a
+  material whose roughness is a plain value rather than a packed map is handled by
+  synthesising the map. It keeps the original UVs in a backup layer, so `--revert` undoes
+  the whole edit and the style can be re-tuned without reimporting, and `--export` writes
+  a GLB with that working layer left out.
+
 - **A runnable manifest template.** `manifests/example-trellis2.json` is a copy-and-edit
   starting point and the only tracked manifest, with `manifests/README.md` explaining why
   the rest are ignored. It also documents the detail that is easiest to get wrong: paths
