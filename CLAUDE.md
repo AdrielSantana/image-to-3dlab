@@ -1,63 +1,11 @@
 # Repository Guide
 
 Local Apple Silicon **image → 3D** pipeline wrapping four backends (SF3D, TRELLIS.2, and
-two Hunyuan3D-MLX paths — see "Hunyuan model/paint findings" below, not the old ComfyUI
+two Hunyuan3D-MLX paths — see `docs/hunyuan-mlx-recipes.md`, not the old ComfyUI
 route) behind one CLI, with license provenance as a first-class concern.
 
-1. Commits and PRs should not include any co-authorshitp - claude, codex, whatever...
+1. Commits and PRs must not include any co-authorship trailer — Claude, Codex, whatever.
 
-## Read this before diagnosing any mesh-quality problem
-
-On 2026-08-12 we discovered that most of what this repo had blamed on TRELLIS was damage
-our own vendored port inflicted. **Two defects, both ours:**
-
-1. **A 200,000-face cap** in `vendor/trellis-mac/generate.py` crushed every decode
-   (3–27M triangles) with a crude decimator *before* o_voxel's postprocess ran. It also
-   silently clamped `bake_target_faces` above 200k.
-2. **Meshes shipped inside-out** — inconsistent winding, often negative signed volume.
-   glTF is double-sided by default so previews looked fine; under backface culling the
-   assets were hollow.
-
-Consequences you must know about:
-
-- **Any measurement taken before 2026-08-12 is suspect** — tear percentages, hole counts,
-  UV island statistics, "remesh destroys leafy meshes", "markings become geometry". They
-  were measured on damaged meshes and compared only against other damaged meshes.
-- **`vendor/` is git-ignored**, so the fix must be re-applied after every bootstrap:
-  `python scripts/patch_trellis_face_cap.py`.
-- **`--remesh` is unusable on this port** — it produces a wireframe lattice at any
-  `remesh_project`. Upstream's README example enables it; we cannot.
-
-| Read | For |
-|------|-----|
-| `journal/` (untracked, local only) | Full investigation history — session logs, dead ends, upstream bug writeups. Not shipped with the repo; ask whoever's working the repo locally if you need it |
-
-**Three habits this cost a week to learn.** Get a control group before theorising — run the
-real input through the official demo. Diff our calls against upstream's documented example
-before diagnosing. And judge assets **backface-culled**, by eye, not by a metric.
-
-## Hunyuan model/paint findings (2026-08-19)
-
-Two things a future session shouldn't have to re-discover — full detail in
-`docs/hunyuan-mlx-recipes.md` and `docs/info_and_credits.md`, this is just the pointer:
-
-1. **Xiong's own shape-stage model choice matters more than any of its speed flags.**
-   2.1 (this app's old default) isn't Xiong's own recommended pick — his README puts 2.0
-   or 2.0-turbo ahead of it, and a same-image benchmark confirmed 2.0 gives the cleanest
-   shape. The app now defaults to 2.0.
-2. **The paint stage's texture tear on concave geometry (inner thigh, armpit, ear folds)
-   is fixed.** It filled camera-occluded texels by grabbing the nearest already-painted
-   texel in flat 2D UV-atlas space — xatlas packs unrelated 3D regions next to each other
-   on that sheet, so occluded creases got an unrelated chart's color. Fixed by filling
-   from the nearest neighbor in 3D surface space instead. Affects *both* Hunyuan backends
-   equally (shared paint code).
-
-**`hunyuan_mlx/` is tracked code, not vendored** — Xiong's shape+paint port is MIT, moved
-out of `vendor/hunyuan-mlx-paint` into the repo root so a clone alone has it; only
-`weights/` (git-ignored) is downloaded separately. dgrauet's shape stage
-(`vendor/hunyuan-mlx`, used by the hybrid backend) stays vendored on purpose — it's
-Tencent-licensed *code*, not just weights, so it isn't part of that simplification, even
-though its shape output is still the cleanest of anything tested (verified 2026-08-19).
 
 ## Layout
 
