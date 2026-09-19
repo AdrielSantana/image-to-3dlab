@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file reference files that are no longer in the repository**; they were accurate when
   written, and nothing in the pipeline depends on them.
 
+### Added
+- **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
+  existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
+  socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long
+  enough to wedge the session. It applies object scale before solving: `voxel_size` on the
+  Remesh modifier is measured in *local* space while `mesh.dimensions` is world space, so
+  a mesh scaled 1.5 silently got a proxy 1.5x coarser than requested -- coarse enough to
+  fuse a quadruped's legs and bleed weights between them. Mismatched mesh and armature
+  scales also distort every later deformation.
+
+  With `--generate-rigify` it runs Rigify generation first (reusing `blender_rebind`'s
+  `regenerate_rigify`) and binds to the generated rig's `DEF-` bones instead of to the
+  metarig, which is what makes the result posable from the IK/FK controls rather than by
+  dragging deform bones. Scale is applied to the metarig *before* generation, since a rig
+  generated from a scaled metarig is born scaled and applying scale afterwards has to
+  fight the constraints, drivers and widget sizes generation just created. Rigify's `WGT-`
+  control widgets are excluded from mesh selection.
+
 ### Fixed
 - **Bone heat weighting failed on every bone at once when the voxel proxy had loose
   islands.** A voxel remesh of a generated decode routinely leaves a few orphan specks

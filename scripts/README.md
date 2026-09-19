@@ -150,6 +150,7 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `blender_voxel_weights.py` | Weight a generated mesh via a watertight voxel proxy, then transfer the result back. |
 | `blender_voxel_weights_code.py` | The Blender-side program for `blender_voxel_weights.py`. |
 | `blender_rebind.py` | Apply browser fit-joint corrections to an opened prepared Blender scene. |
+| `blender_bind_rig.py` | Generate a Rigify rig and bind a mesh to it through a watertight voxel proxy, headless. |
 | `blender_rebind_weights.py` | Voxel-proxy weight transfer used by the headless rig rebind worker. |
 | `blender_export_rig_binding.py` | Prepare an open Blender metarig scene and export its browser rig sidecar. |
 | `rignet_infer.py` | Run vendored RigNet inference on one of our own generated meshes. |
