@@ -16,16 +16,16 @@ You can also skip manifests entirely and pass an image directly:
 
     python pipeline.py --trellis your-image.png
 
-## The other files here are our run records, not examples
+## Why there is only one manifest here
 
-Every other manifest in this folder is a real run we made, kept for traceability. Their
-`input.path` points into `assets_to_test/`, which holds our own source art and is **not
-part of the repository** — so running one as-is fails with:
+Manifests we write for our own runs point at source art in `assets_to_test/`, which is
+not part of the repository — so they would fail for anyone else with:
 
     error: input image does not exist: .../assets_to_test/<something>.png
 
-That is expected. Read them for the parameter combinations that worked; do not expect
-them to run unmodified.
+Rather than ship files that cannot run, `manifests/*.json` is git-ignored with the
+template as the single exception. Your own manifests land here and stay local unless you
+choose to track them.
 
 ## Required fields
 

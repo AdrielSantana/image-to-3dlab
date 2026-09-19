@@ -92,10 +92,8 @@ python pipeline.py --run-manifest manifests/my-run.json
 ```
 
 Paths inside a manifest resolve relative to the manifest file, not your working
-directory. The other manifests in that folder are our own run records — they reference
-source art that is not part of this repository, so they are worth reading for the
-parameter combinations but will not run unmodified. See
-[`manifests/README.md`](manifests/README.md).
+directory. Manifests you write land in `manifests/` and stay local — only the template is
+tracked. See [`manifests/README.md`](manifests/README.md).
 
 **TRELLIS.2** (after the bootstrap):
 ```bash
@@ -110,6 +108,13 @@ vendor/trellis-space-mac/.venv/bin/python scripts/trellis_space_generate.py inpu
 - In the web UI, a failed TRELLIS decode or bake retains `<out>_latents.pt` even when
   **Debug** is off, so the expensive sampling stage can be resumed. Successful non-debug
   runs clean up the checkpoint after the GLB is safely written.
+
+## Where this is going
+
+[`docs/browser-workshop.md`](docs/browser-workshop.md) is the product and architecture
+boundary for the browser workshop: upload a creature image, generate a 3D asset, make it
+deformable with a known rig, paint it, author an animation, export a GLB. Read it before
+adding to `viewer/`.
 
 ## Blender animation recipes
 
