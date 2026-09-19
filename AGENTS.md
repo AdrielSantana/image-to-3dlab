@@ -2,13 +2,17 @@
 
 ## Blender animation work
 
-Before writing new Blender animation automation, read
-[`scripts/blender_animation/README.md`](scripts/blender_animation/README.md)
-and the relevant creature recipe index. Also inspect existing `scripts/blender_*.py`
-tools, especially `scripts/blender_inspect.py` for the shared local RPC client.
+Before writing new Blender animation automation, inspect the existing
+`scripts/blender_*.py` tools, especially `scripts/blender_inspect.py` for the
+shared local RPC client.
 
-The animation folder is a **model-specific recipe library**, not a general rig-
-independent toolkit. Reuse/adapt proven techniques; do not execute a recipe on a
+Per-creature rigs, animations and their tests live in `characters/<name>/`, which
+is **git-ignored** — they are our own content, not part of the pipeline a user
+clones. Each folder keeps its own recipe index (`SNAG.md`, `PANGOLIN.md`,
+`FOREST_FLICKER.md`). If you do not have that folder, you do not need it.
+
+Those recipes are a **model-specific library**, not a general rig-independent
+toolkit. Reuse/adapt proven techniques; do not execute a recipe on a
 different model merely because it has similarly named bones. Prefer extracting
 shared operations with explicit rig/action/path inputs when the task calls for
 generalization. Do not create another near-duplicate without checking this library.

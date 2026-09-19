@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A runnable manifest template.** Every manifest in `manifests/` points at source art
+  that is not part of the repository, so a new user following the documented
+  "preferred, traceable way to run" hit a missing-input error with no explanation.
+  `manifests/example-trellis2.json` is a copy-and-edit starting point, and
+  `manifests/README.md` says plainly that the others are run records rather than examples.
+  Also notes the easily-missed detail that manifest paths resolve relative to the manifest
+  file, not the working directory.
+
+### Removed
+- **Local working material is no longer tracked.** The promo-video project, the
+  backend-comparison meshes and the per-creature rigs and animations now sit in
+  `.gitignore`; nothing was deleted from disk. Per-creature work lives in a git-ignored
+  `characters/<name>/` folder with its own tests, so `scripts/` and `tests/` describe the
+  image → 3D pipeline and nothing else. A fresh clone is 8.7 MB against 244 MB before.
+
+### Changed
+- `blender_joint_markers.send` takes an optional read timeout; it was hard-coded to 300s.
+
+### Added
 - **A local, non-blocking TinyCLIP advisor for TRELLIS.2 inputs.** The Generate page now
   warns about flat/vector-style artwork before an expensive run and scores a selected
   image with the pinned MIT-licensed TinyCLIP ViT-8M/16 checkpoint. Conservative

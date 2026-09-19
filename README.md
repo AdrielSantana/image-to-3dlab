@@ -80,6 +80,23 @@ hunyuan_mlx/shape/.venv/bin/python scripts/hunyuan_mlx_xiong_generate.py \
     input.png output.glb --model 2.0
 ```
 
+### Reproducible runs
+
+For a run you can audit or repeat later, use a manifest — it records the input, the
+backend, every parameter and the licensing intent the run was gated on:
+
+```bash
+cp manifests/example-trellis2.json manifests/my-run.json
+# point "input.path" at your own image, then:
+python pipeline.py --run-manifest manifests/my-run.json
+```
+
+Paths inside a manifest resolve relative to the manifest file, not your working
+directory. The other manifests in that folder are our own run records — they reference
+source art that is not part of this repository, so they are worth reading for the
+parameter combinations but will not run unmodified. See
+[`manifests/README.md`](manifests/README.md).
+
 **TRELLIS.2** (after the bootstrap):
 ```bash
 vendor/trellis-space-mac/.venv/bin/python scripts/trellis_space_generate.py input.png output/out.glb
@@ -96,11 +113,14 @@ vendor/trellis-space-mac/.venv/bin/python scripts/trellis_space_generate.py inpu
 
 ## Blender animation recipes
 
-Our [Blender animation recipe library](scripts/blender_animation/README.md)
-preserves the Snag, Forest Flicker and Pangolin editing, inspection and preview
-scripts. These are model-specific references—not drop-in tools for arbitrary
-rigs. Consult their documented prerequisites, safety notes and superseded fixes
-before adapting the common techniques to another creature.
+The reusable Blender tooling lives in `scripts/blender_*.py` — import, inspect,
+stage, bake, render, rig and rebind helpers that work on any mesh this pipeline
+produces.
+
+Per-creature rigs and animations are **not** shipped. They lived here once and
+were model-specific references rather than drop-in tools, so they now sit in a
+git-ignored `characters/<name>/` folder alongside their tests. The techniques are
+documented in `docs/`; the creature-specific scripts are ours, not yours.
 
 ## Requirements
 

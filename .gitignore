@@ -41,3 +41,19 @@ videos/image-to-3d-lab/assets/audio-v2/
 videos/image-to-3d-lab/assets/audio-v3/
 videos/image-to-3d-lab/assets/audio-v4/
 videos/image-to-3d-lab/assets/fonts/
+
+# --- local-only working material (2026-09-19) ---------------------------------
+# These stay on disk; they are simply not part of what a user clones to run the
+# image -> 3D pipeline. Untracked with `git rm --cached`, so nothing was deleted.
+
+# Promo-video project. Its own BRIEF/AGENTS/bugs tree, audio masters and renders
+# -- a separate project that happened to live here. 133 MB.
+videos/
+
+# Reference meshes and source art used to evaluate backends. Useful locally,
+# but 90 MB of GLB that no one needs in order to run the pipeline.
+assets_to_test/
+
+# Per-character rigs, animations and their tests. The pipeline is the product;
+# individual creatures are our own content. See characters/README.md.
+characters/

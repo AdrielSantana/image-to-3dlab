@@ -170,10 +170,13 @@ print(json.dumps(placed, indent=2, sort_keys=True))
 '''
 
 
-def send(code: str, host: str, port: int) -> str:
+def send(code: str, host: str, port: int, timeout: int = 300) -> str:
+    """`timeout` is the read timeout, not the connect timeout: a long-running call such
+    as a rigid-body bake holds the socket open with nothing to send back until it
+    finishes, and the reader treats a timeout as end-of-response."""
     request = {"type": "execute_code", "params": {"code": code}}
     with socket.create_connection((host, port), timeout=10) as connection:
-        connection.settimeout(300)
+        connection.settimeout(timeout)
         connection.sendall(json.dumps(request).encode("utf-8"))
         chunks: list[bytes] = []
         while True:

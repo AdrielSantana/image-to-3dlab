@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "_about": "Template. Copy it, point input.path at your own image, and run: python pipeline.py --run-manifest manifests/my-run.json. Paths are resolved relative to THIS file, so ../cat.png means a cat.png in the repo root.",
+  "use_case": "showcase",
+  "distribution": "private",
+  "commercial_intent": false,
+  "input": {
+    "path": "../your-image.png",
+    "source": "user-provided"
+  },
+  "model": {
+    "backend": "trellis2",
+    "id": "microsoft/TRELLIS.2-4B",
+    "parameters": {
+      "seed": 42,
+      "pipeline_type": "1024_cascade",
+      "texture_size": 2048,
+      "steps": 12,
+      "material_mode": "matte"
+    }
+  },
+  "license_policy": {
+    "allow_conditional": true,
+    "allow_research_only": false
+  },
+  "output": {
+    "directory": "output"
+  }
+}
