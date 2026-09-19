@@ -14,6 +14,68 @@ def derived_voxel_size(mesh, fraction: float = 0.012) -> float:
     return extent * fraction
 
 
+def largest_component(vertex_count: int, edges) -> set[int]:
+    """Indices of the biggest connected island in an undirected vertex graph.
+
+    Ties go to the island containing the lowest vertex index, so the result is stable
+    across runs. Isolated vertices count as islands of one.
+    """
+    adjacency: dict[int, list[int]] = {index: [] for index in range(vertex_count)}
+    for left, right in edges:
+        adjacency[left].append(right)
+        adjacency[right].append(left)
+
+    seen: set[int] = set()
+    best: set[int] = set()
+    for start in range(vertex_count):
+        if start in seen:
+            continue
+        stack = [start]
+        seen.add(start)
+        island = {start}
+        while stack:
+            current = stack.pop()
+            for neighbour in adjacency[current]:
+                if neighbour not in seen:
+                    seen.add(neighbour)
+                    island.add(neighbour)
+                    stack.append(neighbour)
+        if len(island) > len(best):
+            best = island
+    return best
+
+
+def strip_loose_islands(bmesh, mesh_data) -> dict[str, int]:
+    """Reduce a proxy to its largest connected island before bone heat runs.
+
+    Bone heat solves one linear system across the whole surface. A voxel remesh of a
+    generated decode routinely leaves a few orphan specks floating off the body -- the
+    moss fox produced 13 isolated 8-vertex cubes -- and an island with no bone inside it
+    makes that system singular. Blender then reports "failed to find solution for one or
+    more bones" and leaves *every* group empty, not just the island's. The proxy is
+    throwaway geometry that only ever carries weights, so discarding the specks costs
+    nothing.
+    """
+    before = len(mesh_data.vertices)
+    mesh = bmesh.new()
+    try:
+        mesh.from_mesh(mesh_data)
+        mesh.verts.ensure_lookup_table()
+        keep = largest_component(
+            len(mesh.verts),
+            [(edge.verts[0].index, edge.verts[1].index) for edge in mesh.edges],
+        )
+        doomed = [vert for vert in mesh.verts if vert.index not in keep]
+        if doomed:
+            bmesh.ops.delete(mesh, geom=doomed, context="VERTS")
+            mesh.to_mesh(mesh_data)
+            mesh_data.update()
+    finally:
+        mesh.free()
+    return {"before": before, "after": len(mesh_data.vertices),
+            "removed": before - len(mesh_data.vertices)}
+
+
 def transfer_weights(bpy, mesh, rig, *, voxel_fraction: float = 0.012,
                      weight_threshold: float = 0.001) -> dict[str, Any]:
     """Reweight one mesh through a throwaway watertight proxy and return diagnostics."""
@@ -41,9 +103,15 @@ def transfer_weights(bpy, mesh, rig, *, voxel_fraction: float = 0.012,
     modifier.mode = "VOXEL"
     modifier.voxel_size = voxel_size
     bpy.ops.object.modifier_apply(modifier=modifier.name)
+    if len(proxy.data.polygons) == 0:
+        raise RuntimeError(f"voxel remesh produced an empty proxy for {mesh.name}")
+
+    import bmesh
+
+    islands = strip_loose_islands(bmesh, proxy.data)
     proxy_faces = len(proxy.data.polygons)
     if proxy_faces == 0:
-        raise RuntimeError(f"voxel remesh produced an empty proxy for {mesh.name}")
+        raise RuntimeError(f"island cleanup emptied the proxy for {mesh.name}")
 
     bpy.ops.object.select_all(action="DESELECT")
     proxy.select_set(True)
@@ -92,6 +160,7 @@ def transfer_weights(bpy, mesh, rig, *, voxel_fraction: float = 0.012,
         "mesh": mesh.name,
         "voxelSize": voxel_size,
         "proxyFaces": proxy_faces,
+        "proxyLooseVertsRemoved": islands["removed"],
         "proxyGroups": len(weighted_proxy_groups),
         "meshGroups": len(mesh_groups),
         "unweightedVertices": unweighted,

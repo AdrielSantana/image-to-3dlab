@@ -27,6 +27,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written, and nothing in the pipeline depends on them.
 
 ### Added
+- **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
+  existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
+  socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long
+  enough to wedge the session. It applies object scale before solving: `voxel_size` on the
+  Remesh modifier is measured in *local* space while `mesh.dimensions` is world space, so
+  a mesh scaled 1.5 silently got a proxy 1.5x coarser than requested -- coarse enough to
+  fuse a quadruped's legs and bleed weights between them. Mismatched mesh and armature
+  scales also distort every later deformation.
+
+  With `--generate-rigify` it runs Rigify generation first (reusing `blender_rebind`'s
+  `regenerate_rigify`) and binds to the generated rig's `DEF-` bones instead of to the
+  metarig, which is what makes the result posable from the IK/FK controls rather than by
+  dragging deform bones. Scale is applied to the metarig *before* generation, since a rig
+  generated from a scaled metarig is born scaled and applying scale afterwards has to
+  fight the constraints, drivers and widget sizes generation just created. Rigify's `WGT-`
+  control widgets are excluded from mesh selection.
+
+### Fixed
+- **Bone heat weighting failed on every bone at once when the voxel proxy had loose
+  islands.** A voxel remesh of a generated decode routinely leaves a few orphan specks
+  floating off the body -- one moss fox produced 13 isolated 8-vertex cubes. Bone heat
+  solves a single linear system across the whole surface, so an island with no bone inside
+  it makes that system singular: Blender reported "failed to find solution for one or more
+  bones" and left *all* 34 vertex groups empty, not just the islands'. `transfer_weights`
+  now reduces the throwaway proxy to its largest connected island first, which took that
+  fox from 0 of 34 groups weighted to 34 of 34 with no unweighted vertices.
+
+### Added
 - **`scripts/README.md` indexes every tool in `scripts/`, and a test keeps it honest.**
   Ninety-odd scripts had no index, so the only way to find out whether a tool already
   existed was to read the directory listing and guess from filenames. The new registry
