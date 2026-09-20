@@ -65,6 +65,10 @@ TINYCLIP_TIMEOUT_SECONDS = 300
 # stays around despite not being part of the clone-and-go simplification below.
 HUNYUAN_WRAPPER = REPO / "scripts" / "hunyuan_mlx_generate.py"
 HUNYUAN_PYTHON = REPO / "vendor" / "hunyuan-mlx" / ".venv" / "bin" / "python"
+PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
+PIXAL3D_CLI = PIXAL3D_ROOT / "build" / "trellis-cli"
+PIXAL3D_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
+PIXAL3D_WRAPPER = REPO / "scripts" / "pixal3d_generate.py"
 
 # Xiong's paint+shape code is MIT and tracked in-repo at hunyuan_mlx/ (moved out of
 # vendor/hunyuan-mlx-paint 2026-08-19) — a fresh clone of this repo alone has the code;
@@ -1422,6 +1426,112 @@ def _hunyuan_xiong_readiness() -> dict[str, Any]:
     }
 
 
+PIXAL3D_DEFAULT_SETTINGS: dict[str, Any] = {
+    "res": 1024,
+    "seed": 42,
+    "fov": 0.3490658503988659,
+}
+PIXAL3D_VALID_RES = {1024, 1536}
+PIXAL3D_STAGES = ["views", "ss", "shape", "decode", "texture", "write"]
+PIXAL3D_STAGE_LABELS = {
+    "views": "Preparing view",
+    "ss": "Sparse structure",
+    "shape": "Shape SLAT (512 to 1024 cascade)",
+    "decode": "Shape decode",
+    "texture": "Texture SLAT + PBR decode",
+    "write": "Writing GLB",
+}
+# `trellis-cli` announces `[n/6] ...`; n maps to a stage, and the bar follows n.
+PIXAL3D_BANNERS = {1: "views", 2: "ss", 3: "shape", 4: "decode", 5: "texture", 6: "write"}
+
+
+def _pixal3d_validate_settings(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("settings must be a JSON object")
+    settings = {**PIXAL3D_DEFAULT_SETTINGS, **raw}
+    try:
+        settings["res"] = int(settings["res"])
+        settings["seed"] = int(settings["seed"])
+        settings["fov"] = float(settings["fov"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("res and seed must be integers, fov a number") from exc
+    if settings["res"] not in PIXAL3D_VALID_RES:
+        # The single-view weight family has no res-512 texture flow.
+        raise ValueError("res must be 1024 or 1536")
+    if not 0.05 <= settings["fov"] <= 2.0:
+        raise ValueError("fov is in radians; 0.349 is 20 degrees")
+    return settings
+
+
+def _pixal3d_build_args(job: Job) -> list[str]:
+    s = job.settings
+    return [
+        str(job.image_path), str(job.output_path),
+        "--res", str(s["res"]),
+        "--seed", str(s["seed"]),
+        "--fov", str(s["fov"]),
+    ]
+
+
+def _pixal3d_parse_line(job: Job, line: str) -> None:
+    """Emit a stage event per `[n/6]` banner, and let the rest through as log."""
+    if line.startswith("[") and "]" in line and "/6" in line[: line.index("]")]:
+        marker = line[1 : line.index("]")]
+        try:
+            index = int(marker.split("/")[0])
+        except ValueError:
+            return
+        stage = PIXAL3D_BANNERS.get(index)
+        if stage is None:
+            return
+        job.emit({
+            "phase": "stage", "stage": stage,
+            "stage_label": PIXAL3D_STAGE_LABELS[stage],
+            "overall_pct": min(99, round(index / 6 * 100)),
+            "message": PIXAL3D_STAGE_LABELS[stage],
+        })
+
+
+def _pixal3d_readiness() -> dict[str, Any]:
+    weights = sorted(PIXAL3D_MODELS.glob("*.gguf")) if PIXAL3D_MODELS.is_dir() else []
+    built = PIXAL3D_CLI.is_file() and PIXAL3D_WRAPPER.is_file()
+    # Nine files: four flow DiTs, three decoders, the image encoder and NAF.
+    weights_ok = len(weights) >= 9
+    ready = built and weights_ok
+    missing = []
+    if not built:
+        missing.append("trellis-cli build (vendor/pixal3d-cpp/build)")
+    if not weights_ok:
+        missing.append(f"Q8_0 weight set ({len(weights)}/9 in {PIXAL3D_MODELS})")
+    return {
+        "schema_version": 1,
+        "build": {
+            "present": ready,
+            "hint": None if ready else (
+                "Pixal3D is not set up — missing: " + "; ".join(missing)
+                + ". Run scripts/bootstrap_pixal3d_cpp.sh (needs Xcode's Metal compiler; "
+                "8.1 GB of weights)."
+            ),
+        },
+        "weights": {
+            "pixal3d-sv-q8_0": {
+                "label": "Pixal3D single-view Q8_0",
+                "present": weights_ok,
+                "human": f"{len(weights)}/9 GGUF files",
+            }
+        },
+        "missing_weights": missing,
+        "ready": ready,
+        "warning": (
+            "Single-view only, and res 512 is unavailable in this weight family. The "
+            "moss fox ran at res 1024 in 5m50s and needed no repaint stage; see "
+            "docs/pixal3d-evaluation-2026-09-20.md."
+        ),
+    }
+
+
 BACKENDS.update({
     "trellis": BackendSpec(
         id="trellis", label="TRELLIS.2 (clean port)",
@@ -1455,6 +1565,14 @@ BACKENDS.update({
         stage_labels=HUNYUAN_STAGE_LABELS, requires_alpha=False,
         validate_settings=_hunyuan_xiong_validate_settings, build_args=_hunyuan_xiong_build_args,
         parse_line=_hunyuan_parse_line, readiness=_hunyuan_xiong_readiness,
+    ),
+    "pixal3d": BackendSpec(
+        id="pixal3d", label="Pixal3D (C++/GGML, Metal)",
+        interpreter=Path(sys.executable), wrapper=PIXAL3D_WRAPPER,
+        default_settings=PIXAL3D_DEFAULT_SETTINGS, stages=PIXAL3D_STAGES,
+        stage_labels=PIXAL3D_STAGE_LABELS, requires_alpha=False,
+        validate_settings=_pixal3d_validate_settings, build_args=_pixal3d_build_args,
+        parse_line=_pixal3d_parse_line, readiness=_pixal3d_readiness,
     ),
 })
 
