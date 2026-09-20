@@ -5,6 +5,13 @@ two Hunyuan3D-MLX paths — see `docs/hunyuan-mlx-recipes.md`, not the old Comfy
 route) behind one CLI, with license provenance as a first-class concern.
 
 1. Commits and PRs must not include any co-authorship trailer — Claude, Codex, whatever.
+2. **Only commit a script if it generalises.** Anything written for one asset, one
+   debugging session or one render stays local — a scratch directory, never `scripts/`.
+   Before committing one, take the asset out of it: no hard-coded object, image or
+   material names, no colours or measurements that suit only the creature it was written
+   for. Turn those into arguments, and it earns its place. And if it is worth committing
+   it is worth finding, so list it in `scripts/README.md`; `tests/test_scripts_registry.py`
+   fails if you do not.
 
 
 ## Layout

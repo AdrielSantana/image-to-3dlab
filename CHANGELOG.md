@@ -27,6 +27,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written, and nothing in the pipeline depends on them.
 
 ### Added
+- Add `blender_quadruped_pipeline.py`: staged Rigify binding with alignment checks,
+  reference-pose capture, profile-tuned walk/trot and standing transitions, audit
+  reports, and a documented LLM-assisted tuning workflow. Visible meshes are not remeshed.
+- Document the accepted fox trot, rejected neck-deformation experiments and
+  portability requirements in [the reusable quadruped gait plan](docs/reusable-gait-quadruped-trot.md).
+- **A reusable quadruped gait for the Rigify `basic_quadruped` metarig**:
+  `scripts/quadruped_gait.py` holds the maths as pure functions and
+  `scripts/blender_quadruped_walk.py` drives Blender. `--gait walk|trot|scamper` with
+  cadence, stride, lift, bob, roll and tail motion all derived from *the rig's own*
+  proportions -- the ram and the fox are within 5% in height but have inverted limb
+  segments, so absolutes copied between creatures over-reach the IK and skate the feet.
+  Rotation axes are calibrated by probing each chain rather than assumed, because Rigify
+  bone rolls differ between chains and a wrong guess still prints plausible numbers.
+
+  Authored cycles **audit themselves** against the failures this pipeline has actually
+  shipped, each bound carrying the measured number that justifies it: a welded body
+  (0.00 motion), high-stepping (8.72% of body height), over-striding (3.3x), feet that
+  skate (planted 6 frames of 33), and a loop that pops. Bounds scale with the gait, so a
+  scamper is not failed for lifting more than a walk.
+
+  Two relationships hold the result together, both measured on the accepted reference
+  walk and confirmed independently on a second animal: **foot lift is 0.27x stride** --
+  set independently it drifted to 1.18 and the gait marched on the spot -- and lateral
+  body roll is **0.35x the vertical bob**, since matching the two puts a hip swing at
+  stride frequency that reinforces with the tail into a disco strut.
+
+  Full findings, including the fox's 94.3%-extension foreleg and what it forbids, are in
+  `docs/quadruped-gait-2026-09-20.md`.
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long
