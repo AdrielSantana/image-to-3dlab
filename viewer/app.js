@@ -1,6 +1,7 @@
 import './modes/compare.js';
 
 import './modes/generate.js';
+import './modes/finish.js';
 import './modes/rig-review.js';
 import './modes/animate.js';
 import { subscribeRigEditState } from './core/rig-edit-state.js';
@@ -9,6 +10,7 @@ const byId = (id) => document.getElementById(id);
 const modes = {
   compare: byId('compare-view'),
   generate: byId('generate-view'),
+  finish: byId('finish-view'),
   rig: byId('rig-view'),
   animate: byId('animate-view'),
   credits: byId('credits-view'),
@@ -17,6 +19,7 @@ const modes = {
 function setMode(activeMode) {
   modes.compare.classList.toggle('hidden', activeMode !== 'compare');
   modes.generate.hidden = activeMode !== 'generate';
+  modes.finish.hidden = activeMode !== 'finish';
   modes.rig.hidden = activeMode !== 'rig';
   modes.animate.hidden = activeMode !== 'animate';
   modes.credits.hidden = activeMode !== 'credits';

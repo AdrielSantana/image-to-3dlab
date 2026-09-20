@@ -17,6 +17,7 @@
   <span class="lbl">image-to-3dlab</span>
   <button id="mode-compare" class="mode on">Compare</button>
   <button id="mode-generate" class="mode">Generate</button>
+  <button id="mode-finish" class="mode" title="Retopologise, repaint and compress an existing asset">Finish</button>
   <button id="mode-rig" class="mode" title="Correct the rest skeleton">Rig Edit</button>
   <button id="mode-animate" class="mode" title="Pose and animate the bound skeleton">Pose</button>
   <button id="mode-credits" class="mode">Credits &amp; Info</button>
@@ -77,6 +78,7 @@
           <option value="sf3d">Stable Fast 3D</option>
           <option value="hunyuan-mlx">Hunyuan3D-MLX (dgrauet shape + Xiong paint)</option>
           <option value="hunyuan-mlx-xiong">Hunyuan3D-MLX (Xiong, full pipeline)</option>
+          <option value="pixal3d">Pixal3D (C++/GGML, Metal)</option>
         </select></div>
       <div id="generate-drop">
         <div id="generate-prompt">Drop a pre-masked PNG here<br>or click to choose an image</div>
@@ -106,6 +108,21 @@
         <div class="field"><label for="generate-texture">Texture size</label>
           <select id="generate-texture"><option>1024</option><option selected>2048</option><option>3072</option><option>4096</option></select></div>
         <label class="check"><input id="generate-rembg" type="checkbox"><span>allow rembg</span><small>only for images without alpha</small></label>
+      </div>
+
+      <div class="backend-fields" data-backend="pixal3d" hidden>
+        <div class="field"><label for="pixal3d-res">Resolution</label>
+          <select id="pixal3d-res"><option selected>1024</option><option>1536</option></select>
+          <small>The single-view weight family has no res-512 texture flow. 1024 took 5m50s
+            on the moss fox.</small></div>
+        <div class="field"><label for="pixal3d-seed">Seed</label><input id="pixal3d-seed" type="number" step="1" value="42"></div>
+        <div class="field"><label for="pixal3d-fov">Gauge FOV (radians)</label>
+          <input id="pixal3d-fov" type="number" step="0.0001" value="0.3491">
+          <small>Pixal3D conditions on pixel-aligned features projected through a camera, so
+            single-view input needs one. 0.3491 is 20&deg;, the rig it was designed around.</small></div>
+        <small>Pre-matted RGBA goes straight in; anything else is matted with BiRefNet first
+          (~13s), which changes the cutout. No repaint stage needed &mdash; see
+          <a href="/docs/pixal3d-evaluation-2026-09-20.md" target="_blank" rel="noopener">the evaluation</a>.</small>
       </div>
 
       <div class="backend-fields" data-backend="sf3d" hidden>
@@ -181,6 +198,66 @@
       <div id="generate-downloads"><a id="generate-glb" download>Download GLB</a><a id="generate-manifest" download>Download manifest</a></div>
       <div id="generate-saved-note" style="display:none; margin-top:6px; font-size:11px; opacity:.6;"></div>
       <div id="generate-summary"></div>
+    </div>
+  </div>
+</section>
+
+<section id="finish-view" hidden>
+  <div class="generate-card" style="max-width:720px; margin:16px auto;">
+    <h2 style="margin-top:0">Finish an asset</h2>
+    <p style="font-size:12px; opacity:.75; margin-top:4px">
+      Retopologise, optionally repaint from the source art, and compress the textures.
+      Pixal3D output usually needs no repaint &mdash; untick it and this takes seconds.
+      A bleached TRELLIS.2 asset does, and that costs about six minutes.
+    </p>
+
+    <div class="field"><label for="finish-asset">Asset (.glb)</label>
+      <input id="finish-asset" type="file" accept=".glb,model/gltf-binary">
+      <small id="finish-asset-name">no asset chosen</small></div>
+    <div class="field"><label for="finish-image">Source art</label>
+      <input id="finish-image" type="file" accept="image/png,image/jpeg,image/webp">
+      <small id="finish-image-name">no image chosen</small></div>
+
+    <div class="field"><label for="finish-faces">Face target</label>
+      <input id="finish-faces" type="number" step="1000" min="1000" max="200000" value="40000">
+      <small>Counted in triangles. Quadriflow declines these meshes, so it falls back to
+        collapse decimation after a voxel remesh.</small></div>
+    <div class="field"><label for="finish-texture">Texture size</label>
+      <select id="finish-texture"><option>1024</option><option selected>2048</option><option>4096</option></select>
+      <small>The paint stage emits uncompressed 4096&sup2; PNGs; 2048 JPEG is usually
+        indistinguishable and about a tenth the size.</small></div>
+
+    <div class="field"><label for="finish-metallic">Metallic</label>
+      <input id="finish-metallic" type="number" step="0.001" min="0" max="1" value="0.25"></div>
+    <div class="field"><label for="finish-roughness">Roughness</label>
+      <input id="finish-roughness" type="number" step="0.001" min="0" max="1" value="0.65"></div>
+    <div class="field"><label for="finish-ior">IOR</label>
+      <input id="finish-ior" type="number" step="0.01" min="1" max="3" value="1.45">
+      <small>Only base colour is baked, so these stand in for the source's material and are
+        tuned per asset by eye. The Snag wanted 0.648 / 0.686 / 1.4.</small></div>
+
+    <label class="check"><input id="finish-skip-paint" type="checkbox"><span>skip repaint</span>
+      <small>keep the transferred texture &mdash; right for Pixal3D output</small></label>
+    <div id="finish-paint-fields">
+      <div class="field"><label for="finish-paint-res">Paint resolution</label>
+        <select id="finish-paint-res"><option selected>512</option><option>768</option><option>1024</option></select></div>
+      <div class="field"><label for="finish-paint-steps">Paint steps</label>
+        <input id="finish-paint-steps" type="number" step="1" min="1" max="50" value="15"></div>
+    </div>
+
+    <button id="finish-submit" disabled>Finish asset</button>
+    <button id="finish-cancel" hidden>Cancel</button>
+
+    <div id="finish-progress-box" class="generate-card" hidden>
+      <div id="generate-progress-head"><span id="finish-overall-label">Waiting</span><span id="finish-overall-eta"></span></div>
+      <div class="progress-track"><div id="finish-overall-bar"></div></div>
+      <div id="finish-stages"></div>
+      <div id="finish-status" aria-live="polite" style="font-size:12px; margin-top:6px"></div>
+    </div>
+
+    <div id="finish-result" hidden>
+      <a id="finish-download" download>Download finished GLB</a>
+      <a id="finish-record" download>Download record</a>
     </div>
   </div>
 </section>
