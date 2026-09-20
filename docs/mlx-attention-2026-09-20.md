@@ -71,15 +71,21 @@ with identical parameters. Only the attention backend differs.
 
 | Stage | Baseline | MLX fp32 | MLX fp16 |
 |---|---|---|---|
+| Pipeline load | 80.9s | 82.6s | 80.3s |
 | Sampling, stages 1-3 | 1760.7s | 963.6s | **552.2s** |
+| Decode | 53.1s | 53.8s | 59.8s |
+| Bake | 161.4s | 241.7s | 165.8s |
+| **Whole run** | **2057.4s (34.3 min)** | ~1342s (22.4 min) | **859.5s (14.3 min)** |
 | Speedup on sampling | 1x | **1.83x** | **3.19x** |
-| Whole run | 2057s (34.3 min) | ~1342s (22.4 min) | ~16 min |
+| Speedup overall | 1x | 1.53x | **2.39x** |
+
+fp16 lands inside the 10-15 minute bar. All three runs used the same seed and parameters.
 
 The fp32 output was inspected and accepted, which is what clears the numerical risk below.
 
 **Attention is no longer the bottleneck.** At fp16 the fixed costs dominate: pipeline load,
-decode and bake together are roughly 380 seconds that none of this work can touch, about
-40% of the run. Bake is now the single largest stage.
+decode and bake together are about 306 seconds, 36% of the run, and none of this work can
+touch them. Bake is now the single largest stage.
 
 ## Using it
 
@@ -116,9 +122,10 @@ indexing a 7.4M-row tensor on Metal, which was the only MPS operation queued bet
 synchronisation points. **That is a precaution against the likeliest trigger, not a verified
 fix.**
 
-**Bake regressed independently.** 241.7s against the baseline's 161.4s, in a stage attention
-never touches. Cause unknown, possibly contention. Worth investigating separately, and now
-the largest single cost in a run.
+**The apparent bake regression was contention, not a regression.** The fp32 run measured
+241.7s against the baseline's 161.4s in a stage attention never touches, which looked
+alarming. The fp16 run, made with the machine otherwise idle, came in at 165.8s. The fp32
+run had diagnostic jobs competing for the GPU. Nothing to fix.
 
 ## What is left
 
@@ -127,7 +134,9 @@ the largest single cost in a run.
    conversion cost dominates. That is why the end-to-end gain was 2.05x rather than the
    kernel's 2.83x. A length threshold recovers most of the gap and changes no numerics.
 2. **Judge fp16 output.** The speed is measured; the quality is not.
-3. **Attack the fixed costs**, bake first. That is where the remaining minutes are.
+3. **Attack the fixed costs.** At fp16 they are roughly 306 seconds -- 80s pipeline load,
+   60s decode, 166s bake -- or 36% of the run, and no attention work can touch them. Bake
+   is the largest single stage now.
 4. **Reconsider the non-cascade `1024` pipeline type.** TRELLIS.2 supports `512`, `1024`,
    `1024_cascade` and `1536_cascade`; this repo maps `--resolution 1024` to the cascade and
    never exposes plain `1024`, which was abandoned earlier after a 100-minute run. That run
