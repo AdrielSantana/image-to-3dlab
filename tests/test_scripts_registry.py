@@ -30,6 +30,9 @@ NON_PYTHON = {
         "Create the project virtualenv and install the SF3D backend and its native "
         "dependencies (needs Python 3.10/3.11 and Homebrew's libomp)."
     ),
+    "bootstrap_pixal3d_cpp.sh": (
+        "Clone, build and weight the Pixal3D C++/GGML runtime on Apple Silicon."
+    ),
     "bootstrap_trellis_macos.sh": (
         "Clone and install the `shivampkumar/trellis-mac` port, with the Metal "
         "acceleration backends when Xcode's Metal compiler is present and a slower CPU "

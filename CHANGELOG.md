@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pixal3D as a backend** — `scripts/bootstrap_pixal3d_cpp.sh` builds the C++/GGML runtime
+  (raven38/pixal3d.cpp) with Metal and fetches the 8.1 GB single-view Q8_0 weights;
+  `scripts/pixal3d_generate.py` runs image → textured GLB; the viewer offers it alongside
+  the other backends. One pass, no repaint stage, 5m50s on the moss fox.
 - **`scripts/export_decode_highpoly.py`** — turns a cached decode into the high-poly PLY a
   normal bake reads (19,172,397 faces on the Snag, 98% of which `generate.py` discards).
   Welds and repairs winding per component; deliberately does not decimate, because
