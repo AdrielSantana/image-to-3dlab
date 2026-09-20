@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scripts/retopo_repaint.py`** — runs retopologise → repaint → compress as one command,
+  keeping every intermediate and writing a JSON record of the settings used, so assets
+  finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
+
 ### Removed
 - **The repository was slimmed from 244 MB to 8.5 MB and its history rewritten.** This is
   an image → 3D pipeline people clone and run, and 96% of what it carried was not that:

@@ -78,6 +78,7 @@ The asset's surface, as opposed to its shape.
 | `attach_normal_map.py` | Attach a baked normal map to a GLB's material. |
 | `restore_pbr_material.py` | Re-attach the metallicRoughness map that `--material-mode matte` orphaned. |
 | `fix_glb_opaque_material.py` | Make an existing TRELLIS GLB opaque and single-sided without rebaking it. |
+| `retopo_repaint.py` | Finish a generated asset: retopologise, repaint, compress. |
 | `living_organic_material.py` | Apply a reproducible living-organic material recipe to an existing GLB. |
 | `project_labels.py` | Project a 2D image onto a generated mesh as per-vertex colours. |
 | `project_markings.py` | Paint the source image's markings back onto a generated mesh's texture. |
