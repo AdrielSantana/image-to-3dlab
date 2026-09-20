@@ -12,17 +12,25 @@ Drop in a picture of a character or object; get back a `.glb` (with PBR texture)
 `.provenance.json` sidecar recording exactly how it was made and under which licenses. This should make your game-dev or whatever else you're up to easier to manage.
 Everything runs on your Mac — nothing is uploaded to a cloud service.
 
-Four backends, one Generate page. Sadly life is full of trade-offs, so pick the tradeoff you want (lol):
+Five backends, one Generate page. Sadly life is full of trade-offs, so pick the tradeoff you want (lol):
 
 | Backend | Best for | Setup | License |
 |---|---|---|---|
-| **Hunyuan3D-MLX (Xiong, full pipeline)** ⭐ | Fast, clean results — recommended default | Clone-and-go: code is tracked in this repo, weights download separately | MIT (code); Tencent Community License (weights) |
+| **Pixal3D (C++/GGML, Metal)** ⭐ | Best results we have — one pass, ~6 min, no repaint needed | One script: `scripts/bootstrap_pixal3d_cpp.sh` (needs Xcode's Metal compiler, 8.1 GB weights) | MIT (code + flow weights); DINOv3 License (bundled encoder) |
+| **Hunyuan3D-MLX (Xiong, full pipeline)** | Fast, clean results | Clone-and-go: code is tracked in this repo, weights download separately | MIT (code); Tencent Community License (weights) |
 | **Hunyuan3D-MLX (dgrauet shape + Xiong paint)** | The single cleanest shape we've tested, at the cost of manual setup | Vendor-cloned, manual | Tencent Community License (code + weights) |
 | **TRELLIS.2** | Highest fidelity, closest to the official demo | One-button bootstrap from the web UI (~1h) | MIT + DINOv3 License |
 | **Stable Fast 3D** | Fastest, lower fidelity | Vendor-cloned, manual | Stability AI Community License |
 
-⭐ Start with Hunyuan3D-MLX (Xiong, full pipeline) — it's the quickest to get running from a
-fresh clone and gives strong results (~9 min shape+paint end to end at its default model).
+⭐ Start with **Pixal3D**. It is TRELLIS.2's backbone with pixel-aligned, camera-aware
+conditioning, and on the assets tested here it produced correct saturated colour in a single
+pass where TRELLIS.2 bleached flat illustrations badly enough to need a separate repaint
+stage — in 5m50s against 14 min. Raise `--gss` to 10; at the 7.5 default a thin sword blade
+went missing entirely. Numbers, caveats and the Mac-port comparison:
+[`docs/pixal3d-evaluation-2026-09-20.md`](docs/pixal3d-evaluation-2026-09-20.md).
+
+Hunyuan3D-MLX (Xiong, full pipeline) remains the quickest to get running from a fresh clone
+(~9 min shape+paint end to end at its default model).
 Reach for TRELLIS.2 when fidelity matters more than speed. Its material model can produce
 severe colour drift on flat/vector-style illustrations; prefer photographs or softly lit
 3D-style references. This is an input-dependent upstream model behaviour, not a Metal-port
@@ -55,6 +63,15 @@ status telling you exactly what's missing:
   recommended one) plus paint weights from Hugging Face, ~13 GB total for the default
   model. Full detail, including the one extra manual step for RealESRGAN super-res
   weights: [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md).
+- **Pixal3D** — one script, no venv of its own:
+  ```bash
+  scripts/bootstrap_pixal3d_cpp.sh
+  ```
+  Builds [`raven38/pixal3d.cpp`](https://github.com/raven38/pixal3d.cpp) with Metal (the
+  backend is automatic on Apple builds) and fetches the 8.1 GB Q8_0 single-view weight set.
+  Needs Xcode's Metal compiler, not just the command-line tools — the script prints the two
+  commands that fix that if it is missing. No Hugging Face token: the matting and image
+  encoders are ungated mirrors, and BRIA RMBG-2.0 is never used.
 - **TRELLIS.2** — click **Run setup** (bootstraps the Metal port, ~1h, needs `uv`,
   Python 3.11 and Xcode command-line tools), or run it manually:
   `python scripts/bootstrap_trellis_space_macos.py`. First run downloads the ~14 GB
@@ -73,6 +90,13 @@ two models side by side in the same viewer.
 ## CLI
 
 Same engines without the browser.
+
+**Pixal3D:**
+```bash
+python scripts/pixal3d_generate.py input.png output.glb --res 1024 --seed 42
+```
+A pre-matted RGBA image skips background removal entirely and keeps the cutout identical to
+whatever else you ran on it.
 
 **Hunyuan3D-MLX (Xiong, full pipeline):**
 ```bash
@@ -108,6 +132,31 @@ vendor/trellis-space-mac/.venv/bin/python scripts/trellis_space_generate.py inpu
 - In the web UI, a failed TRELLIS decode or bake retains `<out>_latents.pt` even when
   **Debug** is off, so the expensive sampling stage can be resumed. Successful non-debug
   runs clean up the checkpoint after the GLB is safely written.
+
+## Finishing an asset
+
+Generated assets arrive dense and heavy — often ~900k faces and 30+ MB, nearly all of it
+uncompressed texture. The **Finish** page in the viewer, and the same chain on the CLI,
+brings that down without a visible quality cost:
+
+```bash
+python scripts/retopo_repaint.py generated.glb source.png finished.glb \
+    --faces 40000 --skip-paint
+```
+
+Three stages, each skippable:
+
+1. **Retopologise** — voxel-remesh, then decimate. The ordering matters: decimating the raw
+   mesh shatters thin geometry, measured.
+2. **Repaint** (optional) — hands the clean mesh to Hunyuan 2.1 PBR and paints from the
+   source art. Use it when the generator's own texture is wrong; Pixal3D output usually does
+   not need it, so `--skip-paint` finishes in seconds instead of ~6 minutes.
+3. **Compress** — re-encodes the textures. The paint stage emits two uncompressed 4096²
+   PNGs; core-glTF JPEG at 2048 measures below the renderer's own sampling noise and takes a
+   typical asset from 32 MB to under 5.
+
+Every run writes a JSON record of the settings used, so a batch of finished assets is
+comparable rather than each one being tuned by hand.
 
 ## Where this is going
 
@@ -147,13 +196,20 @@ claiming support across Rigify basic-quadruped characters.
 
 ## How the runs behave
 
+- **Pixal3D:** ~6 min end to end at res 1024, including model load, on a 32 GB M-series Mac.
+  Stage split on a real run: sparse structure 77s, shape SLAT 512 then the 1024 cascade 136s,
+  decode 13s, texture 63s, postprocess 25s. Peak memory is modest — the Q8_0 weight set is
+  8.1 GB against 24 for the PyTorch port, which does not fit 32 GB at all.
 - **Hunyuan3D-MLX (Xiong, 2.0, default settings):** ~9 min end to end (shape + paint) on
   a real benchmark run. 2.0-turbo trades some fine-detail cleanliness for ~2-3 min shape.
   See [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md) for the full model
   comparison.
 - **TRELLIS.2:** sampling is attention-bound and scales with the subject's sparse
   structure — a simple subject (~8k tokens) takes ~14 min end-to-end; a complex one
-  (~22k tokens, e.g. a fluffy creature) ~78 min on my m5 w/ 32 gigs of unified memory. This is infinitely faster on CUDA / Nvidia. 
+  (~22k tokens, e.g. a fluffy creature) ~78 min on my m5 w/ 32 gigs of unified memory. This is infinitely faster on CUDA / Nvidia.
+  Setting **Attention backend** to `mlx` routes attention through MLX's fused Metal kernel
+  and cut a 1024 run from 34.3 to 14.3 min; output at a fixed seed is unchanged. Only worth
+  it at 1024 and above. See [`docs/mlx-attention-2026-09-20.md`](docs/mlx-attention-2026-09-20.md). 
   Decode + bake adds a few minutes; with Debug enabled the decode is cached, so re-bakes
   are ~1 min of setup. Known gaps vs the HF demo: slight
   texture drift, severe colour failures on some flat/vector inputs, and mostly-pinhole
@@ -161,6 +217,9 @@ claiming support across Rigify basic-quadruped characters.
 
 ## Licensing & provenance (non-negotiable)
 
+- **Pixal3D** code and flow weights: MIT. The Q8_0 bundle also carries the **DINOv3** image
+  encoder under its own licence, so treat its output the same as TRELLIS's. Background
+  removal uses ungated `ZhengPeng7/BiRefNet`, never BRIA RMBG-2.0.
 - **TRELLIS.2** code and weights: MIT. **DINOv3** image encoder: separate DINOv3 License —
   so TRELLIS output is classified `commercial-conditional`.
 - **TinyCLIP ViT-8M/16** input advisor: MIT. It only warns about risky input style and is
