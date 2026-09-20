@@ -1486,9 +1486,12 @@ def _pixal3d_parse_line(job: Job, line: str) -> None:
         stage = PIXAL3D_BANNERS.get(index)
         if stage is None:
             return
+        # `phase` must BE the stage id: JobProgressPanel.apply looks the row up by it.
+        # Emitting {"phase": "stage", "stage": ...} leaves the panel frozen on its
+        # placeholder, which is exactly what it did.
         job.emit({
-            "phase": "stage", "stage": stage,
-            "stage_label": PIXAL3D_STAGE_LABELS[stage],
+            "phase": stage,
+            "stage_pct": 0,
             "overall_pct": min(99, round(index / 6 * 100)),
             "message": PIXAL3D_STAGE_LABELS[stage],
         })
