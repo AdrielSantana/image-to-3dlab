@@ -16,8 +16,16 @@ each file explains *why* it exists, which is usually the part you need.
 
 Run a backend end to end, or re-run part of one without paying for the whole thing again.
 
+For the staged **fitted metarig → proxy weights → reference pose → tunable gait →
+standing transition** workflow, start with [the quadruped pipeline guide](../docs/quadruped-pipeline.md).
+It includes commands, parameter definitions, failure checks, and an LLM-assisted
+tuning checklist. Manual fitting and visual weight/deformation review remain required.
+
 | Script | What it does |
 |---|---|
+| `blender_quadruped_pipeline.py` | Bind, capture and animate fitted Rigify quadrupeds with tunable profiles and audit reports. |
+| `quadruped_gait.py` | Gait curves for the Rigify basic quadruped metarig, as pure functions. |
+| `blender_quadruped_walk.py` | Author a natural walk, trot or scamper on any Rigify basic-quadruped rig. |
 | `bootstrap_macos.sh` | Create the project virtualenv and install the SF3D backend and its native dependencies (needs Python 3.10/3.11 and Homebrew's libomp). |
 | `bootstrap_trellis_macos.sh` | Clone and install the `shivampkumar/trellis-mac` port, with the Metal acceleration backends when Xcode's Metal compiler is present and a slower CPU bake fallback when it is not. |
 | `bootstrap_trellis_space_macos.py` | Bootstrap TRELLIS.2 on macOS from Microsoft's pinned Space source. |

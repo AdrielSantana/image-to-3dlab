@@ -129,6 +129,10 @@ were model-specific references rather than drop-in tools, so they now sit in a
 git-ignored `characters/<name>/` folder alongside their tests. The techniques are
 documented in `docs/`; the creature-specific scripts are ours, not yours.
 
+The [reusable quadruped gait plan](docs/reusable-gait-quadruped-trot.md) records
+the accepted trot, the implementation handoff and the validation needed before
+claiming support across Rigify basic-quadruped characters.
+
 ## Requirements
 
 | Thing | Why |
