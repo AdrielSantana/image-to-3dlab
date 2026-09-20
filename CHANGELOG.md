@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`scripts/compress_glb_textures.py`** — re-encodes a GLB's textures in place, leaving
+  geometry untouched. The paint stage writes a 4096² albedo and a 4096² metallic-roughness
+  map as uncompressed PNG: 30.5 MB of a 32 MB asset. Snag 32.0 → 4.8 MB, fox 31.3 → 4.4 MB,
+  a difference measuring below the renderer's own sampling noise (5.48/255 against 6.00 for
+  the same file rendered twice). Default is core-glTF JPEG at 2048; `--format webp` is
+  smaller where the destination handles the extension.
 - **Finishing jobs in the browser** (`POST /api/finish`) — retopologise, repaint and
   compress an asset the viewer already has, with SSE progress and the result and record
   fetched by URL. Refuses to start while a generation is running; every setting is
