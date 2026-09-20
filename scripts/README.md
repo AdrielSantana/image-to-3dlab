@@ -12,7 +12,6 @@ docstring, so a new script is not finished until it is listed here.
 Most tools print their real documentation with `--help`; the docstring at the top of
 each file explains *why* it exists, which is usually the part you need.
 
-
 ## Generate an asset
 
 Run a backend end to end, or re-run part of one without paying for the whole thing again.
@@ -31,7 +30,6 @@ Run a backend end to end, or re-run part of one without paying for the whole thi
 | `runpod_trellis2_cuda_probe.py` | Run a frozen-shape TRELLIS.2 Stage-3 material probe on CUDA. |
 | `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA wheels for the RunPod control run; not used by any local path. |
 
-
 ## Before you spend a run
 
 A generation run costs 15-20 minutes. These cost seconds and are worth it first.
@@ -42,7 +40,6 @@ A generation run costs 15-20 minutes. These cost seconds and are worth it first.
 | `soften_markings.py` | Reduce the contrast of flat painted markings in a conditioning image. |
 | `check_trellis_space_attention.py` | Cheap MPS integration gate for TRELLIS sparse self/cross attention. |
 | `check_trellis_space_dino.py` | Capture the exact preprocessed image and DINO conditioning tensor. |
-
 
 ## Repair the mesh
 
@@ -59,7 +56,6 @@ Everything here operates on a GLB or a cached decode and is headless.
 | `visibility_cull.py` | Pure helpers for visibility-based face culling: keep only what is seen from outside. |
 | `remesh_to_target.py` | Decimate a mesh to a target face count via fast_simplification, with timing. |
 | `crop_mesh.py` | Cut a region out of a mesh at full density, so it can be judged by eye. |
-
 
 ## Texture, colour and material
 
@@ -81,7 +77,6 @@ The asset's surface, as opposed to its shape.
 | `bake_stiffness.py` | Bake foliage stiffness into a GLB as vertex colours, for engine-side wind. |
 | `classify_thickness.py` | Separate solid body from thin foliage by measuring local thickness. |
 
-
 ## Measure and judge
 
 Numbers and renders to decide whether a change helped. Read `docs/` before trusting an old one.
@@ -99,7 +94,6 @@ Numbers and renders to decide whether a change helped. Read `docs/` before trust
 | `measure_bvh_on_surface.py` | Check MtlBVH on an invariant that scales with the real production mesh. |
 | `measure_bvh_precision.py` | Measure how accurate MtlBVH's unsigned_distance actually is, against exact ground truth. |
 | `xatlas_timing_probe.py` | Time xatlas.parametrize in isolation, to characterize its face-count scaling. |
-
 
 ## Blender: look at it
 
@@ -119,7 +113,6 @@ These talk to a running Blender over the `execute_code` socket on port 9876 unle
 | `blender_import_character.py` | Append a rigged character (armature + skinned mesh) into the currently live Blender scene, cleaned up and positioned. |
 | `blender_wind_demo.py` | Animate labelled foliage with shader-style wind and render it to MP4. |
 
-
 ## Blender: change the geometry
 
 Heavier edits that need Blender's own operators rather than trimesh.
@@ -138,19 +131,12 @@ Heavier edits that need Blender's own operators rather than trimesh.
 | `blender_bake_ao.py` | Bake an ambient-occlusion map from an asset's own geometry, headless. |
 | `blender_bake_normals.py` | Bake TRELLIS' discarded high-poly detail into a normal map for the low-poly mesh. |
 
-
 ## Rig and animate
 
 The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have tests.
 
-For the staged **fitted metarig → proxy weights → reference pose → tunable gait →
-standing transition** workflow, start with [the quadruped pipeline guide](../docs/quadruped-pipeline.md).
-It includes commands, parameter definitions, failure checks, and an LLM-assisted
-tuning checklist. Manual fitting and visual weight/deformation review remain required.
-
 | Script | What it does |
 |---|---|
-| `blender_quadruped_pipeline.py` | Bind, capture and animate fitted Rigify quadrupeds with tunable profiles and audit reports. |
 | `blender_joint_markers.py` | Spawn named joint markers on a mesh in Blender, and read their placed positions back. |
 | `blender_build_rig.py` | Build a quadruped armature from placed joint markers and bind the mesh to it. |
 | `blender_voxel_weights.py` | Weight a generated mesh via a watertight voxel proxy, then transfer the result back. |
@@ -161,14 +147,11 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `blender_export_rig_binding.py` | Prepare an open Blender metarig scene and export its browser rig sidecar. |
 | `rignet_infer.py` | Run vendored RigNet inference on one of our own generated meshes. |
 | `attack_pose.py` | Pose curves for a quadruped slam attack, as pure functions. |
-| `quadruped_gait.py` | Gait curves for the Rigify basic quadruped metarig, as pure functions. |
-| `blender_quadruped_walk.py` | Author a natural walk, trot or scamper on any Rigify basic-quadruped rig. |
 | `rigify_walk_pose.py` | Pose curves for a quadruped trot on a Rigify-generated rig, as pure functions. |
 | `blender_walk_cycle.py` | Author a looping quadruped gait cycle on the rigged fox in the live Blender scene. |
 | `blender_rigify_walk_cycle.py` | Author a trot cycle on the Rigify-generated 'rig' armature in the live Blender scene. |
 | `blender_idle_cycle.py` | Author a looping idle for the rigged fox. |
 | `blender_attack_cycle.py` | Author a slam-attack clip on a rigged quadruped in the live Blender scene. |
-
 
 ## Vendor patches
 
