@@ -55,6 +55,8 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 DEFAULT_VENDOR = REPO / "vendor" / "trellis-space-mac"
 
 # --- The upstream Gradio demo defaults, verbatim (app.py gr.Slider ``value=``). ---
@@ -196,6 +198,15 @@ def resolved_attention_dtype(sparse_attn_backend: str, env_value: str | None) ->
     if sparse_attn_backend != "mlx":
         return None
     return (env_value or "fp32").lower()
+
+
+def release_mlx_memory() -> dict[str, int]:
+    """Release MLX's reserved Metal memory, or do nothing if MLX is not in use."""
+    try:
+        from image_to_3dlab.mlx_attention import release_memory
+    except ImportError:
+        return {}
+    return release_memory()
 
 
 def build_manifest(
@@ -784,6 +795,27 @@ def generate(
     )
     run_seconds = time.time() - run_started
     print(f"pipeline.run() sampling (stages 1-3) done in {run_seconds:.1f}s", flush=True)
+
+    # Hand MLX's reserved Metal memory back before decode.
+    #
+    # MLX keeps its own buffer cache, separate from torch's, in the same process. It stays
+    # claimed after sampling ends, while decode -- the most memory-hungry stage here -- then
+    # runs without that headroom. Three 1024 runs have failed at decode with MLX resident,
+    # each with a different symptom (a garbage negative index, an out-of-range hashmap
+    # lookup, a sparse tensor size mismatch); varied corruption-shaped failures fit memory
+    # pressure better than they fit one logic bug. Re-decoding the same latents in a fresh
+    # process has succeeded every time.
+    #
+    # This is a hypothesis under test, not a proven fix, which is why it reports what it
+    # released rather than doing it silently.
+    released = release_mlx_memory()
+    if released:
+        print(
+            f"released MLX cache before decode: {released['released'] / 1e9:.2f} GB "
+            f"(peak during sampling {released['peak'] / 1e9:.2f} GB, "
+            f"still active {released['active'] / 1e9:.2f} GB)",
+            flush=True,
+        )
 
     shape_slat, tex_slat, res = latents
 

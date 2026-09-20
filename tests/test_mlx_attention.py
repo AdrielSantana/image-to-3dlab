@@ -12,6 +12,12 @@ import pytest
 from image_to_3dlab import mlx_attention
 
 
+def _torch():
+    import torch
+
+    return torch
+
+
 def test_split_offsets_produces_contiguous_non_overlapping_slices():
     assert mlx_attention.split_offsets([3, 2, 4]) == [(0, 3), (3, 5), (5, 9)]
 
@@ -28,11 +34,61 @@ def test_split_offsets_covers_every_token_exactly_once():
     assert covered == list(range(sum(lengths)))
 
 
-torch = pytest.importorskip("torch", reason="numerical checks need torch")
-if not mlx_attention.mlx_available():
-    pytest.skip("mlx not installed in this interpreter", allow_module_level=True)
+def test_memory_snapshot_is_empty_without_mlx(monkeypatch):
+    """Callers must not need a guard: no MLX means nothing is held, so nothing to report."""
+    monkeypatch.setattr(mlx_attention, "mlx_available", lambda: False)
+    assert mlx_attention.memory_snapshot() == {}
 
 
+def test_release_memory_is_a_noop_without_mlx(monkeypatch):
+    monkeypatch.setattr(mlx_attention, "mlx_available", lambda: False)
+    assert mlx_attention.release_memory() == {}
+
+
+def test_release_memory_reports_what_it_freed(monkeypatch):
+    """It reports rather than acting silently.
+
+    The size of the cache at the sampling/decode boundary is the measurement that decides
+    whether MLX residency explains the decode failures, so a silent call answers nothing.
+    """
+    snapshots = iter([
+        {"active": 1_000, "cache": 5_000_000_000, "peak": 7_000_000_000},
+        {"active": 1_000, "cache": 0, "peak": 7_000_000_000},
+    ])
+    monkeypatch.setattr(mlx_attention, "mlx_available", lambda: True)
+    monkeypatch.setattr(mlx_attention, "memory_snapshot", lambda: next(snapshots))
+    # `import mlx.core as mx` resolves the parent package first, so both entries are needed.
+    import sys as _sys
+    import types as _types
+
+    fake_core = _types.ModuleType("mlx.core")
+    fake_core.clear_cache = lambda: None
+    fake_pkg = _types.ModuleType("mlx")
+    fake_pkg.core = fake_core
+    monkeypatch.setitem(_sys.modules, "mlx", fake_pkg)
+    monkeypatch.setitem(_sys.modules, "mlx.core", fake_core)
+    result = mlx_attention.release_memory()
+    assert result["released"] == 5_000_000_000
+    assert result["cache_after"] == 0
+    assert result["peak"] == 7_000_000_000
+
+
+# Gated per test, not at module level: a module-level skip would silently disable the pure
+# tests above in any environment without torch or mlx -- which is most of them, including
+# the interpreter the suite normally runs under.
+def _have(name: str) -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec(name) is not None
+
+
+needs_backends = pytest.mark.skipif(
+    not (_have("torch") and mlx_attention.mlx_available()),
+    reason="numerical checks need both torch and mlx in this interpreter",
+)
+
+
+@needs_backends
 def test_resolve_dtype_defaults_to_fp32(monkeypatch):
     import mlx.core as mx
 
@@ -42,6 +98,7 @@ def test_resolve_dtype_defaults_to_fp32(monkeypatch):
     assert mlx_attention.resolve_dtype() is mx.float32
 
 
+@needs_backends
 def test_resolve_dtype_reads_the_environment(monkeypatch):
     import mlx.core as mx
 
@@ -49,6 +106,7 @@ def test_resolve_dtype_reads_the_environment(monkeypatch):
     assert mlx_attention.resolve_dtype() is mx.float16
 
 
+@needs_backends
 def test_resolve_dtype_rejects_nonsense(monkeypatch):
     monkeypatch.setenv(mlx_attention.DTYPE_ENV, "float8_banana")
     with pytest.raises(ValueError, match="unsupported"):
@@ -57,6 +115,7 @@ def test_resolve_dtype_rejects_nonsense(monkeypatch):
 
 def _reference(q, k, v, q_seqlen, kv_seqlen):
     """torch SDPA over the same block-diagonal layout, as the ground truth."""
+    import torch
     import torch.nn.functional as F
 
     parts = []
@@ -71,7 +130,9 @@ def _reference(q, k, v, q_seqlen, kv_seqlen):
     return torch.cat(parts, dim=0)
 
 
+@needs_backends
 def test_varlen_attention_matches_torch_sdpa():
+    torch = _torch()
     torch.manual_seed(0)
     heads, dim = 4, 128
     q_seqlen = kv_seqlen = [12, 7]
@@ -91,12 +152,14 @@ def test_varlen_attention_matches_torch_sdpa():
     assert torch.allclose(got, want, atol=5e-3), (got - want).abs().max().item()
 
 
+@needs_backends
 def test_varlen_attention_respects_sequence_boundaries():
     """A token in one packed sequence must not see keys from another.
 
     If the block-diagonal split were wrong this would still produce plausible-looking
     numbers, which is exactly why it is asserted rather than eyeballed.
     """
+    torch = _torch()
     torch.manual_seed(1)
     heads, dim = 2, 128
     q = torch.randn(6, heads, dim)
@@ -109,14 +172,18 @@ def test_varlen_attention_respects_sequence_boundaries():
     assert torch.allclose(split[:3], first_alone, atol=5e-3)
 
 
+@needs_backends
 def test_varlen_attention_rejects_mismatched_sequence_counts():
+    torch = _torch()
     q = torch.randn(4, 2, 128)
     with pytest.raises(ValueError, match="same number of sequences"):
         mlx_attention.varlen_attention(q, q, q, [2, 2], [4])
 
 
+@needs_backends
 def test_cross_attention_shape_differs_between_q_and_kv():
     """Cross-attention packs different q and kv lengths; the output follows q."""
+    torch = _torch()
     torch.manual_seed(2)
     heads, dim = 2, 128
     q = torch.randn(5, heads, dim)

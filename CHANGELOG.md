@@ -109,6 +109,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (measured 176s against 184s, inside noise). The guidance now says where the option is
   worth choosing, and records that the choice does not change the output.
 
+### Fixed
+- Release MLX's reserved Metal memory at the sampling/decode boundary, and report how much
+  was held. Three 1024 runs failed during decode with MLX resident in the process, each
+  with a different symptom -- a garbage negative index, an out-of-range hashmap lookup, and
+  a sparse tensor size mismatch. Varied corruption-shaped failures fit memory pressure
+  better than one logic bug, and re-decoding the same cached latents in a fresh process has
+  succeeded every time. MLX keeps a buffer cache separate from torch's, which stays claimed
+  after sampling while decode -- the most memory-hungry stage -- runs without that headroom.
+  **This is a hypothesis under test rather than a confirmed fix**, which is why it prints
+  what it released instead of acting silently.
+- Gate the MLX attention tests per test rather than at module level. A module-level skip
+  was silently disabling the pure packing-maths tests in any interpreter without torch and
+  mlx, which is the one the suite normally runs under: ten tests reported as skipped when
+  six of them needed neither library.
+
 ### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI

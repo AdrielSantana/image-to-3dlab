@@ -151,3 +151,50 @@ def varlen_attention(
     if not parts:
         return q.new_zeros((0, *q.shape[1:]))
     return torch.cat(parts, dim=0)
+
+
+def memory_snapshot() -> dict[str, int]:
+    """Metal memory MLX is holding right now, in bytes.
+
+    ``active`` is memory backing live arrays; ``cache`` is memory MLX has freed internally
+    but kept reserved for reuse rather than returned to the system. The cache is the part
+    that matters here: it stays claimed after sampling finishes, while a later stage in the
+    same process may need that headroom.
+
+    Returns an empty dict when MLX is absent, so callers need no guard.
+    """
+    if not mlx_available():
+        return {}
+    import mlx.core as mx
+
+    return {
+        "active": int(mx.get_active_memory()),
+        "cache": int(mx.get_cache_memory()),
+        "peak": int(mx.get_peak_memory()),
+    }
+
+
+def release_memory() -> dict[str, int]:
+    """Return MLX's reserved Metal memory to the system, reporting what was freed.
+
+    Called at a stage boundary rather than after every attention call: clearing the cache
+    mid-sampling would force MLX to re-request buffers on the next step and cost more than
+    it saves. The point is to hand memory back before a *different* subsystem needs it.
+
+    Reports rather than just acting, because the interesting question is how much was being
+    held, and a silent call answers nothing.
+    """
+    before = memory_snapshot()
+    if not before:
+        return {}
+    import mlx.core as mx
+
+    mx.clear_cache()
+    after = memory_snapshot()
+    return {
+        "cache_before": before["cache"],
+        "cache_after": after["cache"],
+        "released": before["cache"] - after["cache"],
+        "active": after["active"],
+        "peak": before["peak"],
+    }
