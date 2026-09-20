@@ -98,8 +98,8 @@
         <div class="field"><label for="generate-resolution">Resolution</label>
           <select id="generate-resolution"><option>512</option><option selected>1024</option><option>1536</option></select></div>
         <div class="field"><label for="generate-attention">Attention backend</label>
-          <select id="generate-attention"><option value="sdpa" selected>sdpa (stock)</option><option value="mlx">mlx fp32 (~1.8x sampling)</option><option value="mlx-fp16">mlx fp16 (~3.2x sampling)</option></select>
-          <small>Advanced: mlx routes attention through MLX's fused Metal kernel. Needs <code>scripts/patch_trellis_mlx_attention.py</code> applied and mlx installed in the vendor venv. fp16 is faster but computes attention at half precision.</small></div>
+          <select id="generate-attention"><option value="sdpa" selected>sdpa (stock)</option><option value="mlx">mlx fp32</option><option value="mlx-fp16">mlx fp16 (fastest)</option></select>
+          <small>Advanced: mlx routes attention through MLX's fused Metal kernel. <strong>Only worth it at 1024 and above</strong> &mdash; attention cost grows with the square of the token count, and at 512 the stock path is already fast enough that mlx makes no measurable difference. At 1024 it cut sampling by about 3x. Output is unchanged: at a fixed seed, all three settings produce visually identical assets. Needs <code>scripts/patch_trellis_mlx_attention.py</code> applied and mlx installed in the vendor venv.</small></div>
         <div class="field"><label for="generate-seed">Seed</label><input id="generate-seed" type="number" step="1" value="0"></div>
         <div class="field"><label for="generate-decimation">Decimation target</label><input id="generate-decimation" type="number" min="1" step="1" value="300000">
           <small>Advanced: remesh is fixed demo-faithful, so this is a cap rather than a target.</small></div>

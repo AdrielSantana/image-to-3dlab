@@ -99,11 +99,21 @@ just weights** — see the licensing note below.
 A 1024 run is dominated by attention. The *Attention backend* control decides how that work
 is done, on the same input, seed and parameters:
 
-| Attention backend | Storm Ram, 1024 cascade | Setup needed |
-|---|---|---|
-| `sdpa` (default) | 34.3 min | none |
-| `mlx` (fp32) | 22.4 min | mlx in the backend venv + the patch |
-| `mlx-fp16` | **14.3 min** | same |
+| Attention backend | at 1024 cascade | at 512 | Setup needed |
+|---|---|---|---|
+| `sdpa` (default) | 34.3 min | 5.4 min | none |
+| `mlx` (fp32) | 22.4 min | no change | mlx in the backend venv + the patch |
+| `mlx-fp16` | **14.3 min** | no change | same |
+
+**MLX is only worth selecting at 1024 and above.** Attention cost grows with the square of
+the token count, and 512 produces roughly a quarter of the tokens, so the stock path is
+already fast enough there that the fused kernel's advantage is cancelled by the cost of
+moving tensors into MLX and back. Measured at 512: 176 seconds against 184, inside noise.
+
+**The choice does not change the output.** At a fixed seed and resolution, `sdpa`, `mlx`
+and `mlx-fp16` produce visually identical assets, with face counts within 0.3%. So prefer
+fp16 wherever MLX is used; fp32 buys nothing back. See
+[`mlx-attention-2026-09-20.md`](mlx-attention-2026-09-20.md).
 
 Both MLX options need one-time setup, and the Generate page's Setup card reports whether
 they are available and names whatever is missing:
@@ -113,10 +123,8 @@ uv pip install --python vendor/trellis-space-mac/.venv/bin/python mlx
 python scripts/patch_trellis_mlx_attention.py
 ```
 
-Two honest qualifications. Run time varies enormously with the input image, so this is one
-worked example and not a promise. And fp16 computes attention at half precision: both
-settings were judged acceptable by eye on this asset, but if you are chasing fine detail,
-compare against fp32 before trusting it.
+One honest qualification: run time varies enormously with the input image, so the figures
+above are one worked example rather than a promise.
 
 ## Known shortcomings
 

@@ -101,6 +101,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that are actually identical. Also adds `docs/images/` with a size and naming convention,
   since this repository is deliberately slim.
 
+### Fixed
+- Correct the attention-backend claims in the web UI and the Credits & Info tab. They
+  advertised a fixed speedup, which is true at 1024 and false at 512: attention cost grows
+  with the square of the token count, and at 512 the stock path is already fast enough that
+  the fused kernel's advantage is cancelled by the cost of moving tensors into MLX and back
+  (measured 176s against 184s, inside noise). The guidance now says where the option is
+  worth choosing, and records that the choice does not change the output.
+
 ### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
