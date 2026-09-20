@@ -76,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs that look identical in the UI cannot compute different things.
 
 ### Added
+- Surface the MLX attention backend in the browser: a readiness check
+  (`mlx_attention_status`) reports whether the vendored checkout carries the dispatch
+  branch and whether mlx is installed in its venv, the Setup card names whichever step is
+  missing, and the backend's options are disabled until both are satisfied rather than
+  left to crash a run partway through. Readiness is advisory: the default `sdpa` path
+  needs none of it, so an unready MLX never blocks generation.
+- Document the attention backends in the in-app Credits & Info tab and
+  `docs/info_and_credits.md`, including Apple MLX's attribution and a Speed section giving
+  the measured 34.3 / 22.4 / 14.3 minute comparison and its caveats.
+
+### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long

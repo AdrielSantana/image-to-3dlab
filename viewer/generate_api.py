@@ -42,6 +42,11 @@ from rig_api import (
 REPO = Path(__file__).resolve().parents[1]
 WRAPPER = REPO / "scripts" / "trellis_space_generate.py"
 PYTHON = REPO / "vendor" / "trellis-space-mac" / ".venv" / "bin" / "python"
+TRELLIS_VENDOR = REPO / "vendor" / "trellis-space-mac"
+# The dispatch branch scripts/patch_trellis_mlx_attention.py injects. Its presence is how
+# we know the vendored checkout can actually serve SPARSE_ATTN_BACKEND=mlx.
+MLX_DISPATCH_FILE = TRELLIS_VENDOR / "TRELLIS.2" / "trellis2" / "modules" / "sparse" / "attention" / "full_attn.py"
+MLX_DISPATCH_MARKER = "config.ATTN == 'mlx'"
 OUTPUT_ROOT = REPO / "output"
 BASELINE_PATH = REPO / "viewer" / "generate_baseline.json"
 TINYCLIP_ADVISOR = REPO / "scripts" / "classify_trellis_input.py"
@@ -189,6 +194,38 @@ def clean_port_build_present() -> bool:
     return PYTHON.is_file() and WRAPPER.is_file()
 
 
+def mlx_attention_status(vendor: Path | None = None, dispatch: Path | None = None) -> dict[str, Any]:
+    """Whether the mlx attention backend can actually run on this machine.
+
+    Two independent prerequisites, and the UI needs to distinguish them because the
+    remedies differ: the vendored checkout must carry the dispatch branch, and mlx must be
+    installed in that checkout's venv. Offering the backend without both produces a crash
+    partway into a run that has already cost real time.
+    """
+    vendor = vendor or TRELLIS_VENDOR
+    dispatch = dispatch or MLX_DISPATCH_FILE
+    try:
+        patched = dispatch.is_file() and MLX_DISPATCH_MARKER in dispatch.read_text()
+    except OSError:
+        patched = False
+    package = any((vendor / ".venv" / "lib").glob("python*/site-packages/mlx"))
+
+    hints = []
+    if not package:
+        hints.append(
+            "install mlx into the backend venv: uv pip install --python "
+            f"{vendor / '.venv' / 'bin' / 'python'} mlx"
+        )
+    if not patched:
+        hints.append("apply the dispatch branch: python scripts/patch_trellis_mlx_attention.py")
+    return {
+        "patched": patched,
+        "package": package,
+        "ready": patched and package,
+        "hint": "; ".join(hints) or None,
+    }
+
+
 def setup_status() -> dict[str, Any]:
     """Machine readiness for the clean-port generator, for the Generate > Setup card."""
     build_present = clean_port_build_present()
@@ -209,6 +246,9 @@ def setup_status() -> dict[str, Any]:
         },
         "weights": weights,
         "missing_weights": missing,
+        # Advisory only: the default sdpa path works without it, so an unready mlx backend
+        # must never make the machine look unready for generation.
+        "mlx_attention": mlx_attention_status(),
         "ready": build_present,
         "warning": "first use will download missing weights" if missing else None,
     }

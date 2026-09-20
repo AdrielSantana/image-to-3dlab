@@ -118,6 +118,62 @@ def test_fp16_choice_still_passes_mlx_to_the_wrapper():
     assert "mlx-fp16" not in args
 
 
+def _fake_backend(tmp_path, *, patched: bool, package: bool):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    dispatch = tmp_path / "full_attn.py"
+    dispatch.write_text(
+        "elif config.ATTN == 'mlx':\n    pass\n" if patched else "elif config.ATTN == 'sdpa':\n    pass\n"
+    )
+    if package:
+        (tmp_path / ".venv" / "lib" / "python3.11" / "site-packages" / "mlx").mkdir(parents=True)
+    return tmp_path, dispatch
+
+
+@pytest.mark.parametrize("patched,package,ready", [
+    (True, True, True),
+    (True, False, False),
+    (False, True, False),
+    (False, False, False),
+])
+def test_mlx_attention_status_needs_both_the_patch_and_the_package(tmp_path, patched, package, ready):
+    vendor, dispatch = _fake_backend(tmp_path, patched=patched, package=package)
+    status = api.mlx_attention_status(vendor=vendor, dispatch=dispatch)
+    assert status == {
+        "patched": patched, "package": package, "ready": ready,
+        "hint": status["hint"],
+    }
+    assert (status["hint"] is None) == ready
+
+
+def test_mlx_attention_status_hint_names_the_missing_step(tmp_path):
+    vendor, dispatch = _fake_backend(tmp_path, patched=False, package=True)
+    assert "patch_trellis_mlx_attention" in api.mlx_attention_status(vendor=vendor, dispatch=dispatch)["hint"]
+
+    vendor2, dispatch2 = _fake_backend(tmp_path / "b", patched=True, package=False)
+    assert "uv pip install" in api.mlx_attention_status(vendor=vendor2, dispatch=dispatch2)["hint"]
+
+
+def test_mlx_attention_status_survives_a_missing_checkout(tmp_path):
+    status = api.mlx_attention_status(vendor=tmp_path / "gone", dispatch=tmp_path / "gone" / "x.py")
+    assert status["ready"] is False
+    assert status["hint"]
+
+
+def test_unready_mlx_never_makes_the_machine_look_unready(monkeypatch):
+    """Generation works without mlx; the default sdpa path needs none of it.
+
+    Folding mlx readiness into the top-level `ready` flag would block the Generate button
+    over an optional accelerator.
+    """
+    monkeypatch.setattr(api, "mlx_attention_status",
+                        lambda *a, **k: {"patched": False, "package": False, "ready": False, "hint": "x"})
+    monkeypatch.setattr(api, "clean_port_build_present", lambda: True)
+    monkeypatch.setattr(api, "weights_on_disk", lambda *a, **k: {})
+    status = api.setup_status()
+    assert status["ready"] is True
+    assert status["mlx_attention"]["ready"] is False
+
+
 def test_overall_progress_is_stage_weighted():
     assert api._overall_pct("load", 100) == 14
     assert api._overall_pct("bake", 50) == 93

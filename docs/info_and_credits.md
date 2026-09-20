@@ -24,6 +24,14 @@ itself (yet — see the fine-tuning notes if that's changed).
   is retired internally. It's kept only as the historical source of two self-inflicted bugs
   documented in `CLAUDE.md` (a 200k-face decode cap, and inconsistent mesh winding) —
   not as a build foundation for anything current.
+- **Fused attention on Apple Silicon:** [Apple MLX](https://github.com/ml-explore/mlx) (MIT).
+  Optional and off by default, selected with `--sparse-attn-backend mlx` or the *Attention
+  backend* control in the web UI. PyTorch's MPS backend has no fused attention kernel and
+  Pedro's Metal kernel supports head dimensions only through 64, while TRELLIS.2-4B uses
+  128 — so the stock path falls back to unfused attention, which was measured at **93.2% of
+  sampling time**. Routing it through MLX took a 1024-cascade Storm Ram run from 34.3
+  minutes to 14.3. Full method, numbers and caveats:
+  [`mlx-attention-2026-09-20.md`](mlx-attention-2026-09-20.md).
 - **Input advisor:** [`wkcn/TinyCLIP-ViT-8M-16-Text-3M-YFCC15M`](https://huggingface.co/wkcn/TinyCLIP-ViT-8M-16-Text-3M-YFCC15M)
   (MIT). It runs locally after image selection and provides only a conservative warning
   about flat/vector-style inputs. It does not modify the image, block generation, or form
@@ -85,6 +93,30 @@ just weights** — see the licensing note below.
   (C++/ggml Metal port). A real upstream `purego` ARM64 bug was found and reported while
   testing it (mis-packed stack-spilled arguments on Apple's tight per-type ABI packing —
   matches `ebitengine/purego#352`/`#353`, fixed upstream in v0.10.0+).
+
+## Speed
+
+A 1024 run is dominated by attention. The *Attention backend* control decides how that work
+is done, on the same input, seed and parameters:
+
+| Attention backend | Storm Ram, 1024 cascade | Setup needed |
+|---|---|---|
+| `sdpa` (default) | 34.3 min | none |
+| `mlx` (fp32) | 22.4 min | mlx in the backend venv + the patch |
+| `mlx-fp16` | **14.3 min** | same |
+
+Both MLX options need one-time setup, and the Generate page's Setup card reports whether
+they are available and names whatever is missing:
+
+```
+uv pip install --python vendor/trellis-space-mac/.venv/bin/python mlx
+python scripts/patch_trellis_mlx_attention.py
+```
+
+Two honest qualifications. Run time varies enormously with the input image, so this is one
+worked example and not a promise. And fp16 computes attention at half precision: both
+settings were judged acceptable by eye on this asset, but if you are chasing fine detail,
+compare against fp32 before trusting it.
 
 ## Known shortcomings
 

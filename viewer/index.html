@@ -386,6 +386,7 @@
         <li>Mac/Metal port foundation: <a href="https://github.com/pedronaugusto/trellis2-apple">pedronaugusto/trellis2-apple</a>, plus Pedro Naugusto's <code>mtlbvh</code>, <code>mtldiffrast</code>, and <code>mtlgemm</code> Metal kernel libraries.</li>
         <li>Upstream model: Microsoft <a href="https://huggingface.co/microsoft/TRELLIS.2-4B">TRELLIS.2-4B</a> (MIT license; the DINOv3 image encoder has its own separate license).</li>
         <li>Input advisor: <a href="https://huggingface.co/wkcn/TinyCLIP-ViT-8M-16-Text-3M-YFCC15M">TinyCLIP ViT-8M/16</a> (MIT, advisory only; it never blocks generation).</li>
+        <li>Fused attention on Apple Silicon: <a href="https://github.com/ml-explore/mlx">Apple MLX</a> (MIT). Optional, off by default — pick it under <em>Attention backend</em>. PyTorch's MPS backend has no fused attention kernel and the Metal kernel above supports head dimensions only through 64, while TRELLIS.2-4B uses 128, so the stock path falls back to unfused attention that dominates sampling. Routing it through MLX cut a 1024-cascade run from 34.3 to 14.3 minutes. See <code>docs/mlx-attention-2026-09-20.md</code>.</li>
         <li>The original Mac port (<a href="https://github.com/shivampkumar/trellis-mac">shivampkumar/trellis-mac</a>) is retired internally — kept only as the historical source of two bugs documented in <code>CLAUDE.md</code>, not as a build foundation.</li>
       </ul>
       <h3>Stable Fast 3D</h3>
@@ -405,6 +406,15 @@
     </div>
 
     <div class="generate-card">
+      <h2>Speed</h2>
+      <p>A 1024 run is dominated by attention, which was measured at <strong>93.2% of sampling time</strong>. The <em>Attention backend</em> control decides how that work is done:</p>
+      <ul>
+        <li><strong>sdpa</strong> — the stock PyTorch MPS path. No extra setup. Storm Ram at 1024 cascade: <strong>34.3 min</strong>.</li>
+        <li><strong>mlx fp32</strong> — MLX's fused Metal kernel, same precision as stock. <strong>22.4 min</strong> on the same input and seed.</li>
+        <li><strong>mlx fp16</strong> — the fused kernel at half precision. <strong>14.3 min</strong>, 2.39x faster than stock.</li>
+      </ul>
+      <p>Both MLX options need one-time setup; the Setup card says whether they are available and what is missing. Run time varies a lot with the input image, so treat these as one worked example rather than a promise. fp16 computes attention at half precision: both were judged acceptable by eye on the Storm Ram, but if you are chasing fine detail, compare against fp32 before trusting it.</p>
+
       <h2>Known shortcomings</h2>
       <p>As of 2026-08-19.</p>
       <ul>
