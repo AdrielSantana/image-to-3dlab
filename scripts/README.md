@@ -178,6 +178,9 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `patch_trellis_multiview.py` | Teach the vendored TRELLIS.2 to condition on several views of one subject. |
 | `patch_trellis_enable_cleanup.py` | Re-enable the decode-time mesh cleanup that `mps_compat.py` turns into no-ops. |
 | `patch_trellis_dump_decode.py` | Teach `generate.py` to cache the decoded mesh, so baking can be re-run without sampling. |
+| `patch_pixal3d_rembg.py` | Stop Pixal3D loading BRIA RMBG-2.0, before it ever downloads it. |
+| `patch_pixal3d_model_subset.py` | Let Pixal3D load only the checkpoints a run actually needs. |
+| `patch_pixal3d_low_vram.py` | Make Pixal3D's low-VRAM mode reachable, via `PIXAL3D_LOW_VRAM=1`. |
 | `patch_trellis_no_bria.py` | Disable TRELLIS' configured background model for license-controlled runs. |
 | `patch_trellis_mlx_attention.py` | Add an `mlx` sparse-attention backend to a vendored TRELLIS.2 checkout. |
 | `render_glb_comparison.py` | Render several GLBs from one fixed camera and lay them out as a comparison image. |
