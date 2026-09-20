@@ -408,6 +408,45 @@ def test_backend_registry_lists_every_backend():
         assert spec.stages, f"{spec.id} must declare at least one stage"
 
 
+def test_every_stage_event_a_backend_emits_names_a_declared_stage(tmp_path):
+    """`phase` is the row key the browser looks up, so it must be a declared stage id.
+
+    Pixal3D shipped emitting `{"phase": "stage", "stage": "shape"}`, which left the panel
+    frozen on "Choose an image to begin" while the job ran to completion.
+    """
+    lines = {
+        "pixal3d": [
+            "[1/6] Pixal3D multiview: load views",
+            "[2/6] SS proj conditioning + flow",
+            "[3/6] shape SLAT flow (LR 512 -> HR 1024 cascade)",
+            "[4/6] FlexiDualGrid shape decode -> mesh @res1024",
+            "[5/6] texture SLAT flow (HR 1024, NAF@1024) + PBR decode",
+            "[6/6] write out.glb",
+        ],
+    }
+    for backend_id, sample in lines.items():
+        spec = api.BACKENDS[backend_id]
+        job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb",
+                      spec.validate_settings({}), backend_id)
+        for line in sample:
+            spec.parse_line(job, line)
+        emitted = [event["phase"] for event in job.events]
+        assert emitted, f"{backend_id} emitted no stage events"
+        unknown = sorted(set(emitted) - set(spec.stages))
+        assert not unknown, f"{backend_id} emitted phases that are not stages: {unknown}"
+
+
+def test_pixal3d_progress_climbs_with_the_banners(tmp_path):
+    spec = api.BACKENDS["pixal3d"]
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb",
+                  spec.validate_settings({}), "pixal3d")
+    for line in ("[2/6] SS", "[4/6] decode", "[6/6] write"):
+        spec.parse_line(job, line)
+    percentages = [event["overall_pct"] for event in job.events]
+    assert percentages == sorted(percentages)
+    assert percentages[-1] <= 99
+
+
 def test_pixal3d_settings_reject_an_unavailable_resolution():
     """The single-view weight family has no res-512 texture flow."""
     with pytest.raises(ValueError):
