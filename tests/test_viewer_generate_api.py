@@ -400,10 +400,33 @@ def test_job_status_payload_handles_no_events_yet(tmp_path):
 
 # --- backend registry ------------------------------------------------------------------
 
-def test_backend_registry_has_all_four():
-    assert set(api.BACKENDS) == {"trellis", "sf3d", "hunyuan-mlx", "hunyuan-mlx-xiong"}
+def test_backend_registry_lists_every_backend():
+    assert set(api.BACKENDS) == {
+        "trellis", "sf3d", "hunyuan-mlx", "hunyuan-mlx-xiong", "pixal3d",
+    }
     for spec in api.BACKENDS.values():
         assert spec.stages, f"{spec.id} must declare at least one stage"
+
+
+def test_pixal3d_settings_reject_an_unavailable_resolution():
+    """The single-view weight family has no res-512 texture flow."""
+    with pytest.raises(ValueError):
+        api._pixal3d_validate_settings({"res": 512})
+    assert api._pixal3d_validate_settings({"res": 1536})["res"] == 1536
+
+
+def test_pixal3d_settings_reject_a_fov_given_in_degrees():
+    """The gauge camera is radians; 20 would be a plausible-looking disaster."""
+    with pytest.raises(ValueError):
+        api._pixal3d_validate_settings({"fov": 20})
+
+
+def test_pixal3d_build_args_carry_the_camera(tmp_path):
+    job = api.Job("0" * 32, tmp_path, tmp_path / "input.png", tmp_path / "model.glb",
+                  api._pixal3d_validate_settings({}), "pixal3d")
+    args = api._pixal3d_build_args(job)
+    assert args[:2] == [str(tmp_path / "input.png"), str(tmp_path / "model.glb")]
+    assert "--fov" in args
 
 
 def test_sf3d_build_args_matches_pipeline_cli(tmp_path):

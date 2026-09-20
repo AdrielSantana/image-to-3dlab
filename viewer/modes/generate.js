@@ -240,6 +240,11 @@ g('generate-submit').onclick = async () => {
       paint_steps: Number(g('hunyuan-paint-steps').value),
       paint_tex: Number(g('hunyuan-paint-tex').value),
     }),
+    pixal3d: () => ({
+      res: Number(g('pixal3d-res').value),
+      seed: Number(g('pixal3d-seed').value),
+      fov: Number(g('pixal3d-fov').value),
+    }),
     'hunyuan-mlx-xiong': () => ({
       model: g('xiong-model').value,
       octree_resolution: Number(g('xiong-octree').value),
