@@ -125,6 +125,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   six of them needed neither library.
 
 ### Added
+- Document a second, independent colour effect in TRELLIS.2: at `1024_cascade` an asset can
+  come out markedly desaturated compared with the same asset at `512`, and the effect
+  follows the pipeline type rather than the seed (two seeds per setting, clean split). Each
+  pipeline type selects a *different texture flow model*, so changing resolution changes
+  which model paints the asset rather than only how finely it samples. Recorded in
+  `docs/trellis2-flat-illustration-colour-drift.md` with a four-panel comparison.
+
+### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long
