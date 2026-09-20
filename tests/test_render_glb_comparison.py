@@ -92,3 +92,14 @@ def test_blender_code_does_not_pin_a_single_render_engine():
 def test_blender_code_starts_from_an_empty_scene():
     # Otherwise a user's default cube, camera and light end up in the render.
     assert "read_factory_settings(use_empty=True)" in mod.blender_render_code()
+
+
+def test_blender_code_can_strip_materials_for_a_shape_comparison():
+    """Texture and geometry fail in different ways.
+
+    A broken UV map makes a sound mesh look ruined, so when the question is about shape,
+    the paint has to come off or the comparison answers the wrong question.
+    """
+    code = mod.blender_render_code()
+    assert "clay" in code
+    assert "materials.clear()" in code

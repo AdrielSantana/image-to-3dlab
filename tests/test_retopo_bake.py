@@ -28,7 +28,7 @@ retopo = _load()
 
 
 def test_defaults_are_sensible():
-    source, dest, faces, size, angle, voxel = retopo.parse_args(["--", "a.glb", "b.glb"])
+    source, dest, faces, size, angle, voxel, *_surface = retopo.parse_args(["--", "a.glb", "b.glb"])
     assert (source, dest) == ("a.glb", "b.glb")
     assert faces == 20000
     assert size == 2048
@@ -37,7 +37,7 @@ def test_defaults_are_sensible():
 
 
 def test_explicit_arguments_are_honoured():
-    _, _, faces, size, angle, voxel = retopo.parse_args(
+    _, _, faces, size, angle, voxel, *_surface = retopo.parse_args(
         ["--", "a.glb", "b.glb", "8000", "4096", "60", "0.003"]
     )
     assert faces == 8000
@@ -94,3 +94,53 @@ def test_ray_distance_uses_the_largest_dimension():
 def test_ray_distance_is_a_small_fraction_not_the_whole_body():
     """Reaching across the body would sample the far side's colour onto the near side."""
     assert retopo.ray_distance((1.0, 1.0, 1.0)) < 0.1
+
+
+def test_quadriflow_reduced_detects_a_silent_refusal():
+    """QuadriFlow declines with a Blender *warning*, not an exception.
+
+    When its preconditions are unmet the operator leaves the mesh untouched and the script
+    carries on. On the Snag that shipped 1.3M triangles from a request for 20,000. An
+    unchanged count is the only reliable signal that it did not run.
+    """
+    assert retopo.quadriflow_reduced(662_328, 20_112, 20_000) is True
+    assert retopo.quadriflow_reduced(662_328, 662_328, 20_000) is False
+
+
+def test_quadriflow_reduced_rejects_a_result_nowhere_near_the_target():
+    # Changed, but still vastly larger than asked for: not a retopology.
+    assert retopo.quadriflow_reduced(662_328, 400_000, 20_000) is False
+
+
+def test_quadriflow_reduced_tolerates_approximation():
+    # QuadriFlow approximates the target rather than hitting it, so nearby counts pass.
+    assert retopo.quadriflow_reduced(600_000, 24_000, 20_000) is True
+    assert retopo.quadriflow_reduced(600_000, 59_000, 20_000) is True
+
+
+def test_surface_knobs_have_neutral_organic_defaults():
+    """Only base colour is baked, so these stand in for a metallic-roughness map.
+
+    Defaults are a neutral organic surface rather than Blender's metallic 0 / roughness
+    0.5, which reads as dead plastic under any light.
+    """
+    *_, metallic, roughness, ior = retopo.parse_args(["--", "a.glb", "b.glb"])
+    assert (metallic, roughness, ior) == (0.25, 0.65, 1.45)
+
+
+def test_surface_knobs_are_tunable_per_asset():
+    # Wet bark and dry stone want different answers, so these are arguments, not constants.
+    *_, metallic, roughness, ior = retopo.parse_args(
+        ["--", "a.glb", "b.glb", "20000", "2048", "89", "0.004", "0.648", "0.686", "1.4"]
+    )
+    assert (metallic, roughness, ior) == (0.648, 0.686, 1.4)
+
+
+@pytest.mark.parametrize("bad", [
+    ["--", "a.glb", "b.glb", "20000", "2048", "89", "0.004", "1.5"],
+    ["--", "a.glb", "b.glb", "20000", "2048", "89", "0.004", "0.5", "-0.2"],
+    ["--", "a.glb", "b.glb", "20000", "2048", "89", "0.004", "0.5", "0.5", "9.0"],
+])
+def test_surface_knobs_reject_impossible_values(bad):
+    with pytest.raises(SystemExit):
+        retopo.parse_args(bad)

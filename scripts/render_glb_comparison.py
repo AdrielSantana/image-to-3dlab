@@ -85,14 +85,28 @@ import bpy
 from mathutils import Vector
 
 argv = sys.argv[sys.argv.index("--") + 1:]
-src, dst, azimuth, elevation, panel_w, panel_h = (
-    argv[0], argv[1], float(argv[2]), float(argv[3]), int(argv[4]), int(argv[5]))
+src, dst, azimuth, elevation, panel_w, panel_h, clay = (
+    argv[0], argv[1], float(argv[2]), float(argv[3]), int(argv[4]), int(argv[5]),
+    argv[6] == "1")
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=src)
 meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
 if not meshes:
     raise SystemExit("no mesh in " + src)
+
+if clay:
+    # Strip every material for a neutral clay render. Texture and geometry fail in
+    # different ways, and a broken UV map makes a sound mesh look ruined -- so when the
+    # question is about shape, the paint has to come off.
+    neutral = bpy.data.materials.new("clay")
+    neutral.use_nodes = True
+    bsdf = neutral.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.62, 0.62, 0.60, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.62
+    for o in meshes:
+        o.data.materials.clear()
+        o.data.materials.append(neutral)
 
 lo = [float("inf")] * 3
 hi = [float("-inf")] * 3
@@ -187,6 +201,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--elevation", type=float, default=14.0)
     parser.add_argument("--width", type=int, default=1800, help="final image width")
     parser.add_argument("--quality", type=int, default=76)
+    parser.add_argument("--clay", action="store_true",
+                        help="strip materials and render neutral clay, so the comparison "
+                             "is about shape rather than paint")
     parser.add_argument("--blender", type=Path, default=BLENDER_DEFAULT)
     args = parser.parse_args(argv)
 
@@ -212,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
             result = subprocess.run(
                 [str(blender), "--background", "--python", str(script), "--",
                  str(path), str(png), str(args.azimuth), str(args.elevation),
-                 str(PANEL_W), str(PANEL_H)],
+                 str(PANEL_W), str(PANEL_H), "1" if args.clay else "0"],
                 capture_output=True, text=True, check=False,
             )
             if not png.is_file():

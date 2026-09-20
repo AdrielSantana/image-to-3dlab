@@ -36,7 +36,20 @@ import math
 import sys
 
 
-def parse_args(argv: list[str]) -> tuple[str, str, int, int, float, float]:
+def quadriflow_reduced(before: int, after: int, target_faces: int) -> bool:
+    """Did QuadriFlow actually retopologise, or silently decline?
+
+    It refuses with a Blender *warning* rather than an exception when its preconditions
+    are not met, leaving the mesh untouched. Comparing counts is the only reliable signal.
+    Generous tolerance: QuadriFlow approximates the target rather than hitting it exactly,
+    so anything within 3x of what was asked for counts as having run.
+    """
+    if after == before:
+        return False
+    return after <= max(target_faces * 3, 1)
+
+
+def parse_args(argv: list[str]) -> tuple[str, str, int, int, float, float, float, float, float]:
     """Arguments after Blender's ``--`` separator. Kept free of ``bpy`` so it is testable."""
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
@@ -45,12 +58,26 @@ def parse_args(argv: list[str]) -> tuple[str, str, int, int, float, float]:
     if len(argv) < 2:
         raise SystemExit(
             "usage: blender --background --python scripts/blender_retopo_bake.py "
-            "-- IN.glb OUT.glb [target_faces] [atlas_size] [angle_degrees] [voxel_fraction]"
+            "-- IN.glb OUT.glb [target_faces] [atlas_size] [angle_degrees] "
+            "[voxel_fraction] [metallic] [roughness] [ior]"
         )
     target_faces = int(argv[2]) if len(argv) > 2 else 20000
     size = int(argv[3]) if len(argv) > 3 else 2048
     angle_degrees = float(argv[4]) if len(argv) > 4 else 89.0
     voxel_fraction = float(argv[5]) if len(argv) > 5 else 0.004
+    # Surface response. Only base colour is baked, so the source's metallic-roughness map
+    # is not carried over and these stand in for it. The right values depend on what the
+    # source artwork is -- wet bark, dry stone, painted metal -- so they are tuned per
+    # asset rather than fixed. The defaults are a neutral organic surface: a little sheen,
+    # fairly rough, not plastic and not chrome.
+    metallic = float(argv[6]) if len(argv) > 6 else 0.25
+    roughness = float(argv[7]) if len(argv) > 7 else 0.65
+    ior = float(argv[8]) if len(argv) > 8 else 1.45
+    for name, value in (("metallic", metallic), ("roughness", roughness)):
+        if not 0.0 <= value <= 1.0:
+            raise SystemExit(f"{name} must be within 0..1, got {value}")
+    if not 1.0 <= ior <= 3.0:
+        raise SystemExit(f"ior must be within 1.0..3.0, got {ior}")
     if size not in (1024, 2048, 4096):
         raise SystemExit(f"atlas size must be 1024, 2048 or 4096, got {size}")
     if not 1000 <= target_faces <= 200000:
@@ -65,7 +92,8 @@ def parse_args(argv: list[str]) -> tuple[str, str, int, int, float, float]:
             f"voxel size is a fraction of the asset's largest dimension; too coarse melts "
             f"the subject, too fine runs out of memory. got {voxel_fraction}"
         )
-    return argv[0], argv[1], target_faces, size, math.radians(angle_degrees), voxel_fraction
+    return (argv[0], argv[1], target_faces, size, math.radians(angle_degrees),
+            voxel_fraction, metallic, roughness, ior)
 
 
 def base_colour_image(material):
@@ -99,9 +127,8 @@ def ray_distance(dimensions, fraction: float = 0.02) -> float:
 def main() -> int:
     import bpy
 
-    source, destination, target_faces, size, angle_limit, voxel_fraction = parse_args(
-        list(sys.argv)
-    )
+    (source, destination, target_faces, size, angle_limit, voxel_fraction,
+     metallic, roughness, ior) = parse_args(list(sys.argv))
 
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -149,6 +176,17 @@ def main() -> int:
     bpy.ops.object.voxel_remesh()
     print(f"RETOPO:: manifold faces={len(retopo.data.polygons):,}")
 
+    # Recalculate normals AFTER the voxel remesh, not only before it. QuadriFlow requires
+    # a manifold mesh whose face normals point consistently, and it refuses with a
+    # *warning* rather than an exception when they do not -- so the try/except below never
+    # fires, the operator silently does nothing, and what ships is the voxel mesh. On the
+    # Snag that meant 1.3M triangles where 20,000 were asked for.
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    before = len(retopo.data.polygons)
     print(f"RETOPO:: quadriflow to {target_faces:,} faces (slow)...")
     try:
         bpy.ops.object.quadriflow_remesh(
@@ -157,8 +195,35 @@ def main() -> int:
             use_mesh_symmetry=False,
         )
     except RuntimeError as exc:
-        print(f"RETOPO:: quadriflow failed ({exc}); keeping the voxel mesh")
-    print(f"RETOPO:: out faces={len(retopo.data.polygons):,}")
+        print(f"RETOPO:: quadriflow raised ({exc})")
+    after = len(retopo.data.polygons)
+    if not quadriflow_reduced(before, after, target_faces):
+        # QuadriFlow refuses every mesh this pipeline produces. Measured 2026-09-20: it is
+        # not manifoldness (zero non-manifold edges and vertices after the voxel remesh),
+        # not component count (refused on a 5-component mesh), and not size (refused at
+        # 58k faces); it accepts a primitive sphere and rejects these. Its error message
+        # names manifoldness regardless, so it is not to be trusted as a diagnosis.
+        #
+        # Collapse decimation is the fallback. It loses the quad topology, which matters
+        # for deformation but not for a display asset carrying a normal map. What makes it
+        # work here is the ordering: decimating the *raw* mesh is what shattered thin
+        # geometry, because that mesh has hundreds of thousands of non-manifold edges.
+        # The voxel remesh above produces a watertight surface first, and decimating that
+        # preserves the silhouette.
+        print(f"RETOPO:: quadriflow declined ({before:,} unchanged); decimating instead")
+        modifier = retopo.modifiers.new("retopo_decimate", "DECIMATE")
+        modifier.decimate_type = "COLLAPSE"
+        modifier.ratio = min(1.0, target_faces / max(before, 1))
+        bpy.ops.object.modifier_apply(modifier=modifier.name)
+        after = len(retopo.data.polygons)
+
+    print(f"RETOPO:: out faces={after:,}")
+    if after >= before:
+        raise SystemExit(
+            f"RETOPO:: nothing reduced the mesh ({before:,} -> {after:,}, asked for "
+            f"{target_faces:,}). Writing this would be worse than the input, so it fails "
+            "rather than producing a file that looks retopologised and is not."
+        )
 
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -225,6 +290,16 @@ def main() -> int:
     doutput = next(n for n in dnodes if n.type == "OUTPUT_MATERIAL")
     dlinks.new(dst_tex.outputs["Color"], principled.inputs["Base Color"])
     dlinks.new(principled.outputs["BSDF"], doutput.inputs["Surface"])
+
+    # Only base colour is baked, so the source's metallic-roughness *map* does not come
+    # across and the material would otherwise ship mathematically flat -- metallic 0,
+    # roughness 0.5, no map -- which reads as dead plastic under any light. Flat factors
+    # are a poor substitute for the map but a large improvement on nothing, and the right
+    # values are asset-specific, so they are a knob rather than a constant.
+    principled.inputs["Metallic"].default_value = metallic
+    principled.inputs["Roughness"].default_value = roughness
+    if "IOR" in principled.inputs:
+        principled.inputs["IOR"].default_value = ior
 
     bpy.data.objects.remove(original, do_unlink=True)
     bpy.ops.object.select_all(action="DESELECT")

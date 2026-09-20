@@ -27,6 +27,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written, and nothing in the pipeline depends on them.
 
 ### Fixed
+- **`blender_retopo_bake.py` silently shipped meshes it had not retopologised.** Blender's
+  QuadriFlow declines with a *warning* rather than an exception when it will not run, so the
+  `try/except` never fired, the operator left the mesh untouched, and the script wrote the
+  intermediate voxel mesh while printing an "out faces" line as though it had worked. On one
+  asset that produced 1,324,656 triangles from a request for 20,000 -- 4.7x **larger** than
+  the input. It now verifies the face count actually moved, falls back to collapse
+  decimation, and fails loudly if nothing reduced the mesh.
+
+  QuadriFlow refuses every mesh this pipeline produces, and its error message is a red
+  herring. Ruled out by measurement: manifoldness (zero non-manifold edges and vertices
+  after the voxel remesh), inconsistent normals, component count (refused on a single
+  separated component), and size (refused at 58k faces). It accepts a primitive sphere.
+- Ignore `hunyuan_mlx/*/outputs/`. The paint stage writes its results beside its own code,
+  64 MB on the first run, into a repository deliberately cut to 8.5 MB.
+- Expose the reduced mesh's surface response as arguments to `blender_retopo_bake.py`
+  (`metallic`, `roughness`, `ior`). Only base colour is baked, so the source's
+  metallic-roughness *map* does not survive and the material would otherwise ship
+  mathematically flat, which reads as dead plastic under any light. The right values depend
+  on whether the artwork is wet bark, dry stone or painted metal, so they are tuned per
+  asset rather than fixed; the defaults are a neutral organic surface.
+- Add `--clay` to `scripts/render_glb_comparison.py`, which strips materials and renders
+  neutral grey. Texture and geometry fail in different ways, and a broken UV map makes a
+  sound mesh look ruined, so a shape comparison has to take the paint off.
+
+### Fixed
 - **Filter degenerate decode faces on the CPU instead of on Metal.** Boolean-mask indexing
   a multi-million-row tensor on MPS returned a garbage index -- observed as
   `index -1097849984 is out of bounds: 0, range 0 to 7419814` while dropping 426 bad faces

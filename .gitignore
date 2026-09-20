@@ -27,6 +27,10 @@ output/
 # weights are multi-GB and downloaded, not committed.
 /hunyuan_mlx/shape/weights/
 /hunyuan_mlx/paint/weights/
+# The paint stage writes its results next to its own code. 64 MB per run on the first
+# try, and a repository deliberately cut to 8.5 MB cannot absorb that.
+/hunyuan_mlx/paint/outputs/
+/hunyuan_mlx/shape/outputs/
 
 
 # Generated HyperFrames video content (caches, thumbnails, snapshots, audio assets)
