@@ -223,6 +223,7 @@ g('generate-submit').onclick = async () => {
       decimation_target: Number(g('generate-decimation').value),
       texture_size: Number(g('generate-texture').value),
       allow_rembg: g('generate-rembg').checked,
+      sparse_attn_backend: g('generate-attention').value,
     }),
     sf3d: () => ({
       texture_resolution: Number(g('sf3d-texture').value),
@@ -297,6 +298,25 @@ async function refreshSetup() {
       rows.push(repo.present
         ? '<div class="setup-check"><span class="ok">✓</span><span>' + repo.label + '</span><code>' + repo.human + ' on disk</code></div>'
         : '<div class="setup-check"><span class="warn">⚠</span><span>' + repo.label + '</span><code>not on disk — first use downloads</code></div>');
+    }
+    // The mlx attention backend is optional: generation works without it on the stock
+    // sdpa path. But offering it when the checkout is unpatched or mlx is missing would
+    // crash a run partway through, so the options are disabled rather than left to fail.
+    if (backendId === 'trellis') {
+      const mlx = s.mlx_attention || {};
+      const sel = g('generate-attention');
+      if (sel) {
+        for (const opt of sel.querySelectorAll('option')) {
+          if (opt.value.startsWith('mlx')) opt.disabled = !mlx.ready;
+        }
+        if (!mlx.ready && sel.value.startsWith('mlx')) sel.value = 'sdpa';
+      }
+      rows.push(mlx.ready
+        ? '<div class="setup-check"><span class="ok">✓</span><span>MLX fused attention</span><code>available — pick it under Attention backend</code></div>'
+        : '<div class="setup-check"><span class="warn">⚠</span><span>MLX fused attention</span><code>optional; stock sdpa still works</code></div>');
+      if (!mlx.ready && mlx.hint) {
+        rows.push('<div class="setup-check"><span class="hint">→</span><span class="hint">' + mlx.hint + '</span></div>');
+      }
     }
     el.innerHTML = rows.join('');
     // Only TRELLIS has an automated bootstrap script (scripts/bootstrap_trellis_space_macos.py);

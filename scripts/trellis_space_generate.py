@@ -55,6 +55,8 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 DEFAULT_VENDOR = REPO / "vendor" / "trellis-space-mac"
 
 # --- The upstream Gradio demo defaults, verbatim (app.py gr.Slider ``value=``). ---
@@ -186,6 +188,27 @@ def precap_ratio(num_faces: int, pre_cap: int) -> float:
     return 1.0 - (pre_cap / num_faces)
 
 
+def resolved_attention_dtype(sparse_attn_backend: str, env_value: str | None) -> str | None:
+    """The attention precision a run actually used, for the manifest.
+
+    Precision travels by environment variable rather than by flag, so without this the
+    provenance record cannot distinguish two runs that computed different things. It is
+    meaningless outside the mlx backend, where it is None rather than a misleading default.
+    """
+    if sparse_attn_backend != "mlx":
+        return None
+    return (env_value or "fp32").lower()
+
+
+def release_mlx_memory() -> dict[str, int]:
+    """Release MLX's reserved Metal memory, or do nothing if MLX is not in use."""
+    try:
+        from image_to_3dlab.mlx_attention import release_memory
+    except ImportError:
+        return {}
+    return release_memory()
+
+
 def build_manifest(
     *,
     image: str,
@@ -197,6 +220,7 @@ def build_manifest(
     artifacts: dict[str, Any],
     load_rembg: bool,
     sparse_attn_backend: str,
+    sparse_attn_dtype: str | None = None,
 ) -> dict[str, Any]:
     """Assemble the run manifest. Pure: all inputs in, one dict out (testable without torch)."""
     return {
@@ -208,6 +232,7 @@ def build_manifest(
         "device": "mps",
         "attn_backend": "sdpa",
         "sparse_attn_backend": sparse_attn_backend,
+        "sparse_attn_dtype": sparse_attn_dtype,
         "load_rembg": load_rembg,
         "seed": seed,
         "pipeline_type": pipeline_type,
@@ -352,8 +377,15 @@ def filter_degenerate_faces(mesh) -> int:
     mask = valid_face_mask(mesh.faces.cpu().numpy(), num_vertices)
     removed = int((~mask).sum())
     if removed:
-        keep = torch.as_tensor(mask, device=mesh.faces.device)
-        mesh.faces = mesh.faces[keep]
+        # Gather on CPU, not on Metal. Boolean-mask indexing a multi-million-row tensor on
+        # MPS produced a garbage index -- observed 2026-09-20 as
+        # "index -1097849984 is out of bounds: 0, range 0 to 7419814" on a 7.4M-face Storm
+        # Ram decode. Metal work is queued, so the fault surfaced later at the first
+        # synchronisation (moving vertices to CPU) and killed a run whose sampling had
+        # already succeeded. The gather is cheap at this size and the result is identical.
+        keep = torch.as_tensor(mask)
+        device = mesh.faces.device
+        mesh.faces = mesh.faces.cpu()[keep].to(device)
     return removed
 
 
@@ -682,6 +714,9 @@ def generate_from_latents(
         artifacts=artifacts,
         load_rembg=False,
         sparse_attn_backend=sparse_attn_backend,
+        sparse_attn_dtype=resolved_attention_dtype(
+            sparse_attn_backend, os.environ.get("I2L_MLX_ATTN_DTYPE")
+        ),
     )
     manifest["resumed_from_latents"] = str(latents_path)
     manifest_path = output_path.with_suffix(".json")
@@ -761,6 +796,27 @@ def generate(
     run_seconds = time.time() - run_started
     print(f"pipeline.run() sampling (stages 1-3) done in {run_seconds:.1f}s", flush=True)
 
+    # Hand MLX's reserved Metal memory back before decode.
+    #
+    # MLX keeps its own buffer cache, separate from torch's, in the same process. It stays
+    # claimed after sampling ends, while decode -- the most memory-hungry stage here -- then
+    # runs without that headroom. Three 1024 runs have failed at decode with MLX resident,
+    # each with a different symptom (a garbage negative index, an out-of-range hashmap
+    # lookup, a sparse tensor size mismatch); varied corruption-shaped failures fit memory
+    # pressure better than they fit one logic bug. Re-decoding the same latents in a fresh
+    # process has succeeded every time.
+    #
+    # This is a hypothesis under test, not a proven fix, which is why it reports what it
+    # released rather than doing it silently.
+    released = release_mlx_memory()
+    if released:
+        print(
+            f"released MLX cache before decode: {released['released'] / 1e9:.2f} GB "
+            f"(peak during sampling {released['peak'] / 1e9:.2f} GB, "
+            f"still active {released['active'] / 1e9:.2f} GB)",
+            flush=True,
+        )
+
     shape_slat, tex_slat, res = latents
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -827,6 +883,9 @@ def generate(
         artifacts=artifacts,
         load_rembg=load_rembg,
         sparse_attn_backend=sparse_attn_backend,
+        sparse_attn_dtype=resolved_attention_dtype(
+            sparse_attn_backend, os.environ.get("I2L_MLX_ATTN_DTYPE")
+        ),
     )
     manifest_path = output_path.with_suffix(".json")
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -899,7 +958,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="final face/vertex budget the mesh is simplified DOWN to "
                              "(our app.py demo default 300000; the live HF demo may use 3000000)")
     parser.add_argument("--texture-size", type=int, default=DEMO_PARAMS["texture_size"])
-    parser.add_argument("--sparse-attn-backend", default="sdpa", choices=("sdpa", "metal_flash"))
+    parser.add_argument("--sparse-attn-backend", default="sdpa",
+                        choices=("sdpa", "metal_flash", "mlx"),
+                        help="sdpa is the default unfused MPS path; mlx routes attention "
+                             "through MLX's fused Metal kernel (needs "
+                             "scripts/patch_trellis_mlx_attention.py applied and mlx "
+                             "installed in the vendor venv)")
     parser.add_argument("--allow-rembg", action="store_true",
                         help="permit loading the background remover for a non-alpha input")
     parser.add_argument("--allow-uncut", action="store_true",

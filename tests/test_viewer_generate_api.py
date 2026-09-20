@@ -6,6 +6,7 @@ import builtins
 import importlib.util
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,9 @@ def test_shape_slat_passes_are_disambiguated(tmp_path):
     {"texture_size": 512},
     {"decimation_target": 0},
     {"allow_rembg": "yes"},
+    {"sparse_attn_backend": "metal_flash"},
+    {"sparse_attn_backend": "fp16"},
+    {"sparse_attn_backend": "sdpa-fp16"},
 ])
 def test_validate_settings_rejects_invalid_values(payload):
     with pytest.raises(ValueError):
@@ -53,6 +57,121 @@ def test_validate_settings_applies_demo_defaults():
     settings = api.validate_settings({})
     assert settings == api.DEFAULT_SETTINGS
     assert settings is not api.DEFAULT_SETTINGS
+
+
+def test_default_attention_backend_is_the_stock_one():
+    """mlx must be opt-in.
+
+    It needs the vendored checkout patched and mlx installed in its venv, neither of which
+    a fresh clone has. A default that fails on a clean machine is worse than a slower one.
+    """
+    assert api.DEFAULT_SETTINGS["sparse_attn_backend"] == "sdpa"
+    assert api.validate_settings({})["sparse_attn_backend"] == "sdpa"
+
+
+def test_mlx_attention_backend_is_accepted_and_reaches_the_wrapper():
+    settings = api.validate_settings({"sparse_attn_backend": "mlx"})
+    assert settings["sparse_attn_backend"] == "mlx"
+
+    job = types.SimpleNamespace(
+        image_path=Path("in.png"),
+        output_path=Path("out.glb"),
+        settings=settings,
+        debug=True,
+    )
+    args = api._trellis_build_args(job)
+    assert "--sparse-attn-backend" in args
+    assert args[args.index("--sparse-attn-backend") + 1] == "mlx"
+
+
+@pytest.mark.parametrize("choice,flag,dtype", [
+    ("sdpa", "sdpa", None),
+    ("mlx", "mlx", "fp32"),
+    ("mlx-fp16", "mlx", "fp16"),
+])
+def test_attention_choice_splits_into_flag_and_precision(choice, flag, dtype):
+    cli, env = api.attention_backend_spec(choice)
+    assert cli == flag
+    assert env.get("I2L_MLX_ATTN_DTYPE") == dtype
+
+
+def test_mlx_precision_is_pinned_explicitly_not_left_to_the_environment():
+    """Selecting mlx must set fp32 rather than inherit whatever the shell had.
+
+    The precision changes what the run computes, so leaving it to an exported variable
+    makes two identical-looking jobs produce different output.
+    """
+    assert "I2L_MLX_ATTN_DTYPE" in api.BACKEND_ENV_KEYS
+    _, env = api.attention_backend_spec("mlx")
+    assert env["I2L_MLX_ATTN_DTYPE"] == "fp32"
+
+
+def test_fp16_choice_still_passes_mlx_to_the_wrapper():
+    settings = api.validate_settings({"sparse_attn_backend": "mlx-fp16"})
+    job = types.SimpleNamespace(
+        image_path=Path("in.png"), output_path=Path("out.glb"),
+        settings=settings, debug=True,
+    )
+    args = api._trellis_build_args(job)
+    # The wrapper has no fp16 flag; precision travels by environment.
+    assert args[args.index("--sparse-attn-backend") + 1] == "mlx"
+    assert "mlx-fp16" not in args
+
+
+def _fake_backend(tmp_path, *, patched: bool, package: bool):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    dispatch = tmp_path / "full_attn.py"
+    dispatch.write_text(
+        "elif config.ATTN == 'mlx':\n    pass\n" if patched else "elif config.ATTN == 'sdpa':\n    pass\n"
+    )
+    if package:
+        (tmp_path / ".venv" / "lib" / "python3.11" / "site-packages" / "mlx").mkdir(parents=True)
+    return tmp_path, dispatch
+
+
+@pytest.mark.parametrize("patched,package,ready", [
+    (True, True, True),
+    (True, False, False),
+    (False, True, False),
+    (False, False, False),
+])
+def test_mlx_attention_status_needs_both_the_patch_and_the_package(tmp_path, patched, package, ready):
+    vendor, dispatch = _fake_backend(tmp_path, patched=patched, package=package)
+    status = api.mlx_attention_status(vendor=vendor, dispatch=dispatch)
+    assert status == {
+        "patched": patched, "package": package, "ready": ready,
+        "hint": status["hint"],
+    }
+    assert (status["hint"] is None) == ready
+
+
+def test_mlx_attention_status_hint_names_the_missing_step(tmp_path):
+    vendor, dispatch = _fake_backend(tmp_path, patched=False, package=True)
+    assert "patch_trellis_mlx_attention" in api.mlx_attention_status(vendor=vendor, dispatch=dispatch)["hint"]
+
+    vendor2, dispatch2 = _fake_backend(tmp_path / "b", patched=True, package=False)
+    assert "uv pip install" in api.mlx_attention_status(vendor=vendor2, dispatch=dispatch2)["hint"]
+
+
+def test_mlx_attention_status_survives_a_missing_checkout(tmp_path):
+    status = api.mlx_attention_status(vendor=tmp_path / "gone", dispatch=tmp_path / "gone" / "x.py")
+    assert status["ready"] is False
+    assert status["hint"]
+
+
+def test_unready_mlx_never_makes_the_machine_look_unready(monkeypatch):
+    """Generation works without mlx; the default sdpa path needs none of it.
+
+    Folding mlx readiness into the top-level `ready` flag would block the Generate button
+    over an optional accelerator.
+    """
+    monkeypatch.setattr(api, "mlx_attention_status",
+                        lambda *a, **k: {"patched": False, "package": False, "ready": False, "hint": "x"})
+    monkeypatch.setattr(api, "clean_port_build_present", lambda: True)
+    monkeypatch.setattr(api, "weights_on_disk", lambda *a, **k: {})
+    status = api.setup_status()
+    assert status["ready"] is True
+    assert status["mlx_attention"]["ready"] is False
 
 
 def test_overall_progress_is_stage_weighted():

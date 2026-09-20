@@ -138,6 +138,44 @@ def test_valid_face_mask_drops_out_of_range():
     assert list(mask) == [True, False, True, False]
 
 
+def test_filter_degenerate_faces_removes_bad_rows_and_keeps_device():
+    """The filter must drop out-of-range faces without relying on MPS mask indexing.
+
+    Indexing a large boolean mask on Metal returned a garbage index on 2026-09-20 and
+    killed a run after sampling had succeeded, so the gather now happens on CPU.
+    """
+    torch = pytest.importorskip("torch")
+
+    class _Mesh:
+        pass
+
+    mesh = _Mesh()
+    mesh.vertices = torch.zeros((5, 3))
+    mesh.faces = torch.tensor([[0, 1, 2], [1, 2, 3], [-1, 0, 1], [0, 1, 99]])
+
+    removed = gen.filter_degenerate_faces(mesh)
+
+    assert removed == 2
+    assert mesh.faces.tolist() == [[0, 1, 2], [1, 2, 3]]
+    assert mesh.faces.device == torch.device("cpu")
+
+
+def test_filter_degenerate_faces_is_a_noop_when_every_face_is_valid():
+    torch = pytest.importorskip("torch")
+
+    class _Mesh:
+        pass
+
+    mesh = _Mesh()
+    mesh.vertices = torch.zeros((4, 3))
+    original = torch.tensor([[0, 1, 2], [1, 2, 3]])
+    mesh.faces = original
+
+    assert gen.filter_degenerate_faces(mesh) == 0
+    # Untouched, not merely equal: no needless copy when there is nothing to drop.
+    assert mesh.faces is original
+
+
 def test_valid_face_mask_boundary_index_is_valid():
     # index num_vertices-1 is the last valid vertex
     assert list(gen.valid_face_mask([[0, 9, 9]], num_vertices=10)) == [True]
@@ -387,6 +425,43 @@ def test_build_manifest_shape():
     assert m["pipeline_type"] == "1024_cascade"
     assert m["params"]["decimation_target"] == 300000
     assert m["timings_seconds"]["total"] == 1.0
+
+
+@pytest.mark.parametrize("backend,env,expected", [
+    ("mlx", "fp16", "fp16"),
+    ("mlx", "FP16", "fp16"),
+    ("mlx", "fp32", "fp32"),
+    ("mlx", None, "fp32"),
+    ("sdpa", "fp16", None),
+    ("metal_flash", None, None),
+])
+def test_resolved_attention_dtype(backend, env, expected):
+    assert gen.resolved_attention_dtype(backend, env) == expected
+
+
+def test_manifest_records_the_attention_precision():
+    """Precision travels by environment, not by flag, so it must be recorded explicitly.
+
+    Without it two runs that computed different things produce identical manifests, and a
+    comparison made days later cannot be interpreted.
+    """
+    m = gen.build_manifest(
+        image="in.png", output="out.glb", params={}, pipeline_type="512", seed=1,
+        timings={}, artifacts={}, load_rembg=False, sparse_attn_backend="mlx",
+        sparse_attn_dtype=gen.resolved_attention_dtype("mlx", "fp16"),
+    )
+    assert m["sparse_attn_dtype"] == "fp16"
+
+
+def test_manifest_reports_no_precision_for_non_mlx_backends():
+    m = gen.build_manifest(
+        image="in.png", output="out.glb", params={}, pipeline_type="512", seed=1,
+        timings={}, artifacts={}, load_rembg=False, sparse_attn_backend="sdpa",
+        sparse_attn_dtype=gen.resolved_attention_dtype("sdpa", "fp16"),
+    )
+    # None, not "fp32": the stock path has no MLX precision to report, and a default here
+    # would be a plausible-looking lie in the provenance record.
+    assert m["sparse_attn_dtype"] is None
 
 
 # --- CPU pre-cap ratio (the MPS decode->GLB path: fast_simplification before Metal to_glb) ---

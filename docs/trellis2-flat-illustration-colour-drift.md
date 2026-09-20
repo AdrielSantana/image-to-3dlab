@@ -105,6 +105,65 @@ machine rather than in a fresh clone:
 - `output/trellis2_cutedog/yellow_duck/`
 - `output/trellis2_cutedog/style_control_512/`
 
+## A second, independent colour effect: the pipeline type, added 2026-09-20
+
+The drift above is about the *reference image*. This one is about the *setting*, and it
+shows up on a reference that has no flat-illustration problem at all.
+
+**At `1024_cascade` an asset can come out markedly desaturated compared to the same asset
+at `512`, and the effect follows the resolution rather than the seed.**
+
+![Four renders of one asset: two at 512 and two at 1024 cascade, each at a different seed.
+The 512 pair keep their green; the 1024 pair are bleached to cream and
+tan.](images/pipeline-type-colour-shift.jpg)
+
+| Run | Pipeline type | Seed | Colour |
+|---|---|---|---|
+| 1 | `512` | 77653 | green preserved |
+| 2 | `512` | 876370 | green preserved |
+| 3 | `1024_cascade` | 876372 | bleached |
+| 4 | `1024_cascade` | 7766892 | bleached |
+
+Two seeds per setting, and the split is clean. Seeds that differ by millions land on the
+same side as long as the pipeline type matches.
+
+### Why this is not surprising once you look
+
+TRELLIS.2 does not use one texture model at different resolutions. **Each pipeline type
+selects a different texture flow model**: `512` uses `tex_slat_flow_model_512`, while
+`1024_cascade` and `1536_cascade` use `tex_slat_flow_model_1024`. Changing the resolution
+therefore changes *which model paints the asset*, not merely how finely it is sampled.
+
+Sampler parameters were identical across all four runs — texture guidance 1.0, shape
+guidance 7.5, 12 steps, the same decimation target and texture size — so this is not a
+guidance effect.
+
+It is also not the attention backend. That was excluded separately, by holding the seed
+fixed and varying only the backend: see
+[`mlx-attention-2026-09-20.md`](mlx-attention-2026-09-20.md).
+
+### The trade this creates
+
+It is a genuine trade, not a defect to route around.
+
+- **`1024_cascade` gives visibly better geometry.** Individual leaf and petal shapes
+  separate cleanly, ear interiors carry real structure, fur reads as strands. The `512`
+  output is softer everywhere.
+- **`512` keeps the colour.**
+- **Face count is not the difference.** All four runs land near 285k faces, because
+  `decimation_target` caps them at 300k. The higher pipeline type redistributes detail; it
+  does not add polygons.
+
+So for an asset whose colour matters more than its silhouette, `512` may simply be the
+better setting, and it runs in roughly a fifth of the time.
+
+### What it implies for the pipeline
+
+If you want 1024's geometry *and* correct colour, the texture cannot come from TRELLIS's
+1024 material stage. That is an argument for separating the two concerns: take the geometry,
+retopologise it, and paint it with a different model. It is the same conclusion the
+low-poly work arrives at from the other direction.
+
 ## Guidance for users now
 
 For TRELLIS.2, avoid completely flat or vector-style reference images for now. Prefer a

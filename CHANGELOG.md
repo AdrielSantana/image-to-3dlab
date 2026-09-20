@@ -26,6 +26,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file reference files that are no longer in the repository**; they were accurate when
   written, and nothing in the pipeline depends on them.
 
+### Fixed
+- **Filter degenerate decode faces on the CPU instead of on Metal.** Boolean-mask indexing
+  a multi-million-row tensor on MPS returned a garbage index -- observed as
+  `index -1097849984 is out of bounds: 0, range 0 to 7419814` while dropping 426 bad faces
+  from a 7.4M-face decode. Metal work is queued, so the fault surfaced later at the first
+  synchronisation and killed a run whose sampling had already finished. The gather is cheap
+  at this size and the result is identical. The fault has not reproduced, so this is a
+  precaution against the most likely trigger rather than a confirmed fix.
+
+### Added
+- Add an `mlx` sparse-attention backend for TRELLIS.2 on Apple Silicon
+  (`scripts/patch_trellis_mlx_attention.py` plus `image_to_3dlab/mlx_attention.py`),
+  selected with `--sparse-attn-backend mlx`.
+
+  TRELLIS.2-4B has a head dimension of 128. PyTorch's MPS backend has no fused attention
+  kernel, and the vendored Metal kernel supports head dimensions only through 64, so the
+  model falls back to unfused SDPA. Measured at the real Stage-3 shape (9,801 tokens,
+  12 heads, head dim 128), **attention is 93.2% of sampling time**.
+
+  On a full 1024-cascade Storm Ram run against a recorded baseline with identical seed and
+  parameters, sampling went from **1760.7s to 963.6s (1.83x) at fp32**, and to **552.2s
+  (3.19x) at fp16**. Two incidental findings: fp16 on torch MPS SDPA is *slower* than fp32,
+  so half precision is not a lever on the old path; and the MLX-vs-torch fp32 difference is
+  ~1e-3 on unit-scale inputs, arising from MLX's arithmetic on Metal rather than from the
+  fused kernel.
+
+  The change is additive. The existing `sdpa` path is untouched and remains the default,
+  and the new backend defaults to fp32 so it changes speed without changing precision.
+  `I2L_MLX_ATTN_DTYPE=fp16` opts into the faster, lower-precision path.
+
+  Requires `mlx` in the vendor venv:
+  `uv pip install --python vendor/trellis-space-mac/.venv/bin/python mlx`.
+
+### Added
+- Expose the sparse-attention backend in the web UI's TRELLIS panel
+  (`sparse_attn_backend`, validated to `sdpa` or `mlx`, passed straight through to the
+  wrapper). It defaults to `sdpa` because `mlx` needs
+  `scripts/patch_trellis_mlx_attention.py` applied to the vendored checkout and mlx
+  installed in its venv, and a default that fails on a fresh clone is worse than one that
+  is merely slower.
+
+### Added
+- Offer attention precision as part of the web UI's backend choice: `sdpa`, `mlx`
+  (fp32) or `mlx-fp16`. Precision is a property of the fused MLX kernel, so it belongs
+  to the same control rather than a second one -- fp16 on the stock `sdpa` path is
+  measurably *slower* than fp32 and would be a meaningless combination to offer. The
+  chosen precision is pinned into the job's environment rather than inherited, so two
+  runs that look identical in the UI cannot compute different things.
+
+### Added
+- Surface the MLX attention backend in the browser: a readiness check
+  (`mlx_attention_status`) reports whether the vendored checkout carries the dispatch
+  branch and whether mlx is installed in its venv, the Setup card names whichever step is
+  missing, and the backend's options are disabled until both are satisfied rather than
+  left to crash a run partway through. Readiness is advisory: the default `sdpa` path
+  needs none of it, so an unready MLX never blocks generation.
+- Document the attention backends in the in-app Credits & Info tab and
+  `docs/info_and_credits.md`, including Apple MLX's attribution and a Speed section giving
+  the measured 34.3 / 22.4 / 14.3 minute comparison and its caveats.
+
+### Fixed
+- Record the attention precision in the run manifest (`sparse_attn_dtype`). It travels by
+  environment variable rather than by flag, so two runs that computed different things
+  produced identical provenance records and a comparison made later could not be
+  interpreted. It is `null` for non-MLX backends rather than a default, because a
+  plausible-looking value would be a lie in a provenance record.
+
+### Added
+- Add `scripts/render_glb_comparison.py`: render several GLBs from one fixed camera,
+  headlessly, and lay them out as a single comparison image for documentation. It never
+  touches a running Blender session, and it crops every panel with one shared box, because
+  per-panel crops rescale subjects independently and manufacture differences between assets
+  that are actually identical. Also adds `docs/images/` with a size and naming convention,
+  since this repository is deliberately slim.
+
+### Fixed
+- Correct the attention-backend claims in the web UI and the Credits & Info tab. They
+  advertised a fixed speedup, which is true at 1024 and false at 512: attention cost grows
+  with the square of the token count, and at 512 the stock path is already fast enough that
+  the fused kernel's advantage is cancelled by the cost of moving tensors into MLX and back
+  (measured 176s against 184s, inside noise). The guidance now says where the option is
+  worth choosing, and records that the choice does not change the output.
+
+### Fixed
+- Release MLX's reserved Metal memory at the sampling/decode boundary, and report how much
+  was held. Three 1024 runs failed during decode with MLX resident in the process, each
+  with a different symptom -- a garbage negative index, an out-of-range hashmap lookup, and
+  a sparse tensor size mismatch. Varied corruption-shaped failures fit memory pressure
+  better than one logic bug, and re-decoding the same cached latents in a fresh process has
+  succeeded every time. MLX keeps a buffer cache separate from torch's, which stays claimed
+  after sampling while decode -- the most memory-hungry stage -- runs without that headroom.
+  **This is a hypothesis under test rather than a confirmed fix**, which is why it prints
+  what it released instead of acting silently.
+- Gate the MLX attention tests per test rather than at module level. A module-level skip
+  was silently disabling the pure packing-maths tests in any interpreter without torch and
+  mlx, which is the one the suite normally runs under: ten tests reported as skipped when
+  six of them needed neither library.
+
+### Added
+- Document a second, independent colour effect in TRELLIS.2: at `1024_cascade` an asset can
+  come out markedly desaturated compared with the same asset at `512`, and the effect
+  follows the pipeline type rather than the seed (two seeds per setting, clean split). Each
+  pipeline type selects a *different texture flow model*, so changing resolution changes
+  which model paints the asset rather than only how finely it samples. Recorded in
+  `docs/trellis2-flat-illustration-colour-drift.md` with a four-panel comparison.
+
+### Added
+- Test a third-party report that PyTorch's MPS attention silently returns garbage above
+  ~18,000 tokens, and record that **it does not reproduce here**. Measured against a CPU
+  reference, torch MPS tracks it to ~1.5e-07 up to 32,768 key/value tokens chunked, and up
+  to 12,288 unchunked, with no cliff. The write-up states what that does not establish: the
+  unchunked path could not be tested past 12,288 because the score tensor exceeds 16 GiB,
+  and it was measured on one torch version. It also notes why this repository may be immune
+  — the `sdpa` branch already chunks the query axis for memory reasons — and that MLX's
+  fused kernel never materialises the score tensor at all.
+
+### Fixed
+- Correct the record on the decode faults. Releasing MLX's Metal cache before decode was
+  committed as a hypothesis under test; instrumenting the boundary refuted it, showing MLX
+  holding 0.31 GB with a 0.17 GB peak against a decode needing tens of gigabytes. The call
+  stays because it is cheap and correct, but it is **not** a fix. The documentation now says
+  the cause is unknown, and names the untested control: every clean decode so far was either
+  a small mesh or a from-latents run, so the backend is perfectly confounded with sampling
+  and decoding in one process at scale.
+
 ### Added
 - Add `blender_quadruped_pipeline.py`: staged Rigify binding with alignment checks,
   reference-pose capture, profile-tuned walk/trot and standing transitions, audit

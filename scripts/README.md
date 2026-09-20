@@ -12,7 +12,6 @@ docstring, so a new script is not finished until it is listed here.
 Most tools print their real documentation with `--help`; the docstring at the top of
 each file explains *why* it exists, which is usually the part you need.
 
-
 ## Generate an asset
 
 Run a backend end to end, or re-run part of one without paying for the whole thing again.
@@ -39,7 +38,6 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `runpod_trellis2_cuda_probe.py` | Run a frozen-shape TRELLIS.2 Stage-3 material probe on CUDA. |
 | `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA wheels for the RunPod control run; not used by any local path. |
 
-
 ## Before you spend a run
 
 A generation run costs 15-20 minutes. These cost seconds and are worth it first.
@@ -50,7 +48,6 @@ A generation run costs 15-20 minutes. These cost seconds and are worth it first.
 | `soften_markings.py` | Reduce the contrast of flat painted markings in a conditioning image. |
 | `check_trellis_space_attention.py` | Cheap MPS integration gate for TRELLIS sparse self/cross attention. |
 | `check_trellis_space_dino.py` | Capture the exact preprocessed image and DINO conditioning tensor. |
-
 
 ## Repair the mesh
 
@@ -67,7 +64,6 @@ Everything here operates on a GLB or a cached decode and is headless.
 | `visibility_cull.py` | Pure helpers for visibility-based face culling: keep only what is seen from outside. |
 | `remesh_to_target.py` | Decimate a mesh to a target face count via fast_simplification, with timing. |
 | `crop_mesh.py` | Cut a region out of a mesh at full density, so it can be judged by eye. |
-
 
 ## Texture, colour and material
 
@@ -89,7 +85,6 @@ The asset's surface, as opposed to its shape.
 | `bake_stiffness.py` | Bake foliage stiffness into a GLB as vertex colours, for engine-side wind. |
 | `classify_thickness.py` | Separate solid body from thin foliage by measuring local thickness. |
 
-
 ## Measure and judge
 
 Numbers and renders to decide whether a change helped. Read `docs/` before trusting an old one.
@@ -107,7 +102,6 @@ Numbers and renders to decide whether a change helped. Read `docs/` before trust
 | `measure_bvh_on_surface.py` | Check MtlBVH on an invariant that scales with the real production mesh. |
 | `measure_bvh_precision.py` | Measure how accurate MtlBVH's unsigned_distance actually is, against exact ground truth. |
 | `xatlas_timing_probe.py` | Time xatlas.parametrize in isolation, to characterize its face-count scaling. |
-
 
 ## Blender: look at it
 
@@ -127,7 +121,6 @@ These talk to a running Blender over the `execute_code` socket on port 9876 unle
 | `blender_import_character.py` | Append a rigged character (armature + skinned mesh) into the currently live Blender scene, cleaned up and positioned. |
 | `blender_wind_demo.py` | Animate labelled foliage with shader-style wind and render it to MP4. |
 
-
 ## Blender: change the geometry
 
 Heavier edits that need Blender's own operators rather than trimesh.
@@ -145,7 +138,6 @@ Heavier edits that need Blender's own operators rather than trimesh.
 | `blender_split_regions.py` | Split a generated mesh into per-region material slots, each with its own texture. |
 | `blender_bake_ao.py` | Bake an ambient-occlusion map from an asset's own geometry, headless. |
 | `blender_bake_normals.py` | Bake TRELLIS' discarded high-poly detail into a normal map for the low-poly mesh. |
-
 
 ## Rig and animate
 
@@ -169,7 +161,6 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `blender_idle_cycle.py` | Author a looping idle for the rigged fox. |
 | `blender_attack_cycle.py` | Author a slam-attack clip on a rigged quadruped in the live Blender scene. |
 
-
 ## Vendor patches
 
 `vendor/` is git-ignored, so every fix to someone else's checkout lives here as a re-appliable patch script. Each one asserts its anchor and is idempotent; re-running after a bootstrap is the intended workflow.
@@ -185,6 +176,8 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `patch_trellis_enable_cleanup.py` | Re-enable the decode-time mesh cleanup that `mps_compat.py` turns into no-ops. |
 | `patch_trellis_dump_decode.py` | Teach `generate.py` to cache the decoded mesh, so baking can be re-run without sampling. |
 | `patch_trellis_no_bria.py` | Disable TRELLIS' configured background model for license-controlled runs. |
+| `patch_trellis_mlx_attention.py` | Add an `mlx` sparse-attention backend to a vendored TRELLIS.2 checkout. |
+| `render_glb_comparison.py` | Render several GLBs from one fixed camera and lay them out as a comparison image. |
 | `patch_ovoxel_pack_options.py` | Let `o_voxel.postprocess.to_glb` forward xatlas packing options. |
 | `patch_ovoxel_opaque_material.py` | Match the official TRELLIS GLB's opaque, single-sided material flags. |
 | `patch_ovoxel_weld_before_simplify.py` | Weld coincident vertices before every `simplify()` in o_voxel's `to_glb`. |

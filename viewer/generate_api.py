@@ -42,6 +42,11 @@ from rig_api import (
 REPO = Path(__file__).resolve().parents[1]
 WRAPPER = REPO / "scripts" / "trellis_space_generate.py"
 PYTHON = REPO / "vendor" / "trellis-space-mac" / ".venv" / "bin" / "python"
+TRELLIS_VENDOR = REPO / "vendor" / "trellis-space-mac"
+# The dispatch branch scripts/patch_trellis_mlx_attention.py injects. Its presence is how
+# we know the vendored checkout can actually serve SPARSE_ATTN_BACKEND=mlx.
+MLX_DISPATCH_FILE = TRELLIS_VENDOR / "TRELLIS.2" / "trellis2" / "modules" / "sparse" / "attention" / "full_attn.py"
+MLX_DISPATCH_MARKER = "config.ATTN == 'mlx'"
 OUTPUT_ROOT = REPO / "output"
 BASELINE_PATH = REPO / "viewer" / "generate_baseline.json"
 TINYCLIP_ADVISOR = REPO / "scripts" / "classify_trellis_input.py"
@@ -83,6 +88,9 @@ BACKEND_ENV_KEYS = (
     "ATTN_BACKEND",
     "SPARSE_ATTN_BACKEND",
     "FLEX_GEMM_AUTOTUNE_CACHE_PATH",
+    # Owned per job: the attention precision is part of the chosen backend, so a value
+    # exported into the server's shell must not silently change what a run computes.
+    "I2L_MLX_ATTN_DTYPE",
 )
 
 HF_HUB_DIR = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
@@ -107,6 +115,19 @@ def _job_env() -> dict[str, str]:
     for key in BACKEND_ENV_KEYS:
         env.pop(key, None)
     return env
+
+
+def attention_backend_spec(choice: str) -> tuple[str, dict[str, str]]:
+    """Split a UI attention choice into the wrapper's flag and any env it needs.
+
+    Returns (value for --sparse-attn-backend, environment overrides). Pure, so the mapping
+    can be tested without launching anything.
+    """
+    if choice == "mlx-fp16":
+        return "mlx", {"I2L_MLX_ATTN_DTYPE": "fp16"}
+    if choice == "mlx":
+        return "mlx", {"I2L_MLX_ATTN_DTYPE": "fp32"}
+    return choice, {}
 
 
 def _human_bytes(size: int) -> str:
@@ -173,6 +194,38 @@ def clean_port_build_present() -> bool:
     return PYTHON.is_file() and WRAPPER.is_file()
 
 
+def mlx_attention_status(vendor: Path | None = None, dispatch: Path | None = None) -> dict[str, Any]:
+    """Whether the mlx attention backend can actually run on this machine.
+
+    Two independent prerequisites, and the UI needs to distinguish them because the
+    remedies differ: the vendored checkout must carry the dispatch branch, and mlx must be
+    installed in that checkout's venv. Offering the backend without both produces a crash
+    partway into a run that has already cost real time.
+    """
+    vendor = vendor or TRELLIS_VENDOR
+    dispatch = dispatch or MLX_DISPATCH_FILE
+    try:
+        patched = dispatch.is_file() and MLX_DISPATCH_MARKER in dispatch.read_text()
+    except OSError:
+        patched = False
+    package = any((vendor / ".venv" / "lib").glob("python*/site-packages/mlx"))
+
+    hints = []
+    if not package:
+        hints.append(
+            "install mlx into the backend venv: uv pip install --python "
+            f"{vendor / '.venv' / 'bin' / 'python'} mlx"
+        )
+    if not patched:
+        hints.append("apply the dispatch branch: python scripts/patch_trellis_mlx_attention.py")
+    return {
+        "patched": patched,
+        "package": package,
+        "ready": patched and package,
+        "hint": "; ".join(hints) or None,
+    }
+
+
 def setup_status() -> dict[str, Any]:
     """Machine readiness for the clean-port generator, for the Generate > Setup card."""
     build_present = clean_port_build_present()
@@ -193,6 +246,9 @@ def setup_status() -> dict[str, Any]:
         },
         "weights": weights,
         "missing_weights": missing,
+        # Advisory only: the default sdpa path works without it, so an unready mlx backend
+        # must never make the machine look unready for generation.
+        "mlx_attention": mlx_attention_status(),
         "ready": build_present,
         "warning": "first use will download missing weights" if missing else None,
     }
@@ -305,8 +361,17 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "decimation_target": 300_000,
     "texture_size": 2048,
     "allow_rembg": False,
+    "sparse_attn_backend": "sdpa",
 }
 VALID_RESOLUTIONS = {"512", "1024", "1536"}
+# sdpa is the default because mlx needs scripts/patch_trellis_mlx_attention.py applied to
+# the vendored checkout and mlx installed in its venv; a fresh clone has neither, and a
+# default that fails on a clean machine is worse than a default that is merely slower.
+# One control, not two: precision is part of the choice a user makes, and splitting it
+# into a second setting invites the combination nobody wants (sdpa with fp16, which is
+# meaningless -- fp16 is a property of the fused MLX kernel, and on torch MPS SDPA it is
+# measurably slower than fp32).
+VALID_SPARSE_ATTN = {"sdpa", "mlx", "mlx-fp16"}
 VALID_TEXTURES = {1024, 2048, 3072, 4096}
 STAGES = [
     "load",
@@ -388,6 +453,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         raise ValueError("texture_size must be one of 1024, 2048, 3072, or 4096")
     if not isinstance(settings["allow_rembg"], bool):
         raise ValueError("allow_rembg must be a boolean")
+    if settings["sparse_attn_backend"] not in VALID_SPARSE_ATTN:
+        raise ValueError("sparse_attn_backend must be one of sdpa, mlx, or mlx-fp16")
     settings["resolution"] = str(settings["resolution"])
     return settings
 
@@ -882,6 +949,8 @@ def _run_job(job: Job) -> None:
     spec = BACKENDS[job.backend_id]
     args = [str(spec.interpreter), str(spec.wrapper), *spec.build_args(job)]
     env = _job_env()
+    if job.backend_id == "trellis":
+        env.update(attention_backend_spec(job.settings["sparse_attn_backend"])[1])
     try:
         job.status = "running"
         job.emit({"phase": "load", "overall_pct": 0, "message": f"Starting {spec.label} job"})
@@ -954,6 +1023,7 @@ def _trellis_build_args(job: Job) -> list[str]:
         "--seed", str(job.settings["seed"]),
         "--decimation-target", str(job.settings["decimation_target"]),
         "--texture-size", str(job.settings["texture_size"]),
+        "--sparse-attn-backend", attention_backend_spec(job.settings["sparse_attn_backend"])[0],
     ]
     if job.settings["allow_rembg"]:
         args.append("--allow-rembg")

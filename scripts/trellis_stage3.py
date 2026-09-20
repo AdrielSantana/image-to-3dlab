@@ -160,7 +160,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vendor-root", type=Path, default=DEFAULT_VENDOR,
                         help="TRELLIS wrapper containing TRELLIS.2 and .venv")
     parser.add_argument("--sparse-attn-backend", default="sdpa",
-                        choices=("sdpa", "metal_flash"))
+                        choices=("sdpa", "metal_flash", "mlx"),
+                        help="mlx routes attention through MLX's fused Metal kernel; "
+                             "needs scripts/patch_trellis_mlx_attention.py applied")
     parser.add_argument("--sample-only", action="store_true",
                         help="save the texture latent and stop before material decoding")
     parser.add_argument("--dry-run", action="store_true",
