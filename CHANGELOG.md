@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file reference files that are no longer in the repository**; they were accurate when
   written, and nothing in the pipeline depends on them.
 
+### Fixed
+- **Filter degenerate decode faces on the CPU instead of on Metal.** Boolean-mask indexing
+  a multi-million-row tensor on MPS returned a garbage index -- observed as
+  `index -1097849984 is out of bounds: 0, range 0 to 7419814` while dropping 426 bad faces
+  from a 7.4M-face decode. Metal work is queued, so the fault surfaced later at the first
+  synchronisation and killed a run whose sampling had already finished. The gather is cheap
+  at this size and the result is identical. The fault has not reproduced, so this is a
+  precaution against the most likely trigger rather than a confirmed fix.
+
 ### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI

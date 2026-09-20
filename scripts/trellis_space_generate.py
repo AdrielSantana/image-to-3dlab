@@ -352,8 +352,15 @@ def filter_degenerate_faces(mesh) -> int:
     mask = valid_face_mask(mesh.faces.cpu().numpy(), num_vertices)
     removed = int((~mask).sum())
     if removed:
-        keep = torch.as_tensor(mask, device=mesh.faces.device)
-        mesh.faces = mesh.faces[keep]
+        # Gather on CPU, not on Metal. Boolean-mask indexing a multi-million-row tensor on
+        # MPS produced a garbage index -- observed 2026-09-20 as
+        # "index -1097849984 is out of bounds: 0, range 0 to 7419814" on a 7.4M-face Storm
+        # Ram decode. Metal work is queued, so the fault surfaced later at the first
+        # synchronisation (moving vertices to CPU) and killed a run whose sampling had
+        # already succeeded. The gather is cheap at this size and the result is identical.
+        keep = torch.as_tensor(mask)
+        device = mesh.faces.device
+        mesh.faces = mesh.faces.cpu()[keep].to(device)
     return removed
 
 
