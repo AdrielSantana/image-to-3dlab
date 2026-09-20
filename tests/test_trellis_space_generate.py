@@ -427,6 +427,43 @@ def test_build_manifest_shape():
     assert m["timings_seconds"]["total"] == 1.0
 
 
+@pytest.mark.parametrize("backend,env,expected", [
+    ("mlx", "fp16", "fp16"),
+    ("mlx", "FP16", "fp16"),
+    ("mlx", "fp32", "fp32"),
+    ("mlx", None, "fp32"),
+    ("sdpa", "fp16", None),
+    ("metal_flash", None, None),
+])
+def test_resolved_attention_dtype(backend, env, expected):
+    assert gen.resolved_attention_dtype(backend, env) == expected
+
+
+def test_manifest_records_the_attention_precision():
+    """Precision travels by environment, not by flag, so it must be recorded explicitly.
+
+    Without it two runs that computed different things produce identical manifests, and a
+    comparison made days later cannot be interpreted.
+    """
+    m = gen.build_manifest(
+        image="in.png", output="out.glb", params={}, pipeline_type="512", seed=1,
+        timings={}, artifacts={}, load_rembg=False, sparse_attn_backend="mlx",
+        sparse_attn_dtype=gen.resolved_attention_dtype("mlx", "fp16"),
+    )
+    assert m["sparse_attn_dtype"] == "fp16"
+
+
+def test_manifest_reports_no_precision_for_non_mlx_backends():
+    m = gen.build_manifest(
+        image="in.png", output="out.glb", params={}, pipeline_type="512", seed=1,
+        timings={}, artifacts={}, load_rembg=False, sparse_attn_backend="sdpa",
+        sparse_attn_dtype=gen.resolved_attention_dtype("sdpa", "fp16"),
+    )
+    # None, not "fp32": the stock path has no MLX precision to report, and a default here
+    # would be a plausible-looking lie in the provenance record.
+    assert m["sparse_attn_dtype"] is None
+
+
 # --- CPU pre-cap ratio (the MPS decode->GLB path: fast_simplification before Metal to_glb) ---
 def test_precap_ratio_math():
     # 20M faces -> 4M cap means removing 80% of faces

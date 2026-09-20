@@ -186,6 +186,18 @@ def precap_ratio(num_faces: int, pre_cap: int) -> float:
     return 1.0 - (pre_cap / num_faces)
 
 
+def resolved_attention_dtype(sparse_attn_backend: str, env_value: str | None) -> str | None:
+    """The attention precision a run actually used, for the manifest.
+
+    Precision travels by environment variable rather than by flag, so without this the
+    provenance record cannot distinguish two runs that computed different things. It is
+    meaningless outside the mlx backend, where it is None rather than a misleading default.
+    """
+    if sparse_attn_backend != "mlx":
+        return None
+    return (env_value or "fp32").lower()
+
+
 def build_manifest(
     *,
     image: str,
@@ -197,6 +209,7 @@ def build_manifest(
     artifacts: dict[str, Any],
     load_rembg: bool,
     sparse_attn_backend: str,
+    sparse_attn_dtype: str | None = None,
 ) -> dict[str, Any]:
     """Assemble the run manifest. Pure: all inputs in, one dict out (testable without torch)."""
     return {
@@ -208,6 +221,7 @@ def build_manifest(
         "device": "mps",
         "attn_backend": "sdpa",
         "sparse_attn_backend": sparse_attn_backend,
+        "sparse_attn_dtype": sparse_attn_dtype,
         "load_rembg": load_rembg,
         "seed": seed,
         "pipeline_type": pipeline_type,
@@ -689,6 +703,9 @@ def generate_from_latents(
         artifacts=artifacts,
         load_rembg=False,
         sparse_attn_backend=sparse_attn_backend,
+        sparse_attn_dtype=resolved_attention_dtype(
+            sparse_attn_backend, os.environ.get("I2L_MLX_ATTN_DTYPE")
+        ),
     )
     manifest["resumed_from_latents"] = str(latents_path)
     manifest_path = output_path.with_suffix(".json")
@@ -834,6 +851,9 @@ def generate(
         artifacts=artifacts,
         load_rembg=load_rembg,
         sparse_attn_backend=sparse_attn_backend,
+        sparse_attn_dtype=resolved_attention_dtype(
+            sparse_attn_backend, os.environ.get("I2L_MLX_ATTN_DTYPE")
+        ),
     )
     manifest_path = output_path.with_suffix(".json")
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")

@@ -86,6 +86,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/info_and_credits.md`, including Apple MLX's attribution and a Speed section giving
   the measured 34.3 / 22.4 / 14.3 minute comparison and its caveats.
 
+### Fixed
+- Record the attention precision in the run manifest (`sparse_attn_dtype`). It travels by
+  environment variable rather than by flag, so two runs that computed different things
+  produced identical provenance records and a comparison made later could not be
+  interpreted. It is `null` for non-MLX backends rather than a default, because a
+  plausible-looking value would be a lie in a provenance record.
+
 ### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
