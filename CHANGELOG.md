@@ -133,6 +133,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/trellis2-flat-illustration-colour-drift.md` with a four-panel comparison.
 
 ### Added
+- Test a third-party report that PyTorch's MPS attention silently returns garbage above
+  ~18,000 tokens, and record that **it does not reproduce here**. Measured against a CPU
+  reference, torch MPS tracks it to ~1.5e-07 up to 32,768 key/value tokens chunked, and up
+  to 12,288 unchunked, with no cliff. The write-up states what that does not establish: the
+  unchunked path could not be tested past 12,288 because the score tensor exceeds 16 GiB,
+  and it was measured on one torch version. It also notes why this repository may be immune
+  — the `sdpa` branch already chunks the query axis for memory reasons — and that MLX's
+  fused kernel never materialises the score tensor at all.
+
+### Fixed
+- Correct the record on the decode faults. Releasing MLX's Metal cache before decode was
+  committed as a hypothesis under test; instrumenting the boundary refuted it, showing MLX
+  holding 0.31 GB with a 0.17 GB peak against a decode needing tens of gigabytes. The call
+  stays because it is cheap and correct, but it is **not** a fix. The documentation now says
+  the cause is unknown, and names the untested control: every clean decode so far was either
+  a small mesh or a from-latents run, so the backend is perfectly confounded with sampling
+  and decoding in one process at scale.
+
+### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long

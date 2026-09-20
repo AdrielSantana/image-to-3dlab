@@ -168,6 +168,62 @@ The lesson generalises past attention: **when comparing generated output, change
 The web UI randomises the seed unless told otherwise, which silently makes every comparison
 a three-variable one.** Pin the seed first, then vary the single thing under test.
 
+## A reported MPS failure we could not reproduce
+
+A third-party Apple Silicon port of another TRELLIS-descended model
+([Pixal3D-mac](https://github.com/pawel-mazurkiewicz/Pixal3D-mac), and its
+[write-up](https://blog.chillaid.art/posts/porting-pixal3d-one-cursed-kernel-at-a-time))
+reports that PyTorch's MPS attention **silently returns garbage above roughly 18,000
+tokens**, with no error raised. That would matter here: a `1536_cascade` run would cross
+that line, and silent wrongness is the worst failure mode there is.
+
+It is also someone else's claim, and this repository's own experience is that a documented
+limitation is a hypothesis until measured. So we measured it: compute the same attention on
+CPU as ground truth, and on MPS, and watch the error as length grows. A real correctness
+cliff appears as an error jumping orders of magnitude.
+
+**Queries chunked at 1024, which is what this repo actually runs** (12 heads, head dim 128):
+
+| key/value length | torch MPS vs CPU | MLX vs CPU |
+|---|---|---|
+| 4,096 | 1.6e-07 | 3.0e-05 |
+| 16,384 | 1.5e-07 | 1.5e-05 |
+| 18,432 | 1.9e-07 | 1.5e-05 |
+| 24,576 | 1.3e-07 | 1.4e-05 |
+| 32,768 | 1.5e-07 | 1.1e-05 |
+
+**Unchunked, which is how a stock implementation runs:**
+
+| sequence length | score tensor | torch MPS vs CPU |
+|---|---|---|
+| 4,096 | 0.8 GiB | 1.6e-07 |
+| 8,192 | 3.0 GiB | 1.6e-07 |
+| 12,288 | 6.8 GiB | 2.0e-07 |
+
+**No cliff anywhere.** torch MPS tracks the CPU reference to about 1.5e-07 throughout, well
+past the reported threshold, and the error does not grow with length.
+
+### What that does and does not establish
+
+It does not disprove the report. Three honest gaps:
+
+- We could not test the unchunked path *past* 12,288, because the score tensor is
+  `heads x L x L x 4` bytes and 18,432 squared is over 16 GiB — the regime where the Metal
+  allocator has already aborted this machine once.
+- Measured on torch 2.11.0. A different version or macOS build could behave differently.
+- The failure may need something else about their pipeline entirely.
+
+What it does establish is that **this repository is not currently exposed to it**, and
+suggests why: the vendored `sdpa` branch already chunks the query axis at 1024, a mitigation
+added for *memory* reasons after a 25 GiB score tensor aborted the allocator. If the
+reported failure needs a large query axis as well as a large key axis, that chunking removes
+the condition as a side effect.
+
+Two things worth carrying forward regardless. **Before a `1536_cascade` run, re-run this
+check at the sizes that pipeline actually produces** rather than assuming today's result
+covers it. And **MLX's fused kernel is a hedge here**: it never materialises the score
+tensor, so it does not enter the size regime where the report places the problem.
+
 ## What is left
 
 1. **Route only long sequences through MLX.** About 60 attention calls happen per step and
@@ -180,13 +236,20 @@ a three-variable one.** Pin the seed first, then vary the single thing under tes
    path is fast enough that MLX's host round-trip cancels the kernel gain exactly —
    measured as 176s against 184s, inside noise. **MLX is worth selecting only where the
    token count is large.** Any UI that advertises a fixed speedup is wrong at the low end.
-3. **Decode faults, twice, both with MLX resident in the process.** Both occurred at the
-   higher token count; every low-resolution run decoded cleanly, and re-decoding the same
-   cached latents in a fresh process succeeded both times. The decoder uses convolution
-   blocks and no attention, so the patched code never runs there — which points at MLX
-   holding Metal buffers that decode then lacks, rather than at wrong numbers. Untested
-   remedy: release MLX's cache when sampling ends, before decode begins. Not reproduced
-   often enough to call diagnosed.
+3. **Decode faults at 1024, cause still unknown.** Three failures, three different
+   symptoms. An early hypothesis — that MLX's retained Metal buffers were starving decode —
+   **was refuted by measurement**: instrumenting the boundary showed MLX holding 0.31 GB
+   with a 0.17 GB peak, against a decode that needs tens of gigabytes. The release call
+   stays because it is cheap and correct, but it is not a fix and must not be described as
+   one. The untested control is the important one: **every clean decode so far was either a
+   small mesh or a from-latents run, and no full 1024 run has been done without MLX.** The
+   backend is therefore perfectly confounded with "sample and decode in one process at
+   scale".
+
+   What does hold, as raw observation: every failure was at the higher token count, every
+   low-resolution run decoded cleanly, and re-decoding the same cached latents in a fresh
+   process has succeeded three times out of three. The decoder is built from convolution
+   blocks and uses no attention, so the patched code never executes there.
 4. **Attack the fixed costs.** At fp16 they are roughly 306 seconds -- 80s pipeline load,
    60s decode, 166s bake -- or 36% of the run, and no attention work can touch them. Bake
    is the largest single stage now.
