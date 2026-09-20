@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`scripts/export_decode_highpoly.py`** — turns a cached decode into the high-poly PLY a
+  normal bake reads (19,172,397 faces on the Snag, 98% of which `generate.py` discards).
+  Welds and repairs winding per component; deliberately does not decimate, because
+  fast_simplification shatters these meshes (1,072 components to 215,842).
 - **`scripts/compress_glb_textures.py`** — re-encodes a GLB's textures in place, leaving
   geometry untouched. The paint stage writes a 4096² albedo and a 4096² metallic-roughness
   map as uncompressed PNG: 30.5 MB of a 32 MB asset. Snag 32.0 → 4.8 MB, fox 31.3 → 4.4 MB,
@@ -23,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
 ### Fixed
+- **Normal bakes came out as rainbow confetti, and now do not.** The decode is non-manifold,
+  so winding repair cannot converge and roughly half the rays returned the hit normal
+  reversed — 48.9% of hits more than 90° from the low-poly normal, upper quartile 164°. A
+  tangent-space normal cannot point into the surface, so `blender_bake_normals.py` negates
+  any texel that does (`--keep-sign` opts out) and reports the fraction, which reads as the
+  source's winding quality. Negative-Z texels went from 48.1% to 0.1%.
+- `blender_bake_normals.py` no longer ties `max_ray_distance` to the cage extrusion, shade-
+  smooths the bake source, and takes `--device`.
 - **Retopology face targets were silently doubled.** The Decimate ratio was computed against
   `len(mesh.polygons)`, but COLLAPSE decimation applies its ratio to *triangles* and the
   voxel remesh before it emits *quads*. Asking for 40,000 faces produced 79,991; asking for

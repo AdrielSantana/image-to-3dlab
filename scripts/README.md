@@ -35,6 +35,7 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `hunyuan_shape_octree_test.py` | Shape-only generation at a given octree_resolution, with visible progress. |
 | `trellis_stage3.py` | Resample only TRELLIS.2's Stage-3 material field on a cached shape latent. |
 | `trellis_rebake.py` | Re-bake a GLB from a cached decode, without re-sampling or loading the model. |
+| `export_decode_highpoly.py` | Export a cached decode as a high-poly PLY, to bake detail from. |
 | `runpod_trellis2_cuda_probe.py` | Run a frozen-shape TRELLIS.2 Stage-3 material probe on CUDA. |
 | `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA wheels for the RunPod control run; not used by any local path. |
 
