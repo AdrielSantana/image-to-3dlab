@@ -94,6 +94,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plausible-looking value would be a lie in a provenance record.
 
 ### Added
+- Add `scripts/render_glb_comparison.py`: render several GLBs from one fixed camera,
+  headlessly, and lay them out as a single comparison image for documentation. It never
+  touches a running Blender session, and it crops every panel with one shared box, because
+  per-panel crops rescale subjects independently and manufacture differences between assets
+  that are actually identical. Also adds `docs/images/` with a size and naming convention,
+  since this repository is deliberately slim.
+
+### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long

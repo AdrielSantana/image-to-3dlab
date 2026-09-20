@@ -143,8 +143,14 @@ Heavier edits that need Blender's own operators rather than trimesh.
 
 The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have tests.
 
+For the staged **fitted metarig → proxy weights → reference pose → tunable gait →
+standing transition** workflow, start with [the quadruped pipeline guide](../docs/quadruped-pipeline.md).
+It includes commands, parameter definitions, failure checks, and an LLM-assisted
+tuning checklist. Manual fitting and visual weight/deformation review remain required.
+
 | Script | What it does |
 |---|---|
+| `blender_quadruped_pipeline.py` | Bind, capture and animate fitted Rigify quadrupeds with tunable profiles and audit reports. |
 | `blender_joint_markers.py` | Spawn named joint markers on a mesh in Blender, and read their placed positions back. |
 | `blender_build_rig.py` | Build a quadruped armature from placed joint markers and bind the mesh to it. |
 | `blender_voxel_weights.py` | Weight a generated mesh via a watertight voxel proxy, then transfer the result back. |
@@ -155,6 +161,8 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `blender_export_rig_binding.py` | Prepare an open Blender metarig scene and export its browser rig sidecar. |
 | `rignet_infer.py` | Run vendored RigNet inference on one of our own generated meshes. |
 | `attack_pose.py` | Pose curves for a quadruped slam attack, as pure functions. |
+| `quadruped_gait.py` | Gait curves for the Rigify basic quadruped metarig, as pure functions. |
+| `blender_quadruped_walk.py` | Author a natural walk, trot or scamper on any Rigify basic-quadruped rig. |
 | `rigify_walk_pose.py` | Pose curves for a quadruped trot on a Rigify-generated rig, as pure functions. |
 | `blender_walk_cycle.py` | Author a looping quadruped gait cycle on the rigged fox in the live Blender scene. |
 | `blender_rigify_walk_cycle.py` | Author a trot cycle on the Rigify-generated 'rig' armature in the live Blender scene. |
@@ -178,6 +186,7 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `patch_trellis_dump_decode.py` | Teach `generate.py` to cache the decoded mesh, so baking can be re-run without sampling. |
 | `patch_trellis_no_bria.py` | Disable TRELLIS' configured background model for license-controlled runs. |
 | `patch_trellis_mlx_attention.py` | Add an `mlx` sparse-attention backend to a vendored TRELLIS.2 checkout. |
+| `render_glb_comparison.py` | Render several GLBs from one fixed camera and lay them out as a comparison image. |
 | `patch_ovoxel_pack_options.py` | Let `o_voxel.postprocess.to_glb` forward xatlas packing options. |
 | `patch_ovoxel_opaque_material.py` | Match the official TRELLIS GLB's opaque, single-sided material flags. |
 | `patch_ovoxel_weld_before_simplify.py` | Weld coincident vertices before every `simplify()` in o_voxel's `to_glb`. |

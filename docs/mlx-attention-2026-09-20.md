@@ -141,6 +141,13 @@ equivalent assets.** Three runs at one resolution and one seed — stock `sdpa`,
 MLX at fp16 — were indistinguishable by eye, with face counts within 0.3%. Neither the
 switch to MLX nor the drop to half precision cost anything visible.
 
+![Three renders of the same asset at one seed and resolution, differing only in attention
+backend: stock sdpa, MLX fp32, MLX fp16. They are indistinguishable.](images/attention-backends-same-seed.jpg)
+
+*One seed, one resolution, one camera. Rendered with
+`scripts/render_glb_comparison.py`, which uses a single shared crop box across the panels
+so that identical assets cannot be made to look different by framing.*
+
 Two practical consequences follow:
 
 - **Prefer fp16 wherever MLX is used.** It is not a quality-for-speed trade. fp32 buys
