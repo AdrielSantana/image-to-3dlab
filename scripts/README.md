@@ -35,6 +35,7 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `hunyuan_shape_octree_test.py` | Shape-only generation at a given octree_resolution, with visible progress. |
 | `trellis_stage3.py` | Resample only TRELLIS.2's Stage-3 material field on a cached shape latent. |
 | `trellis_rebake.py` | Re-bake a GLB from a cached decode, without re-sampling or loading the model. |
+| `export_decode_highpoly.py` | Export a cached decode as a high-poly PLY, to bake detail from. |
 | `runpod_trellis2_cuda_probe.py` | Run a frozen-shape TRELLIS.2 Stage-3 material probe on CUDA. |
 | `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA wheels for the RunPod control run; not used by any local path. |
 
@@ -78,6 +79,8 @@ The asset's surface, as opposed to its shape.
 | `attach_normal_map.py` | Attach a baked normal map to a GLB's material. |
 | `restore_pbr_material.py` | Re-attach the metallicRoughness map that `--material-mode matte` orphaned. |
 | `fix_glb_opaque_material.py` | Make an existing TRELLIS GLB opaque and single-sided without rebaking it. |
+| `compress_glb_textures.py` | Re-encode a GLB's textures, without touching its geometry. |
+| `retopo_repaint.py` | Finish a generated asset: retopologise, repaint, compress. |
 | `living_organic_material.py` | Apply a reproducible living-organic material recipe to an existing GLB. |
 | `project_labels.py` | Project a 2D image onto a generated mesh as per-vertex colours. |
 | `project_markings.py` | Paint the source image's markings back onto a generated mesh's texture. |
@@ -175,6 +178,9 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `patch_trellis_multiview.py` | Teach the vendored TRELLIS.2 to condition on several views of one subject. |
 | `patch_trellis_enable_cleanup.py` | Re-enable the decode-time mesh cleanup that `mps_compat.py` turns into no-ops. |
 | `patch_trellis_dump_decode.py` | Teach `generate.py` to cache the decoded mesh, so baking can be re-run without sampling. |
+| `patch_pixal3d_rembg.py` | Stop Pixal3D loading BRIA RMBG-2.0, before it ever downloads it. |
+| `patch_pixal3d_model_subset.py` | Let Pixal3D load only the checkpoints a run actually needs. |
+| `patch_pixal3d_low_vram.py` | Make Pixal3D's low-VRAM mode reachable, via `PIXAL3D_LOW_VRAM=1`. |
 | `patch_trellis_no_bria.py` | Disable TRELLIS' configured background model for license-controlled runs. |
 | `patch_trellis_mlx_attention.py` | Add an `mlx` sparse-attention backend to a vendored TRELLIS.2 checkout. |
 | `render_glb_comparison.py` | Render several GLBs from one fixed camera and lay them out as a comparison image. |

@@ -38,6 +38,13 @@ from rig_api import (
     run_job as run_rig_job,
     status_payload as rig_status_payload,
 )
+from finish_api import (
+    ARTIFACTS as FINISH_ARTIFACTS,
+    FINISH_JOBS,
+    cancel_job as cancel_finish_job,
+    run_job as run_finish_job,
+    status_payload as finish_status_payload,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 WRAPPER = REPO / "scripts" / "trellis_space_generate.py"
@@ -1517,6 +1524,12 @@ class Handler(SimpleHTTPRequestHandler):
         if len(parts) == 5 and parts[:3] == ["api", "rig", "rebind"] and parts[4] == "cancel":
             self._cancel_rig_job(parts[3])
             return
+        if parts == ["api", "finish"]:
+            self._create_finish_job()
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "finish"] and parts[3] == "cancel":
+            self._cancel_finish_job(parts[2])
+            return
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def _trellis_input_advice(self) -> None:
@@ -1585,6 +1598,17 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             if action in {"result.glb", "manifest.json"}:
                 self._artifact(job_id, action)
+                return
+        if len(parts) == 4 and parts[:2] == ["api", "finish"]:
+            job_id, action = parts[2], parts[3]
+            if action == "events":
+                self._finish_events(job_id)
+                return
+            if action == "status":
+                self._finish_status(job_id)
+                return
+            if action in FINISH_ARTIFACTS:
+                self._finish_artifact(job_id, action)
                 return
         if len(parts) == 5 and parts[:3] == ["api", "rig", "rebind"]:
             job_id, action = parts[3], parts[4]
@@ -1747,6 +1771,115 @@ class Handler(SimpleHTTPRequestHandler):
             })
         except Exception as exc:
             self._send_json(500, {"error": str(exc)})
+
+    def _create_finish_job(self) -> None:
+        """Retopologise, repaint and compress a GLB the viewer already has.
+
+        Deliberately refuses while a generation is running: the repaint stage loads its own
+        multi-gigabyte model, and two of those at once is how this machine runs out of
+        unified memory.
+        """
+        try:
+            active = JOBS.get(JOBS.active) if JOBS.active else None
+            if active is not None and active.status in {"queued", "running", "cancelling"}:
+                self._send_json(409, {"error": "a generation is running; wait for it to finish"})
+                return
+            if SETUP_ACTIVE is not None:
+                self._send_json(409, {"error": "setup is running; wait for it to finish"})
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            if length <= 0 or length > 768 * 1024 * 1024:
+                self._send_json(400, {"error": "finish bundle is missing or larger than 768 MiB"})
+                return
+            form = parse_multipart(
+                self.headers.get("Content-Type", ""), self.rfile.read(length)
+            )
+            asset = form.get("asset")
+            asset_name = str(asset.get("filename")) if asset else ""
+            if not asset or not asset_name.lower().endswith(".glb"):
+                self._send_json(422, {"error": "multipart field 'asset' must be a .glb file"})
+                return
+            image = form.get("image")
+            image_name = str(image.get("filename")) if image else ""
+            if not image or Path(image_name).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+                self._send_json(422, {
+                    "error": "multipart field 'image' must be the source art (PNG/JPG/WebP)"
+                })
+                return
+            try:
+                raw_settings = json.loads(form.get("settings", {}).get("value", "{}"))
+            except json.JSONDecodeError as exc:
+                self._send_json(422, {"error": f"invalid settings JSON: {exc}"})
+                return
+            if not isinstance(raw_settings, dict):
+                self._send_json(422, {"error": "settings must be a JSON object"})
+                return
+            try:
+                job = FINISH_JOBS.create(
+                    asset_name, asset["data"], image["data"], raw_settings,
+                )
+            except ValueError as exc:
+                self._send_json(422, {"error": str(exc)})
+                return
+            except RuntimeError as exc:
+                self._send_json(409, {"error": str(exc)})
+                return
+            threading.Thread(
+                target=run_finish_job, args=(job,), daemon=True, name=f"finish-{job.id[:8]}"
+            ).start()
+            self._send_json(202, {
+                "job_id": job.id,
+                "settings": job.settings,
+                "events_url": f"/api/finish/{job.id}/events",
+                "status_url": f"/api/finish/{job.id}/status",
+            })
+        except Exception as exc:
+            self._send_json(500, {"error": str(exc)})
+
+    def _finish_events(self, job_id: str) -> None:
+        job = FINISH_JOBS.get(job_id)
+        if job is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self._stream_events(job)
+
+    def _finish_status(self, job_id: str) -> None:
+        job = FINISH_JOBS.get(job_id)
+        if job is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self._send_json(200, finish_status_payload(job))
+
+    def _finish_artifact(self, job_id: str, action: str) -> None:
+        job = FINISH_JOBS.get(job_id)
+        if job is None or job.status != "done":
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        attribute, content_type = FINISH_ARTIFACTS[action]
+        path = getattr(job, attribute)
+        if not path.is_file() or job.directory not in path.parents:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        data = path.read_bytes()
+        disposition = "inline" if action == "result.glb" else "attachment"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f'{disposition}; filename="{path.name}"')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _cancel_finish_job(self, job_id: str) -> None:
+        job = FINISH_JOBS.get(job_id)
+        if job is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        try:
+            cancel_finish_job(job)
+        except RuntimeError as exc:
+            self._send_json(409, {"error": str(exc)})
+            return
+        self._send_json(202, {"job_id": job.id, "status": job.status})
 
     def _find_job(self, job_id: str) -> Job | None:
         return JOBS.get(job_id) if _safe_id(job_id) else None

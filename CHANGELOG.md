@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scripts/export_decode_highpoly.py`** — turns a cached decode into the high-poly PLY a
+  normal bake reads (19,172,397 faces on the Snag, 98% of which `generate.py` discards).
+  Welds and repairs winding per component; deliberately does not decimate, because
+  fast_simplification shatters these meshes (1,072 components to 215,842).
+- **`scripts/compress_glb_textures.py`** — re-encodes a GLB's textures in place, leaving
+  geometry untouched. The paint stage writes a 4096² albedo and a 4096² metallic-roughness
+  map as uncompressed PNG: 30.5 MB of a 32 MB asset. Snag 32.0 → 4.8 MB, fox 31.3 → 4.4 MB,
+  a difference measuring below the renderer's own sampling noise (5.48/255 against 6.00 for
+  the same file rendered twice). Default is core-glTF JPEG at 2048; `--format webp` is
+  smaller where the destination handles the extension.
+- **Finishing jobs in the browser** (`POST /api/finish`) — retopologise, repaint and
+  compress an asset the viewer already has, with SSE progress and the result and record
+  fetched by URL. Refuses to start while a generation is running; every setting is
+  bounds-checked before it reaches a subprocess argument.
+- **`scripts/retopo_repaint.py`** — runs retopologise → repaint → compress as one command,
+  keeping every intermediate and writing a JSON record of the settings used, so assets
+  finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
+
+### Fixed
+- **Normal bakes came out as rainbow confetti, and now do not.** The decode is non-manifold,
+  so winding repair cannot converge and roughly half the rays returned the hit normal
+  reversed — 48.9% of hits more than 90° from the low-poly normal, upper quartile 164°. A
+  tangent-space normal cannot point into the surface, so `blender_bake_normals.py` negates
+  any texel that does (`--keep-sign` opts out) and reports the fraction, which reads as the
+  source's winding quality. Negative-Z texels went from 48.1% to 0.1%.
+- `blender_bake_normals.py` no longer ties `max_ray_distance` to the cage extrusion, shade-
+  smooths the bake source, and takes `--device`.
+- **Retopology face targets were silently doubled.** The Decimate ratio was computed against
+  `len(mesh.polygons)`, but COLLAPSE decimation applies its ratio to *triangles* and the
+  voxel remesh before it emits *quads*. Asking for 40,000 faces produced 79,991; asking for
+  20,000 produced 39,361. Now computed against the triangle count: 40,000 lands at 39,987.
+  Face counts recorded before this fix are roughly twice what was requested.
+- `blender_retopo_bake.py` welds by position before doing anything else, and accepts a voxel
+  fraction of `0` to skip the remesh. A glTF mesh arrives split along every UV seam and
+  measures as broken until welded — the shipped Snag reads 237,359 non-manifold edges as
+  loaded and 2,671 welded, the same file.
+
 ### Removed
 - **The repository was slimmed from 244 MB to 8.5 MB and its history rewritten.** This is
   an image → 3D pipeline people clone and run, and 96% of what it carried was not that:

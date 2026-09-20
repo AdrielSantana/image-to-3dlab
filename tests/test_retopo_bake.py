@@ -46,6 +46,19 @@ def test_explicit_arguments_are_honoured():
     assert voxel == pytest.approx(0.003)
 
 
+def test_zero_voxel_size_means_skip_the_remesh():
+    """0 is an escape hatch, not an invalid size.
+
+    The voxel pass was adopted because the raw mesh looked hopelessly non-manifold, a
+    reading that came from measuring it unwelded — 43.7% against 0.63% welded, same file.
+    It costs the creases, so going direct has to be expressible.
+    """
+    _, _, _faces, _size, _angle, voxel, *_surface = retopo.parse_args(
+        ["--", "a.glb", "b.glb", "40000", "2048", "89", "0"]
+    )
+    assert voxel == 0.0
+
+
 def test_rejects_a_voxel_size_coarse_enough_to_melt_the_subject():
     with pytest.raises(SystemExit):
         retopo.parse_args(["--", "a.glb", "b.glb", "20000", "2048", "89", "0.5"])
@@ -144,3 +157,29 @@ def test_surface_knobs_are_tunable_per_asset():
 def test_surface_knobs_reject_impossible_values(bad):
     with pytest.raises(SystemExit):
         retopo.parse_args(bad)
+
+def test_the_decimate_ratio_is_computed_against_triangles_not_quads():
+    """The bug this fixes doubled every face target this repo has ever set.
+
+    Blender's COLLAPSE decimation applies its ratio to triangles; the voxel remesh before
+    it emits quads. Measured on the Pixal3D fox: 200,632 quads = 401,264 triangles, asked
+    for 40,000, got 79,991 — almost exactly twice.
+    """
+    quads = 200632
+    triangles = quads * 2
+
+    ratio = retopo.decimate_ratio(40000, triangles)
+    assert triangles * ratio == pytest.approx(40000, rel=1e-6)
+
+    # The old calculation, kept here as the thing that must not come back.
+    wrong = min(1.0, 40000 / quads)
+    assert triangles * wrong == pytest.approx(80000, rel=1e-6)
+
+
+def test_the_ratio_never_exceeds_one():
+    """Asking for more faces than exist must not inflate the mesh."""
+    assert retopo.decimate_ratio(100000, 5000) == 1.0
+
+
+def test_a_degenerate_mesh_does_not_divide_by_zero():
+    assert retopo.decimate_ratio(40000, 0) == 1.0

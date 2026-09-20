@@ -20,6 +20,15 @@ Two details that decide whether the bake is usable:
   high-poly. Too short and detail is missed; too long and rays hit the wrong surface
   across a gap — very visible on thin geometry like ears and leaf tips. Scaled from the
   model's size rather than hardcoded.
+* **Sign.** The decode is non-manifold — the Snag arrives with 237k non-manifold edges —
+  so winding cannot propagate across it and per-component repair does not converge. Rays
+  then hit the right surface at the right distance and come back with the normal
+  *reversed*: measured on the Snag, 48.9% of hits sat more than 90 degrees from the
+  low-poly normal, with the upper quartile at 164 degrees, near-exactly opposite. Baked,
+  that is rainbow confetti over the relief rather than relief. A tangent-space normal map
+  cannot have a negative Z, so the ambiguity is resolvable after the fact: negate any
+  texel that points into the surface. That single step took mean blue from 132 to 221 and
+  negative-Z texels from 48.1% to 0.1%.
 """
 
 from __future__ import annotations
@@ -81,6 +90,28 @@ def best_permutation(
     return best_name, best_spread
 
 
+def resolve_tangent_sign(pixels):
+    """Negate texels whose normal points into the surface, and say how many.
+
+    Returns (pixels, flipped_fraction). A tangent-space normal has Z > 0 by construction:
+    it is a deviation *from* the surface, not through it. So a texel with Z < 0 can only
+    have come from a source face whose winding was reversed, and the true normal is its
+    negation — the sign is recoverable without touching the mesh, which matters because
+    the mesh is non-manifold and cannot be repaired by orientation propagation.
+
+    The flipped fraction is worth reading: near zero means the source was consistently
+    wound, and near half means it was not, which is a property of the source rather than
+    of this bake.
+    """
+    import numpy as np
+
+    normals = np.asarray(pixels, dtype=np.float32) / 255.0 * 2.0 - 1.0
+    flipped = normals[..., 2] < 0.0
+    normals[flipped] = -normals[flipped]
+    encoded = np.clip((normals + 1.0) / 2.0 * 255.0, 0, 255).astype(np.uint8)
+    return encoded, float(flipped.mean())
+
+
 TEMPLATE = '''
 import bpy, json, math, time
 from mathutils import Vector
@@ -93,6 +124,9 @@ RAY = {ray}
 DECIMATE_TO = {decimate_to}
 SAMPLES = {samples}
 ROT_X = {rot_x}
+SMOOTH_SOURCE = {smooth_source}
+DEVICE = {device!r}
+MAX_RAY = {max_ray}
 
 t0 = time.time()
 # Preserve anything that represents manual work. Joint markers are hand-placed and
@@ -118,6 +152,17 @@ bpy.ops.wm.ply_import(filepath=HIGH)
 high = [o for o in bpy.data.objects if o not in before and o.type == "MESH"][0]
 high.name = "HIGHPOLY"
 high_tris_in = len(high.data.polygons)
+
+# Shade the source smooth. A PLY dumped from the decode carries positions and faces and
+# no vertex normals, so Blender shades it flat and every one of its million-odd facets
+# bakes as a single constant normal. That is not detail, it is confetti: the first bake
+# here came out as rainbow noise over the real relief, with 47% of texels pointing into
+# the surface. Interpolated normals are what the high-poly is for.
+if SMOOTH_SOURCE:
+    bpy.context.view_layer.objects.active = high
+    bpy.ops.object.select_all(action="DESELECT")
+    high.select_set(True)
+    bpy.ops.object.shade_smooth()
 
 # Optional decimation of the *bake source*. 6M triangles is slow to ray-cast against;
 # a 1-2M source keeps nearly all the detail a 2048 map can represent.
@@ -176,13 +221,18 @@ mat.node_tree.nodes.active = node
 scn = bpy.context.scene
 scn.render.engine = "CYCLES"
 try:
-    scn.cycles.device = "GPU"
+    scn.cycles.device = DEVICE
 except Exception:
     pass
 scn.cycles.samples = SAMPLES
 scn.render.bake.use_selected_to_active = True
+# Extrusion and distance are different quantities and setting them equal is a trap:
+# rays then start RAY outside the surface and stop exactly *at* it, so anything below —
+# every crevice, every recess, which is most of what a normal map is for — is out of
+# reach, and each ray records whatever it grazed on the way in. That is what filled the
+# Snag's first maps with per-island confetti. 0 means no limit, which is the usual setup.
 scn.render.bake.cage_extrusion = RAY
-scn.render.bake.max_ray_distance = RAY
+scn.render.bake.max_ray_distance = MAX_RAY
 scn.render.bake.margin = 16
 scn.render.bake.use_clear = True
 
@@ -211,6 +261,9 @@ print(json.dumps({{
     "orientation_spread": round(spread, 4),
     "alignment_error": round(align_err, 5),
     "ray_distance": RAY,
+    "max_ray_distance": MAX_RAY,
+    "smooth_source": SMOOTH_SOURCE,
+    "device": DEVICE,
     "error": err,
     "written": None if err else OUT,
     "seconds": round(time.time() - t0, 1),
@@ -239,6 +292,24 @@ def main() -> int:
              "0 disables",
     )
     parser.add_argument("--samples", type=int, default=1)
+    parser.add_argument("--device", choices=("CPU", "GPU"), default="GPU")
+    parser.add_argument(
+        "--keep-sign", action="store_true",
+        help="Leave texels that point into the surface alone. Only for diagnosis: the "
+             "fraction negated is a direct read on how inconsistently the source is wound",
+    )
+    parser.add_argument(
+        "--max-ray", type=float, default=0.0,
+        help="Hard limit on how far a ray may travel, in world units. 0 is no limit and "
+             "is the right default: the cage already decides where rays start, and "
+             "limiting them to the extrusion distance stops them at the surface itself",
+    )
+    parser.add_argument(
+        "--flat-source", action="store_true",
+        help="Leave the high-poly flat-shaded. Only useful for diagnosis: a decode PLY "
+             "has no vertex normals, and flat shading bakes each facet as one constant "
+             "normal, which reads as rainbow confetti rather than detail",
+    )
     parser.add_argument(
         "--permutation", choices=sorted(AXIS_PERMUTATIONS), default="none",
         help="Axis mapping from high-poly space to the low-poly's, compared *inside "
@@ -255,10 +326,23 @@ def main() -> int:
         low=str(args.low.expanduser().resolve()),
         high=str(args.high.expanduser().resolve()),
         out=str(args.out.expanduser().resolve()),
-        size=args.size, ray=args.ray,
+        size=args.size, ray=args.ray, smooth_source=not args.flat_source,
+        device=args.device, max_ray=args.max_ray,
         decimate_to=args.decimate_to, samples=args.samples,
     )
     print(send(code, args.host, args.port))
+
+    if args.keep_sign or not args.out.exists():
+        return 0
+
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(args.out) as image:
+        pixels = np.array(image.convert("RGB"))
+    resolved, flipped = resolve_tangent_sign(pixels)
+    Image.fromarray(resolved).save(args.out)
+    print(f"sign resolved: negated {flipped * 100:.1f}% of texels (source winding)")
     return 0
 
 
