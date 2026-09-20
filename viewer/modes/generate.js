@@ -223,6 +223,7 @@ g('generate-submit').onclick = async () => {
       decimation_target: Number(g('generate-decimation').value),
       texture_size: Number(g('generate-texture').value),
       allow_rembg: g('generate-rembg').checked,
+      sparse_attn_backend: g('generate-attention').value,
     }),
     sf3d: () => ({
       texture_resolution: Number(g('sf3d-texture').value),

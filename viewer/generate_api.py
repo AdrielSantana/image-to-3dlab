@@ -305,8 +305,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "decimation_target": 300_000,
     "texture_size": 2048,
     "allow_rembg": False,
+    "sparse_attn_backend": "sdpa",
 }
 VALID_RESOLUTIONS = {"512", "1024", "1536"}
+# sdpa is the default because mlx needs scripts/patch_trellis_mlx_attention.py applied to
+# the vendored checkout and mlx installed in its venv; a fresh clone has neither, and a
+# default that fails on a clean machine is worse than a default that is merely slower.
+VALID_SPARSE_ATTN = {"sdpa", "mlx"}
 VALID_TEXTURES = {1024, 2048, 3072, 4096}
 STAGES = [
     "load",
@@ -388,6 +393,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         raise ValueError("texture_size must be one of 1024, 2048, 3072, or 4096")
     if not isinstance(settings["allow_rembg"], bool):
         raise ValueError("allow_rembg must be a boolean")
+    if settings["sparse_attn_backend"] not in VALID_SPARSE_ATTN:
+        raise ValueError("sparse_attn_backend must be one of sdpa or mlx")
     settings["resolution"] = str(settings["resolution"])
     return settings
 
@@ -954,6 +961,7 @@ def _trellis_build_args(job: Job) -> list[str]:
         "--seed", str(job.settings["seed"]),
         "--decimation-target", str(job.settings["decimation_target"]),
         "--texture-size", str(job.settings["texture_size"]),
+        "--sparse-attn-backend", job.settings["sparse_attn_backend"],
     ]
     if job.settings["allow_rembg"]:
         args.append("--allow-rembg")

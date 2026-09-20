@@ -6,6 +6,7 @@ import builtins
 import importlib.util
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,8 @@ def test_shape_slat_passes_are_disambiguated(tmp_path):
     {"texture_size": 512},
     {"decimation_target": 0},
     {"allow_rembg": "yes"},
+    {"sparse_attn_backend": "metal_flash"},
+    {"sparse_attn_backend": "fp16"},
 ])
 def test_validate_settings_rejects_invalid_values(payload):
     with pytest.raises(ValueError):
@@ -53,6 +56,31 @@ def test_validate_settings_applies_demo_defaults():
     settings = api.validate_settings({})
     assert settings == api.DEFAULT_SETTINGS
     assert settings is not api.DEFAULT_SETTINGS
+
+
+def test_default_attention_backend_is_the_stock_one():
+    """mlx must be opt-in.
+
+    It needs the vendored checkout patched and mlx installed in its venv, neither of which
+    a fresh clone has. A default that fails on a clean machine is worse than a slower one.
+    """
+    assert api.DEFAULT_SETTINGS["sparse_attn_backend"] == "sdpa"
+    assert api.validate_settings({})["sparse_attn_backend"] == "sdpa"
+
+
+def test_mlx_attention_backend_is_accepted_and_reaches_the_wrapper():
+    settings = api.validate_settings({"sparse_attn_backend": "mlx"})
+    assert settings["sparse_attn_backend"] == "mlx"
+
+    job = types.SimpleNamespace(
+        image_path=Path("in.png"),
+        output_path=Path("out.glb"),
+        settings=settings,
+        debug=True,
+    )
+    args = api._trellis_build_args(job)
+    assert "--sparse-attn-backend" in args
+    assert args[args.index("--sparse-attn-backend") + 1] == "mlx"
 
 
 def test_overall_progress_is_stage_weighted():

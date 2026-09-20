@@ -60,6 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `uv pip install --python vendor/trellis-space-mac/.venv/bin/python mlx`.
 
 ### Added
+- Expose the sparse-attention backend in the web UI's TRELLIS panel
+  (`sparse_attn_backend`, validated to `sdpa` or `mlx`, passed straight through to the
+  wrapper). It defaults to `sdpa` because `mlx` needs
+  `scripts/patch_trellis_mlx_attention.py` applied to the vendored checkout and mlx
+  installed in its venv, and a default that fails on a fresh clone is worse than one that
+  is merely slower.
+
+### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long
