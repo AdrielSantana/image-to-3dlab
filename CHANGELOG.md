@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeping every intermediate and writing a JSON record of the settings used, so assets
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
+### Fixed
+- **Retopology face targets were silently doubled.** The Decimate ratio was computed against
+  `len(mesh.polygons)`, but COLLAPSE decimation applies its ratio to *triangles* and the
+  voxel remesh before it emits *quads*. Asking for 40,000 faces produced 79,991; asking for
+  20,000 produced 39,361. Now computed against the triangle count: 40,000 lands at 39,987.
+  Face counts recorded before this fix are roughly twice what was requested.
+- `blender_retopo_bake.py` welds by position before doing anything else, and accepts a voxel
+  fraction of `0` to skip the remesh. A glTF mesh arrives split along every UV seam and
+  measures as broken until welded — the shipped Snag reads 237,359 non-manifold edges as
+  loaded and 2,671 welded, the same file.
+
 ### Removed
 - **The repository was slimmed from 244 MB to 8.5 MB and its history rewritten.** This is
   an image → 3D pipeline people clone and run, and 96% of what it carried was not that:

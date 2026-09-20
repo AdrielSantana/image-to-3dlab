@@ -87,13 +87,31 @@ def parse_args(argv: list[str]) -> tuple[str, str, int, int, float, float, float
         )
     if not 0.0 < angle_degrees <= 89.9:
         raise SystemExit(f"angle limit must be in (0, 89.9] degrees, got {angle_degrees}")
-    if not 0.0005 <= voxel_fraction <= 0.05:
+    if voxel_fraction != 0.0 and not 0.0005 <= voxel_fraction <= 0.05:
         raise SystemExit(
             f"voxel size is a fraction of the asset's largest dimension; too coarse melts "
-            f"the subject, too fine runs out of memory. got {voxel_fraction}"
+            f"the subject, too fine runs out of memory, and 0 skips the remesh. "
+            f"got {voxel_fraction}"
         )
     return (argv[0], argv[1], target_faces, size, math.radians(angle_degrees),
             voxel_fraction, metallic, roughness, ior)
+
+
+def decimate_ratio(target_faces: int, triangle_count: int) -> float:
+    """The Decimate ratio that actually lands on `target_faces` triangles.
+
+    **The trap.** Blender's COLLAPSE decimation applies its ratio to *triangles*, but the
+    voxel remesh before it emits *quads*, and `len(mesh.polygons)` counts those. Dividing
+    the target by the polygon count therefore asks for twice as many faces as intended,
+    every time: the Pixal3D fox was asked for 40,000 and came out at 79,991 from 200,632
+    quads (401,264 triangles), and the Snag was asked for 20,000 and came out at 39,361.
+    Every face target this repo has ever set has been silently doubled.
+
+    So the ratio is computed against the triangle count, which is what the modifier reads.
+    """
+    if triangle_count <= 0:
+        return 1.0
+    return min(1.0, target_faces / triangle_count)
 
 
 def base_colour_image(material):
@@ -166,15 +184,29 @@ def main() -> int:
     # quality rather than exact geometry.
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
+    # Weld first, always. A glTF mesh arrives split along every UV and normal seam, and
+    # unwelded it *measures* as broken: the shipped Snag reads 237,359 non-manifold edges
+    # (43.7%) as loaded and 2,671 (0.63%) once welded — the same file. Every operation
+    # that walks the surface, decimation included, sees the split version until this runs.
+    bpy.ops.mesh.remove_doubles(threshold=1e-6)
     bpy.ops.mesh.normals_make_consistent(inside=False)
     bpy.ops.object.mode_set(mode="OBJECT")
+    print(f"RETOPO:: welded faces={len(retopo.data.polygons):,}")
 
-    voxel = max(retopo.dimensions) * voxel_fraction
-    print(f"RETOPO:: voxel remesh at {voxel:.4f} ...")
-    retopo.data.remesh_voxel_size = voxel
-    retopo.data.remesh_voxel_adaptivity = 0.0
-    bpy.ops.object.voxel_remesh()
-    print(f"RETOPO:: manifold faces={len(retopo.data.polygons):,}")
+    if voxel_fraction:
+        voxel = max(retopo.dimensions) * voxel_fraction
+        print(f"RETOPO:: voxel remesh at {voxel:.4f} ...")
+        retopo.data.remesh_voxel_size = voxel
+        retopo.data.remesh_voxel_adaptivity = 0.0
+        bpy.ops.object.voxel_remesh()
+        print(f"RETOPO:: manifold faces={len(retopo.data.polygons):,}")
+    else:
+        # Skipping the remesh is worth testing per asset. It was adopted because the raw
+        # mesh appeared hopelessly non-manifold and shattered under decimation, but that
+        # reading came from measuring it unwelded. The voxel pass costs the creases — it
+        # resamples the surface — so where a welded mesh decimates cleanly, going direct
+        # keeps detail the remesh throws away.
+        print("RETOPO:: voxel remesh skipped (voxel_fraction=0); decimating the weld")
 
     # Recalculate normals AFTER the voxel remesh, not only before it. QuadriFlow requires
     # a manifold mesh whose face normals point consistently, and it refuses with a
@@ -213,7 +245,13 @@ def main() -> int:
         print(f"RETOPO:: quadriflow declined ({before:,} unchanged); decimating instead")
         modifier = retopo.modifiers.new("retopo_decimate", "DECIMATE")
         modifier.decimate_type = "COLLAPSE"
-        modifier.ratio = min(1.0, target_faces / max(before, 1))
+        # Against triangles, not polygons -- see decimate_ratio. The voxel remesh above
+        # emits quads, so counting polygons here asks for twice the target.
+        retopo.data.calc_loop_triangles()
+        triangles = len(retopo.data.loop_triangles)
+        modifier.ratio = decimate_ratio(target_faces, triangles)
+        print(f"RETOPO:: decimating {triangles:,} triangles to {target_faces:,} "
+              f"(ratio {modifier.ratio:.4f})")
         bpy.ops.object.modifier_apply(modifier=modifier.name)
         after = len(retopo.data.polygons)
 
