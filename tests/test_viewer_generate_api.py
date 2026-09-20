@@ -46,6 +46,7 @@ def test_shape_slat_passes_are_disambiguated(tmp_path):
     {"allow_rembg": "yes"},
     {"sparse_attn_backend": "metal_flash"},
     {"sparse_attn_backend": "fp16"},
+    {"sparse_attn_backend": "sdpa-fp16"},
 ])
 def test_validate_settings_rejects_invalid_values(payload):
     with pytest.raises(ValueError):
@@ -81,6 +82,40 @@ def test_mlx_attention_backend_is_accepted_and_reaches_the_wrapper():
     args = api._trellis_build_args(job)
     assert "--sparse-attn-backend" in args
     assert args[args.index("--sparse-attn-backend") + 1] == "mlx"
+
+
+@pytest.mark.parametrize("choice,flag,dtype", [
+    ("sdpa", "sdpa", None),
+    ("mlx", "mlx", "fp32"),
+    ("mlx-fp16", "mlx", "fp16"),
+])
+def test_attention_choice_splits_into_flag_and_precision(choice, flag, dtype):
+    cli, env = api.attention_backend_spec(choice)
+    assert cli == flag
+    assert env.get("I2L_MLX_ATTN_DTYPE") == dtype
+
+
+def test_mlx_precision_is_pinned_explicitly_not_left_to_the_environment():
+    """Selecting mlx must set fp32 rather than inherit whatever the shell had.
+
+    The precision changes what the run computes, so leaving it to an exported variable
+    makes two identical-looking jobs produce different output.
+    """
+    assert "I2L_MLX_ATTN_DTYPE" in api.BACKEND_ENV_KEYS
+    _, env = api.attention_backend_spec("mlx")
+    assert env["I2L_MLX_ATTN_DTYPE"] == "fp32"
+
+
+def test_fp16_choice_still_passes_mlx_to_the_wrapper():
+    settings = api.validate_settings({"sparse_attn_backend": "mlx-fp16"})
+    job = types.SimpleNamespace(
+        image_path=Path("in.png"), output_path=Path("out.glb"),
+        settings=settings, debug=True,
+    )
+    args = api._trellis_build_args(job)
+    # The wrapper has no fp16 flag; precision travels by environment.
+    assert args[args.index("--sparse-attn-backend") + 1] == "mlx"
+    assert "mlx-fp16" not in args
 
 
 def test_overall_progress_is_stage_weighted():

@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is merely slower.
 
 ### Added
+- Offer attention precision as part of the web UI's backend choice: `sdpa`, `mlx`
+  (fp32) or `mlx-fp16`. Precision is a property of the fused MLX kernel, so it belongs
+  to the same control rather than a second one -- fp16 on the stock `sdpa` path is
+  measurably *slower* than fp32 and would be a meaningless combination to offer. The
+  chosen precision is pinned into the job's environment rather than inherited, so two
+  runs that look identical in the UI cannot compute different things.
+
+### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long
