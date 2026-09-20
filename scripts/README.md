@@ -177,6 +177,7 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `patch_trellis_enable_cleanup.py` | Re-enable the decode-time mesh cleanup that `mps_compat.py` turns into no-ops. |
 | `patch_trellis_dump_decode.py` | Teach `generate.py` to cache the decoded mesh, so baking can be re-run without sampling. |
 | `patch_trellis_no_bria.py` | Disable TRELLIS' configured background model for license-controlled runs. |
+| `patch_trellis_mlx_attention.py` | Add an `mlx` sparse-attention backend to a vendored TRELLIS.2 checkout. |
 | `patch_ovoxel_pack_options.py` | Let `o_voxel.postprocess.to_glb` forward xatlas packing options. |
 | `patch_ovoxel_opaque_material.py` | Match the official TRELLIS GLB's opaque, single-sided material flags. |
 | `patch_ovoxel_weld_before_simplify.py` | Weld coincident vertices before every `simplify()` in o_voxel's `to_glb`. |

@@ -906,7 +906,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="final face/vertex budget the mesh is simplified DOWN to "
                              "(our app.py demo default 300000; the live HF demo may use 3000000)")
     parser.add_argument("--texture-size", type=int, default=DEMO_PARAMS["texture_size"])
-    parser.add_argument("--sparse-attn-backend", default="sdpa", choices=("sdpa", "metal_flash"))
+    parser.add_argument("--sparse-attn-backend", default="sdpa",
+                        choices=("sdpa", "metal_flash", "mlx"),
+                        help="sdpa is the default unfused MPS path; mlx routes attention "
+                             "through MLX's fused Metal kernel (needs "
+                             "scripts/patch_trellis_mlx_attention.py applied and mlx "
+                             "installed in the vendor venv)")
     parser.add_argument("--allow-rembg", action="store_true",
                         help="permit loading the background remover for a non-alpha input")
     parser.add_argument("--allow-uncut", action="store_true",

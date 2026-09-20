@@ -36,6 +36,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   precaution against the most likely trigger rather than a confirmed fix.
 
 ### Added
+- Add an `mlx` sparse-attention backend for TRELLIS.2 on Apple Silicon
+  (`scripts/patch_trellis_mlx_attention.py` plus `image_to_3dlab/mlx_attention.py`),
+  selected with `--sparse-attn-backend mlx`.
+
+  TRELLIS.2-4B has a head dimension of 128. PyTorch's MPS backend has no fused attention
+  kernel, and the vendored Metal kernel supports head dimensions only through 64, so the
+  model falls back to unfused SDPA. Measured at the real Stage-3 shape (9,801 tokens,
+  12 heads, head dim 128), **attention is 93.2% of sampling time**.
+
+  On a full 1024-cascade Storm Ram run against a recorded baseline with identical seed and
+  parameters, sampling went from **1760.7s to 963.6s (1.83x) at fp32**, and to **552.2s
+  (3.19x) at fp16**. Two incidental findings: fp16 on torch MPS SDPA is *slower* than fp32,
+  so half precision is not a lever on the old path; and the MLX-vs-torch fp32 difference is
+  ~1e-3 on unit-scale inputs, arising from MLX's arithmetic on Metal rather than from the
+  fused kernel.
+
+  The change is additive. The existing `sdpa` path is untouched and remains the default,
+  and the new backend defaults to fp32 so it changes speed without changing precision.
+  `I2L_MLX_ATTN_DTYPE=fp16` opts into the faster, lower-precision path.
+
+  Requires `mlx` in the vendor venv:
+  `uv pip install --python vendor/trellis-space-mac/.venv/bin/python mlx`.
+
+### Added
 - **`scripts/blender_bind_rig.py` binds a mesh to an armature headlessly**, driving the
   existing voxel-proxy weight transfer on a saved `.blend` rather than over the live GUI
   socket, where a remesh of a few hundred thousand vertices blocks Blender's handler long
