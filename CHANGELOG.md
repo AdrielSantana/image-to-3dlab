@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Finishing jobs in the browser** (`POST /api/finish`) — retopologise, repaint and
+  compress an asset the viewer already has, with SSE progress and the result and record
+  fetched by URL. Refuses to start while a generation is running; every setting is
+  bounds-checked before it reaches a subprocess argument.
 - **`scripts/retopo_repaint.py`** — runs retopologise → repaint → compress as one command,
   keeping every intermediate and writing a JSON record of the settings used, so assets
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
