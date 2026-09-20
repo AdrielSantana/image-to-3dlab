@@ -107,11 +107,15 @@ vendored tree receives only a dispatch branch.
 
 ## Caveats, stated plainly
 
-**MLX and torch do not agree exactly.** At fp32 they diverge by about 1e-3 on unit-scale
-inputs, and the gap tracks input magnitude rather than sequence length. This is *not* the
-fused kernel: MLX's own matmul-and-softmax diverges by the same amount, so it is MLX's
-arithmetic on Metal. fp32 output was judged acceptable by eye. fp16 has not been judged at
-the time of writing.
+**MLX and torch do not agree exactly, and it does not matter.** At fp32 they diverge by
+about 1e-3 on unit-scale inputs, and the gap tracks input magnitude rather than sequence
+length. This is *not* the fused kernel: MLX's own matmul-and-softmax diverges by the same
+amount, so it is MLX's arithmetic on Metal.
+
+That difference does not survive into a rendered asset. Holding seed, resolution and every
+sampler parameter fixed and varying only the attention backend, `sdpa`, MLX fp32 and MLX
+fp16 produce visually equivalent output, with face counts inside 0.3% of one another. See
+*The attention backend does not change what you get* below.
 
 **One run died between sampling and decode** with
 `index -1097849984 is out of bounds: 0, range 0 to 7419814`, raised at the first
@@ -127,17 +131,59 @@ fix.**
 alarming. The fp16 run, made with the machine otherwise idle, came in at 165.8s. The fp32
 run had diagnostic jobs competing for the GPU. Nothing to fix.
 
+## The attention backend does not change what you get
+
+Worth stating separately, because it is the question that decides whether any of this is
+usable, and because it is easy to convince yourself otherwise from confounded comparisons.
+
+**Holding the seed fixed and varying only the attention backend produces visually
+equivalent assets.** Three runs at one resolution and one seed — stock `sdpa`, MLX at fp32,
+MLX at fp16 — were indistinguishable by eye, with face counts within 0.3%. Neither the
+switch to MLX nor the drop to half precision cost anything visible.
+
+Two practical consequences follow:
+
+- **Prefer fp16 wherever MLX is used.** It is not a quality-for-speed trade. fp32 buys
+  nothing back.
+- **Colour or detail differences between runs are almost never the backend.** They are the
+  seed, or the pipeline type, and both are easy to change without noticing.
+
+### The trap this replaced
+
+An early comparison appeared to show the backend washing colour out of an asset. It did
+not. The runs being compared differed in *three* ways at once: pipeline type, seed, and
+backend. Two of those are enough to change colour substantially on their own, and one of
+them is not obvious at all — **each pipeline type uses a different texture model**
+(`tex_slat_flow_model_512` versus `tex_slat_flow_model_1024`), so changing resolution
+changes which model paints the asset, not merely how finely it is sampled.
+
+The lesson generalises past attention: **when comparing generated output, change one thing.
+The web UI randomises the seed unless told otherwise, which silently makes every comparison
+a three-variable one.** Pin the seed first, then vary the single thing under test.
+
 ## What is left
 
 1. **Route only long sequences through MLX.** About 60 attention calls happen per step and
    many are cross-attention against a short conditioning sequence, where the fixed
    conversion cost dominates. That is why the end-to-end gain was 2.05x rather than the
    kernel's 2.83x. A length threshold recovers most of the gap and changes no numerics.
-2. **Judge fp16 output.** The speed is measured; the quality is not.
-3. **Attack the fixed costs.** At fp16 they are roughly 306 seconds -- 80s pipeline load,
+2. **The gain is resolution-dependent, and at the low end it vanishes.** Attention is
+   quadratic in sequence length, so a pipeline type producing ~2,300 tokens does roughly a
+   fifteenth of the attention work of one producing ~9,000. At the low end torch's unfused
+   path is fast enough that MLX's host round-trip cancels the kernel gain exactly —
+   measured as 176s against 184s, inside noise. **MLX is worth selecting only where the
+   token count is large.** Any UI that advertises a fixed speedup is wrong at the low end.
+3. **Decode faults, twice, both with MLX resident in the process.** Both occurred at the
+   higher token count; every low-resolution run decoded cleanly, and re-decoding the same
+   cached latents in a fresh process succeeded both times. The decoder uses convolution
+   blocks and no attention, so the patched code never runs there — which points at MLX
+   holding Metal buffers that decode then lacks, rather than at wrong numbers. Untested
+   remedy: release MLX's cache when sampling ends, before decode begins. Not reproduced
+   often enough to call diagnosed.
+4. **Attack the fixed costs.** At fp16 they are roughly 306 seconds -- 80s pipeline load,
    60s decode, 166s bake -- or 36% of the run, and no attention work can touch them. Bake
    is the largest single stage now.
-4. **Reconsider the non-cascade `1024` pipeline type.** TRELLIS.2 supports `512`, `1024`,
+5. **Reconsider the non-cascade `1024` pipeline type.** TRELLIS.2 supports `512`, `1024`,
    `1024_cascade` and `1536_cascade`; this repo maps `--resolution 1024` to the cascade and
    never exposes plain `1024`, which was abandoned earlier after a 100-minute run. That run
    predates this work, and plain `1024` raises sparse-structure resolution from 32 to 64,
