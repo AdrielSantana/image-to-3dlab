@@ -206,11 +206,14 @@ def main(argv: list[str] | None = None) -> int:
         panels = []
         for index, (path, label) in enumerate(parsed):
             png = tmp / f"panel_{index}.png"
+            # check=False on purpose: Blender can exit non-zero having still written a
+            # usable frame, and can exit zero having written nothing. The file is the
+            # only honest success signal, so that is what is tested below.
             result = subprocess.run(
                 [str(blender), "--background", "--python", str(script), "--",
                  str(path), str(png), str(args.azimuth), str(args.elevation),
                  str(PANEL_W), str(PANEL_H)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, check=False,
             )
             if not png.is_file():
                 sys.stderr.write(result.stdout[-2000:] + result.stderr[-2000:])
