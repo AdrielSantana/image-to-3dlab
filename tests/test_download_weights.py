@@ -1,0 +1,67 @@
+"""Tests for the Hunyuan weight downloader's post-conversion cleanup.
+
+`download_shape` fetches a `.ckpt`, converts it to `.safetensors`, and used to leave both
+on disk. That stored the same 6.9 GB model twice for every user, and went unnoticed until
+a disk audit on 2026-09-21.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+SCRIPT = Path(__file__).resolve().parents[1] / "hunyuan_mlx" / "download_weights.py"
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("download_weights", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["download_weights"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+dw = _load()
+
+
+def test_the_checkpoint_goes_once_the_conversion_exists(tmp_path):
+    ckpt = tmp_path / "model.fp16.ckpt"
+    converted = tmp_path / "model.fp16.safetensors"
+    ckpt.write_bytes(b"\0" * 4096)
+    converted.write_bytes(b"\0" * 4096)
+
+    assert dw.discard_converted_checkpoint(ckpt, converted) is True
+    assert not ckpt.exists()
+    assert converted.is_file()
+
+
+def test_an_unfinished_conversion_keeps_the_checkpoint(tmp_path):
+    # Deleting the source next to a zero-byte output would leave nothing to retry from.
+    ckpt = tmp_path / "model.fp16.ckpt"
+    converted = tmp_path / "model.fp16.safetensors"
+    ckpt.write_bytes(b"\0" * 4096)
+    converted.write_bytes(b"")
+
+    assert dw.discard_converted_checkpoint(ckpt, converted) is False
+    assert ckpt.is_file()
+
+
+def test_a_missing_conversion_keeps_the_checkpoint(tmp_path):
+    ckpt = tmp_path / "model.fp16.ckpt"
+    ckpt.write_bytes(b"\0" * 4096)
+    assert dw.discard_converted_checkpoint(ckpt, tmp_path / "absent.safetensors") is False
+    assert ckpt.is_file()
+
+
+def test_rerunning_after_cleanup_is_harmless(tmp_path):
+    converted = tmp_path / "model.fp16.safetensors"
+    converted.write_bytes(b"\0" * 4096)
+    assert dw.discard_converted_checkpoint(tmp_path / "model.fp16.ckpt", converted) is False
+
+
+def test_the_2_1_route_is_the_only_one_that_converts():
+    # 2.1 ships only a .ckpt on HF; the others ship safetensors directly, so only 2.1 has
+    # a checkpoint to clean up afterwards.
+    assert set(dw.SHAPE_HF_SOURCES) == {"2.1", "2.0", "2.0-turbo"}
+    assert dw.SHAPE_HF_SOURCES["2.1"][0] == "tencent/Hunyuan3D-2.1"
