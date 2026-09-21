@@ -144,6 +144,11 @@ def main() -> int:
     if not matted:
         print("[pixal3d] no alpha channel; BiRefNet will matte it first (~13s)", flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    # `trellis-cli` is launched from its own tree so it can find its Metal library, which
+    # means a relative input or output path would resolve against *that* directory and the
+    # run dies at once with "can't fopen". Absolute paths are the only safe thing to pass.
+    args.image = args.image.resolve()
+    args.output = args.output.resolve()
 
     started = time.time()
     command = build_command(

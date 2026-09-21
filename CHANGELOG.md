@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
 ### Fixed
+- **`pixal3d_generate.py` could not run on a relative path.** `trellis-cli` is launched from
+  its own tree so it can find its Metal library, so a relative input or output resolved
+  against *that* directory and the run died immediately with `can't fopen`. Both paths are
+  resolved before the command is built.
 - **A finished Finish run left the browser with no GLB.** The worker's own
   `I2L_STAGE::done` marker reached the browser as a `phase: "done"` event carrying no
   artifact URLs. The page treated it as the job's completion, closed its event stream on

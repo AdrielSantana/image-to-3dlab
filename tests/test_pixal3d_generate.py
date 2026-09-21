@@ -9,6 +9,7 @@ projected through it, so a missing FOV is not a cosmetic difference.
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -110,3 +111,32 @@ def test_readiness_needs_the_whole_weight_set(tmp_path):
 
     (models / "part8.gguf").write_bytes(b"x")
     assert px.readiness(cli, models)["ready"] is True
+
+
+def test_paths_reach_the_cli_absolute(tmp_path, monkeypatch, capsys):
+    """`trellis-cli` runs from its own tree, so a relative path resolves against the wrong
+    directory and the run dies at once with "can't fopen". Caught for real on three assets.
+    """
+    image = tmp_path / "gnome.png"
+    image.write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+    recorded = {}
+
+    def fake_popen(command, **kwargs):
+        recorded["command"] = command
+        raise SystemExit(0)
+
+    monkeypatch.setattr(px, "has_alpha", lambda _: True)
+    monkeypatch.setattr(px, "readiness", lambda *a, **k: {"ready": True})
+    monkeypatch.setattr(px.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        sys, "argv", ["pixal3d_generate.py", "gnome.png", "out/gnome.glb"],
+    )
+
+    with pytest.raises(SystemExit):
+        px.main()
+
+    command = recorded["command"]
+    assert command[command.index("--sv-image") + 1] == str(image.resolve())
+    assert command[-1] == str((tmp_path / "out" / "gnome.glb").resolve())
