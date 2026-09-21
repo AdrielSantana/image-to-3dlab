@@ -22,3 +22,23 @@ Convert with `sips`:
 ```
 sips -Z 1600 -s format jpeg -s formatOptions 65 input.png --out docs/images/name.jpg
 ```
+
+## Exceptions to "JPEG only"
+
+Two files here are not doc screenshots and follow different rules.
+
+- **`turntable-*.webp`** — an animated WebP in the README. A still cannot show that the
+  result is a real model rather than a flattering angle, which is the one thing a reader
+  arriving from a link wants to know. Budget **under ~400 KB**: 360px, every 5th frame of
+  a 12s turntable (60 frames), quality ~42. Build it with Pillow, not `ffmpeg` — the
+  Homebrew build here has no WebP encoder:
+
+  ```python
+  frames[0].save(out, save_all=True, append_images=frames[1:],
+                 duration=200, loop=0, quality=42, method=6)
+  ```
+
+- **`social-preview.jpg`** — 1280x640, the card shown when the repo is linked on X, Slack
+  or Discord. **It is not referenced by any page.** GitHub only uses it once uploaded under
+  *Settings → General → Social preview*; without that, a shared link shows the owner's
+  avatar. Kept in the tree so it is versioned and rebuildable.

@@ -1,6 +1,6 @@
 # Image to 3D Lab
 
-
+![Three source images above the textured 3D models generated from them: a photoreal warrior bust, a stylised garden gnome, and a multi-object shoe-house diorama](docs/images/one-image-in-textured-model-out.jpg)
 
 **Turn a single image into a textured 3D model — locally on Apple Silicon, with a
 license-provenance record for every result.**
@@ -28,6 +28,14 @@ pass where TRELLIS.2 bleached flat illustrations badly enough to need a separate
 stage — in 5m50s against 14 min. Raise `--gss` to 10; at the 7.5 default a thin sword blade
 went missing entirely. Numbers, caveats and the Mac-port comparison:
 [`docs/pixal3d-evaluation-2026-09-20.md`](docs/pixal3d-evaluation-2026-09-20.md).
+
+<p align="center">
+  <img src="docs/images/turntable-pixal3d-warrior.webp" width="360"
+       alt="A full 360-degree turn of the generated warrior bust, showing textured geometry from every side">
+  <br>
+  <sub>The warrior above, turned through 360°. Pixal3D, one pass, no repaint stage.<br>
+  Every model on this page came from a single image on an M-series Mac.</sub>
+</p>
 
 Hunyuan3D-MLX (Xiong, full pipeline) remains the quickest to get running from a fresh clone
 (~9 min shape+paint end to end at its default model).
