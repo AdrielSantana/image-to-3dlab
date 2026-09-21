@@ -131,3 +131,5 @@
 .mode.needs-attention::after { content: '•'; color: #e8c37a; margin-left: 5px; }
 .setup-remove { margin-left: 8px; opacity: .65; }
 .setup-remove:hover { opacity: 1; }
+.setup-remove { margin-left: 8px; opacity: .55; border-color: #5a3038; color: #e0a9a9; }
+.setup-remove:hover { opacity: 1; background: #3a1f24; }

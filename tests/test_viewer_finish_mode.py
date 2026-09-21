@@ -130,3 +130,16 @@ def test_the_setup_page_states_cost_and_licence_before_downloading():
     assert "will be downloaded from Hugging Face" in SETUP
     assert "Licence:" in SETUP
     assert "/download" in SETUP and "/cancel" in SETUP
+
+
+def test_removing_weights_needs_the_backend_id_typed_out():
+    """A yes/no dialog is not enough for this one.
+
+    Three Remove buttons sit in one column, each deleting gigabytes that take minutes to
+    hours to replace. The typed id proves both that it was meant and which one was meant.
+    """
+    assert "window.prompt(" in SETUP
+    assert "Type  ${backend.id}  to confirm" in SETUP
+    assert "!== backend.id.toLowerCase()" in SETUP
+    # And it must never fall through to the request on a mistyped or cancelled prompt.
+    assert "if (typed === null) return;" in SETUP
