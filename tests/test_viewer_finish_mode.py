@@ -99,7 +99,10 @@ SETUP = (VIEWER / "modes" / "setup.js").read_text()
 
 
 def test_every_id_the_setup_mode_looks_up_exists_in_the_page():
-    referenced = set(re.findall(r"s\('([^']+)'\)", SETUP))
+    # The lookup helper is a single `s`, so the pattern has to reject any call that merely
+    # *ends* in one: `.includes('huggingface')` matched a bare `s\('...'\)` and reported
+    # "huggingface" as a missing element id.
+    referenced = set(re.findall(r"(?<![A-Za-z0-9_.])s\('([^']+)'\)", SETUP))
     assert referenced, "the module should look up some elements"
     missing = sorted(referenced - _element_ids(INDEX))
     assert not missing, f"setup.js references ids absent from index.html: {missing}"
