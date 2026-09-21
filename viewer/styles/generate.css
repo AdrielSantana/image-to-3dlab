@@ -72,3 +72,60 @@
   #generate-progress-box { min-height: 420px; }
 }
 .stage-row.failed { color: #f0a9a0; }
+
+/* --- Setup & Status ---------------------------------------------------------------
+   The one page that spends the user's disk, so it reads as a decision surface: state
+   first, cost second, the button last and never before a confirmation. */
+.setup-page { max-width: 860px; margin: 0 auto; }
+.setup-head { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.setup-head h2 { margin: 0 0 4px; }
+.setup-sub { font-size: 12px; opacity: .75; margin: 0; max-width: 54ch; }
+.setup-skip { flex: 0 0 auto; font-size: 12px; display: grid;
+  grid-template-columns: auto 1fr; align-items: baseline; gap: 4px 7px; }
+.setup-skip small { grid-column: 2; margin-top: 0; }
+.setup-skip small { display: block; opacity: .6; margin-top: 2px; }
+.setup-summary { margin: 16px 0 12px; padding: 10px 12px; border-radius: 8px;
+  background: #1b2130; font-size: 13px; }
+.setup-backends { display: grid; gap: 12px; }
+.setup-card { border: 1px solid #262b36; border-radius: 10px; padding: 12px 14px;
+  background: #15181e; }
+.setup-card.ready { border-color: #2a4436; }
+.setup-card.partial { border-color: #4a4426; }
+.setup-card-head { display: grid; grid-template-columns: 20px 1fr auto; gap: 10px;
+  align-items: start; }
+.setup-dot { font-size: 15px; line-height: 1.4; }
+.setup-dot.ok { color: #7fd6a0; }
+.setup-dot.warn { color: #e8c37a; }
+.setup-dot.off { color: #6b7280; }
+.setup-card-title strong { font-size: 14px; }
+.setup-card-state { font-size: 11px; opacity: .7; margin-top: 2px; }
+.setup-pill { font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  background: #2b4a6f; color: #cfe3ff; padding: 2px 6px; border-radius: 99px;
+  margin-left: 6px; vertical-align: 2px; }
+.setup-ready { color: #7fd6a0; font-size: 12px; }
+.setup-card-best { font-size: 12px; margin: 8px 0 2px; }
+.setup-card-trade { font-size: 12px; opacity: .7; margin: 0; }
+.setup-card-caveat { font-size: 12px; margin: 8px 0 0; padding: 7px 9px; border-radius: 6px;
+  background: #3a2f1c; color: #f0d9a8; }
+.setup-card-detail { margin-top: 10px; font-size: 12px; }
+.setup-card-detail summary { cursor: pointer; opacity: .75; }
+.setup-card-detail ul { margin: 8px 0; padding-left: 18px; }
+.setup-card-detail li { margin-bottom: 4px; }
+.setup-card-licence, .setup-card-extra { opacity: .7; margin: 6px 0 0; }
+.setup-run { margin-top: 18px; padding: 12px 14px; border-radius: 10px; background: #15181e;
+  border: 1px solid #262b36; }
+.setup-run-head { display: flex; justify-content: space-between; align-items: center; }
+.setup-run-detail { font-size: 12px; opacity: .8; margin-top: 4px; }
+.setup-run pre { max-height: 220px; overflow: auto; font-size: 11px; opacity: .65;
+  margin: 10px 0 0; white-space: pre-wrap; }
+.setup-foot { font-size: 11px; opacity: .6; margin-top: 20px; }
+
+/* Generate keeps only a health line; the detail lives on the page above. */
+.health-strip { display: flex; align-items: center; gap: 9px; padding: 8px 12px;
+  border-radius: 8px; background: #15181e; border: 1px solid #262b36; font-size: 12px;
+  margin-bottom: 12px; }
+.health-dot { font-size: 15px; }
+.health-dot.ok { color: #7fd6a0; }
+.health-dot.bad { color: #f0a9a0; }
+.health-dot.warn { color: #e8c37a; }
+.mode.needs-attention::after { content: '•'; color: #e8c37a; margin-left: 5px; }

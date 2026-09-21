@@ -323,16 +323,34 @@ async function refreshSetup() {
         rows.push('<div class="setup-check"><span class="hint">→</span><span class="hint">' + mlx.hint + '</span></div>');
       }
     }
-    el.innerHTML = rows.join('');
-    // Only TRELLIS has an automated bootstrap script (scripts/bootstrap_trellis_space_macos.py);
-    // other backends' setup is manual, so the run-setup button only ever applies there.
-    const runBox = g('setup-run');
-    runBox.hidden = backendId !== 'trellis' || !!(s.build && s.build.present);
-    if (!runBox.hidden) g('setup-run-btn').disabled = false;
+    // One line, not a list of checks. The full picture lives on Setup & Status; here the
+    // only question is whether this backend can run right now.
+    const missing = Object.values(s.weights || {}).filter((w) => !w.present).length;
+    setHealth(
+      setupState.ready && !missing ? 'ok' : (setupState.ready ? 'warn' : 'bad'),
+      setupState.ready && !missing
+        ? `${buildLabel} is ready`
+        : setupState.ready
+          ? `${buildLabel} is ready, but ${missing} weight set${missing === 1 ? '' : 's'} `
+            + 'would download on first use'
+          : `${buildLabel} is not installed yet`,
+      !(setupState.ready && !missing),
+    );
   } catch (e) {
-    el.innerHTML = '<div class="setup-check"><span class="bad">✗</span><span>Setup check failed: ' + e + '</span></div>';
+    setHealth('bad', `Could not read machine status: ${e}`, true);
   }
   updateGenerateButton();
+}
+
+function setHealth(level, text, showLink) {
+  const dot = g('health-dot');
+  dot.className = `health-dot ${level}`;
+  dot.textContent = level === 'ok' ? '●' : (level === 'warn' ? '◐' : '○');
+  g('health-text').textContent = text;
+  g('health-goto').hidden = !showLink;
+  // A badge rather than a forced redirect: the user may have asked not to land on the
+  // setup page, and overriding that because something needs attention would ignore them.
+  document.getElementById('mode-setup')?.classList.toggle('needs-attention', level !== 'ok');
 }
 async function loadBackendMeta() {
   try {
@@ -359,19 +377,6 @@ g('generate-backend').onchange = () => {
   if (backendId === 'trellis' && gen.file) inspectTrellisInput(gen.file);
   refreshSetup();
 };
-g('setup-run-btn').onclick = async () => {
-  const btn = g('setup-run-btn'), log = g('setup-log');
-  btn.disabled = true; log.style.display = 'block'; log.textContent = 'starting bootstrap…\n';
-  try {
-    const res = await fetch('/api/setup/run', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) { log.textContent += (data.error || res.statusText) + '\n'; btn.disabled = false; return; }
-    const source = new EventSource(data.events_url);
-    source.onmessage = (e) => {
-      const ev = JSON.parse(e.data);
-      if (ev.message) { log.textContent += ev.message + '\n'; log.scrollTop = log.scrollHeight; }
-      if (ev.phase === 'setup_done') { source.close(); refreshSetup(); }
-    };
-  } catch (e) { log.textContent += e.message + '\n'; btn.disabled = false; }
-};
+g('health-goto').onclick = () => document.getElementById('mode-setup').click();
+
 loadBackendMeta();
