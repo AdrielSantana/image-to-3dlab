@@ -51,6 +51,7 @@ A generation run costs 15-20 minutes. These cost seconds and are worth it first.
 | `soften_markings.py` | Reduce the contrast of flat painted markings in a conditioning image. |
 | `check_trellis_space_attention.py` | Cheap MPS integration gate for TRELLIS sparse self/cross attention. |
 | `check_trellis_space_dino.py` | Capture the exact preprocessed image and DINO conditioning tensor. |
+| `audit_model_weights.py` | Find model weights stored twice, and optionally reclaim the duplicates. |
 
 ## Repair the mesh
 
@@ -125,6 +126,7 @@ These talk to a running Blender over the `execute_code` socket on port 9876 unle
 | `blender_pick_pixel.py` | Raycast one render pixel into the asset currently staged in live Blender. |
 | `blender_import_character.py` | Append a rigged character (armature + skinned mesh) into the currently live Blender scene, cleaned up and positioned. |
 | `blender_wind_demo.py` | Animate labelled foliage with shader-style wind and render it to MP4. |
+| `build_showcase_reel.py` | Build a source-image -> swipe -> turntable showcase reel from a set of assets. |
 
 ## Blender: change the geometry
 
