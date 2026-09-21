@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`scripts/retopo_repaint.py --resume`** — reuses any stage artifact already sitting
+  beside the output instead of recomputing it, so a run that died in compression is not
+  charged for the five-minute repaint a second time (measured: 8s → 0.1s on a
+  retopologise+compress run). A zero-byte artifact counts as a stage that died mid-write
+  rather than one that finished, so the stage that actually failed is the one re-run.
 - **Pixal3D as a backend** — `scripts/bootstrap_pixal3d_cpp.sh` builds the C++/GGML runtime
   (raven38/pixal3d.cpp) with Metal and fetches the 8.1 GB single-view Q8_0 weights;
   `scripts/pixal3d_generate.py` runs image → textured GLB; the viewer offers it alongside
@@ -22,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a difference measuring below the renderer's own sampling noise (5.48/255 against 6.00 for
   the same file rendered twice). Default is core-glTF JPEG at 2048; `--format webp` is
   smaller where the destination handles the extension.
+- **Finishing runs are recoverable from the browser** — the Finish panel lists every run
+  under `output/finish/`, with a download link for one that completed and a Resume button
+  for one that stopped part-way. The job registry lives in the server's memory and dies
+  with it; the run directories do not, so a run whose browser tab was closed is no longer
+  lost. Each directory now holds a `settings.json` written before the first stage, which
+  is what makes a resume faithful; one without it is listed but not offered for resume.
+- **Real progress during the repaint** — the paint stage's own `step 7/15` output is
+  parsed into the progress panel, with a per-stage and overall ETA extrapolated from
+  measured pace rather than a constant. The overall bar is weighted by measured stage
+  cost (retopology 5%, repaint 92%, compress 3%), so it moves continuously through the
+  five minutes that used to show one unchanging row.
 - **Finishing jobs in the browser** (`POST /api/finish`) — retopologise, repaint and
   compress an asset the viewer already has, with SSE progress and the result and record
   fetched by URL. Refuses to start while a generation is running; every setting is
@@ -31,6 +47,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
 ### Fixed
+- **A finished Finish run left the browser with no GLB.** The worker's own
+  `I2L_STAGE::done` marker reached the browser as a `phase: "done"` event carrying no
+  artifact URLs. The page treated it as the job's completion, closed its event stream on
+  it, and so never received the real completion event — the only one with `result_url` —
+  leaving a download link pointing at `undefined` while the finished asset sat complete
+  in `output/finish/`. The worker's marker is now swallowed: only the job API, the one
+  thing that knows the URLs, may end a run.
+- **The last stage in a progress panel never ticked.** A stage was only marked done when
+  a *later* stage started, and the last stage has none, so it sat on "estimating…" for
+  good. A terminal event now completes the whole list (and marks the running stage failed
+  on an error). Affected Generate as well as Finish.
+- **The Finish progress bar never filled.** Its fill was styled by `#generate-overall-bar`
+  alone, an id the Finish panel's identically structured bar does not have; the rule is
+  now `.progress-track > div`.
+- **Stages with no sub-progress claimed to be estimating.** Retopology and compression
+  report no percentage of their own, and the panel rendered that as `· ~estimating…`,
+  which reads as a stall. They now read `running`.
 - **Normal bakes came out as rainbow confetti, and now do not.** The decode is non-manifold,
   so winding repair cannot converge and roughly half the rays returned the hit normal
   reversed — 48.9% of hits more than 90° from the low-poly normal, upper quartile 164°. A

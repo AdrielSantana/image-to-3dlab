@@ -598,3 +598,97 @@ def test_fit_skeleton_overlay_selects_bones_and_drags_joint_in_camera_plane():
     assert payload["moved"] is True
     assert payload["boneToneMapped"] is False
     assert payload["markerToneMapped"] is False
+
+
+def _run_panel(script: str) -> object:
+    """Drive the shipped JobProgressPanel against a minimal DOM and read the rows back.
+
+    The panel is the thing that actually renders "estimating…", so it is the thing under
+    test — a re-implementation of its rules here would pass while the shipped file stayed
+    broken, which is exactly how this bug survived (2026-09-21).
+    """
+    module_url = (REPO / "viewer" / "components" / "job-progress.js").as_uri()
+    program = f"""
+      import {{ JobProgressPanel }} from {json.dumps(module_url)};
+
+      // Enough DOM for the panel: rows it creates, and the three text elements it writes.
+      const make = () => {{
+        const node = {{
+          className: '', dataset: {{}}, innerHTML: '', textContent: '', style: {{}},
+          children: [],
+          classList: {{
+            add: (c) => {{ node.className += ' ' + c; }},
+            contains: (c) => node.className.split(/\\s+/).includes(c),
+          }},
+          appendChild: (child) => {{ node.children.push(child); return child; }},
+          querySelector: (selector) => {{
+            const key = selector.replace('.', '');
+            node._parts = node._parts || {{}};
+            node._parts[key] = node._parts[key] || make();
+            return node._parts[key];
+          }},
+        }};
+        return node;
+      }};
+      globalThis.document = {{ createElement: make }};
+
+      const host = make(), bar = make(), label = make(), eta = make();
+      const panel = new JobProgressPanel({{ stages: host, bar, label, eta }});
+      const rowState = () => host.children.map((row) => [
+        row.className.trim(), row.querySelector('.stage-detail').textContent,
+      ]);
+      {script}
+    """
+    result = subprocess.run(
+        [NODE, "--input-type=module", "--eval", program],
+        check=True, capture_output=True, text=True,
+    )
+    return json.loads(result.stdout)
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_the_final_stage_is_ticked_when_the_job_reports_done():
+    # The reported bug: a finished run whose "Compress textures" row still read
+    # "estimating…". A stage is only ticked when a *later* stage starts, and the last
+    # stage has none -- so the job's own terminal event has to finish the list.
+    rows = _run_panel("""
+      panel.configure({ stages: ['retopologise', 'repaint', 'compress'], stage_labels: {} });
+      panel.apply({ phase: 'compress', overall_pct: 97, message: 'Compressing' });
+      const midRun = rowState();
+      panel.apply({ phase: 'done', overall_pct: 100, message: 'Finished at 4.3 MB',
+                    elapsed_seconds: 333, result_url: '/x.glb' });
+      console.log(JSON.stringify({ midRun, afterDone: rowState(), bar: bar.style.width,
+                                   label: label.textContent }));
+    """)
+    assert rows["midRun"][2][0] == "stage-row active"
+    assert [state for state, _ in rows["afterDone"]] == ["stage-row done"] * 3
+    assert [detail for _, detail in rows["afterDone"]] == ["done"] * 3
+    assert rows["bar"] == "100%"
+    assert rows["label"] == "Finished at 4.3 MB"
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_a_failed_job_marks_the_running_stage_rather_than_completing_it():
+    rows = _run_panel("""
+      panel.configure({ stages: ['retopologise', 'repaint'], stage_labels: {} });
+      panel.apply({ phase: 'repaint', overall_pct: 20, message: 'Repainting' });
+      panel.apply({ phase: 'error', message: 'worker exited with code 1' });
+      console.log(JSON.stringify(rowState()));
+    """)
+    assert rows[0][0] == "stage-row done"          # it really did finish
+    assert rows[1] == ["stage-row failed", "failed"]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_a_stage_reporting_no_sub_progress_says_running_not_estimating():
+    # "0% · ~estimating…" on a stage that never reports a percentage reads as a stall.
+    rows = _run_panel("""
+      panel.configure({ stages: ['retopologise', 'repaint'], stage_labels: {} });
+      panel.apply({ phase: 'retopologise', overall_pct: 0, message: 'Retopologising' });
+      const bare = rowState()[0];
+      panel.apply({ phase: 'repaint', overall_pct: 30, message: 'Denoising step 6/15',
+                    step: 6, total: 15, stage_pct: 27, stage_eta_seconds: 227 });
+      console.log(JSON.stringify({ bare, measured: rowState()[1] }));
+    """)
+    assert rows["bare"] == ["stage-row active", "running"]
+    assert rows["measured"] == ["stage-row active", "6/15 · ~4 min"]

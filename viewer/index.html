@@ -258,6 +258,21 @@
     <div id="finish-result" hidden>
       <a id="finish-download" download>Download finished GLB</a>
       <a id="finish-record" download>Download record</a>
+      <small id="finish-where"></small>
+    </div>
+
+    <div id="finish-runs-box" class="generate-card" style="margin-top:16px">
+      <div id="generate-progress-head">
+        <span>Runs on disk</span>
+        <button id="finish-runs-refresh" class="ghost">Refresh</button>
+      </div>
+      <p style="font-size:12px; opacity:.75; margin:4px 0 8px">
+        Every stage writes its artifact into <code>output/finish/</code> and stays there.
+        A run whose browser tab was closed is still downloadable here, and one that stopped
+        part-way resumes from whatever it already finished &mdash; the repaint is five of a
+        six-minute run, so resuming skips nearly all of it.
+      </p>
+      <div id="finish-runs"></div>
     </div>
   </div>
 </section>
