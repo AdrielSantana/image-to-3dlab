@@ -38,6 +38,7 @@ from rig_api import (
     run_job as run_rig_job,
     status_payload as rig_status_payload,
 )
+from backend_catalog import catalog_status
 from finish_api import (
     ARTIFACTS as FINISH_ARTIFACTS,
     FINISH_JOBS,
@@ -1687,6 +1688,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parts = self._path_parts()
+        if parts == ["api", "catalog"]:
+            self._send_json(200, catalog_status())
+            return
         if parts == ["api", "setup"]:
             query = parse_qs(urlparse(self.path).query)
             backend_id = query.get("backend", ["trellis"])[0]
