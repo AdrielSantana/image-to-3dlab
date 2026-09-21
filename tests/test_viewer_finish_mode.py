@@ -86,3 +86,10 @@ def test_every_progress_track_has_a_styled_fill():
 
     tracks = re.findall(r'<div class="progress-track"><div id="([^"]+)"></div></div>', INDEX)
     assert len(tracks) >= 2, "expected the Generate and Finish tracks to share this markup"
+
+
+def test_the_finish_mode_can_list_and_resume_runs_on_disk():
+    # A job registry lives in the server's memory; the run directories outlive it, and
+    # this list is the only way back to a run whose browser tab was closed.
+    assert "/api/finish/runs" in FINISH
+    assert "/resume" in FINISH

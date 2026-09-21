@@ -42,6 +42,7 @@ from finish_api import (
     ARTIFACTS as FINISH_ARTIFACTS,
     FINISH_JOBS,
     cancel_job as cancel_finish_job,
+    list_runs as list_finish_runs,
     run_job as run_finish_job,
     status_payload as finish_status_payload,
 )
@@ -1651,6 +1652,9 @@ class Handler(SimpleHTTPRequestHandler):
         if len(parts) == 4 and parts[:2] == ["api", "finish"] and parts[3] == "cancel":
             self._cancel_finish_job(parts[2])
             return
+        if len(parts) == 5 and parts[:3] == ["api", "finish", "runs"] and parts[4] == "resume":
+            self._resume_finish_job(parts[3])
+            return
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def _trellis_input_advice(self) -> None:
@@ -1720,6 +1724,9 @@ class Handler(SimpleHTTPRequestHandler):
             if action in {"result.glb", "manifest.json"}:
                 self._artifact(job_id, action)
                 return
+        if parts == ["api", "finish", "runs"]:
+            self._send_json(200, {"runs": list_finish_runs(FINISH_JOBS.output_root)})
+            return
         if len(parts) == 4 and parts[:2] == ["api", "finish"]:
             job_id, action = parts[2], parts[3]
             if action == "events":
@@ -1989,6 +1996,37 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Disposition", f'{disposition}; filename="{path.name}"')
         self.end_headers()
         self.wfile.write(data)
+
+    def _resume_finish_job(self, name: str) -> None:
+        """Re-run one existing run directory, skipping the stages it already completed.
+
+        No upload and no settings: both come from the directory, which is what makes the
+        resume faithful. A run that still needs its repaint costs six minutes; one that
+        only lost its compression costs a second.
+        """
+        with SETUP_LOCK:
+            active = JOBS.get(JOBS.active)
+            if active is not None and active.status in {"queued", "running", "cancelling"}:
+                self._send_json(409, {"error": "a generation is running; wait for it to finish"})
+                return
+            if SETUP_ACTIVE is not None:
+                self._send_json(409, {"error": "setup is running; wait for it to finish"})
+                return
+        try:
+            job = FINISH_JOBS.adopt(name)
+        except (RuntimeError, ValueError) as exc:
+            self._send_json(409, {"error": str(exc)})
+            return
+        threading.Thread(
+            target=run_finish_job, args=(job,), daemon=True, name=f"finish-{job.id[:8]}"
+        ).start()
+        self._send_json(202, {
+            "job_id": job.id,
+            "directory": job.directory.name,
+            "settings": job.settings,
+            "events_url": f"/api/finish/{job.id}/events",
+            "status_url": f"/api/finish/{job.id}/status",
+        })
 
     def _cancel_finish_job(self, job_id: str) -> None:
         job = FINISH_JOBS.get(job_id)
