@@ -88,6 +88,7 @@ function backendCard(backend) {
   const action = card.querySelector('.setup-card-action');
   if (backend.state === 'ready') {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
+    action.appendChild(removeButton(backend));
   } else {
     const button = document.createElement('button');
     button.textContent = !backend.setup_fetches_weights
@@ -95,8 +96,51 @@ function backendCard(backend) {
       : (backend.state === 'partial' ? 'Resume download' : 'Download');
     button.onclick = () => confirmDownload(backend, button);
     action.appendChild(button);
+    // A part-downloaded backend is the other case where reclaiming makes sense: the
+    // files are there, they are not usable yet, and they may be the corrupt ones.
+    if (backend.state === 'partial') action.appendChild(removeButton(backend));
   }
   return card;
+}
+
+/** Reclaiming the disk, kept separate from cancelling a download.
+ *
+ * Cancelling leaves partial files that Hugging Face resumes from, so clearing them
+ * automatically would turn a pause into a restart. This is the deliberate version, for
+ * when the space is wanted back or a download came down corrupt.
+ */
+function removeButton(backend) {
+  const button = document.createElement('button');
+  button.className = 'ghost setup-remove';
+  button.textContent = 'Remove';
+  button.title = `Delete ${backend.human_present} of weights from disk`;
+  button.onclick = async () => {
+    const shared = backend.weights.some((w) => w.path.includes('huggingface'));
+    // eslint-disable-next-line no-alert -- deleting gigabytes deserves a blocking prompt.
+    if (!window.confirm([
+      `Delete ${backend.human_present} of ${backend.label} weights?`,
+      '',
+      ...backend.weights.filter((w) => w.present).map((w) => `  ${w.path}`),
+      '',
+      shared
+        ? 'These live in the shared Hugging Face cache, so other tools on this machine'
+          + ' may be using them. They can be downloaded again.'
+        : 'They can be downloaded again.',
+    ].join('\n'))) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/setup/${encodeURIComponent(backend.id)}/remove`,
+        { method: 'POST' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      s('setup-summary').textContent = `Removed ${payload.freed}.`;
+    } catch (error) {
+      button.disabled = false;
+      window.alert(`Could not remove: ${error.message}`);
+    }
+    load();
+  };
+  return button;
 }
 
 /** State the cost, then ask. The confirmation is the point of the whole page. */
@@ -149,6 +193,7 @@ function formatBytes(value) {
 async function startDownload(backend, button) {
   button.disabled = true;
   s('setup-run').hidden = false;
+  s('setup-run-cancel').hidden = false;
   s('setup-run-title').textContent =
     `${backend.setup_fetches_weights ? 'Downloading' : 'Building'} ${backend.label}`;
   s('setup-run-detail').textContent = 'starting…';
