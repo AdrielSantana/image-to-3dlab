@@ -77,3 +77,27 @@ def test_a_zero_voxel_fraction_is_passed_through_not_dropped():
         Path("in.glb"), Path("out.glb"), 40000, 2048, 89.0, 0.0, 0.25, 0.65, 1.45,
     )
     assert command[command.index("--") + 6] == "0.0"
+
+
+def test_a_stage_is_only_reused_when_a_resume_asks_for_it(tmp_path):
+    artifact = tmp_path / "result_retopo.glb"
+    artifact.write_bytes(b"mesh")
+    assert rr.reuse(artifact, resume=True) is True
+    assert rr.reuse(artifact, resume=False) is False
+
+
+def test_a_missing_or_truncated_artifact_is_never_reused(tmp_path):
+    # A zero-byte file is a stage that died mid-write. Reusing it would hand the next
+    # stage a truncated GLB instead of re-running the stage that actually failed.
+    assert rr.reuse(tmp_path / "absent.glb", resume=True) is False
+    empty = tmp_path / "result_painted.glb"
+    empty.write_bytes(b"")
+    assert rr.reuse(empty, resume=True) is False
+
+
+def test_resume_is_opt_in_on_the_real_parser():
+    parsed = rr.build_parser().parse_args(["a.glb", "a.png", "out.glb"])
+    assert parsed.resume is False
+    assert rr.build_parser().parse_args(
+        ["a.glb", "a.png", "out.glb", "--resume"]
+    ).resume is True

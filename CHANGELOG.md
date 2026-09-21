@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`scripts/retopo_repaint.py --resume`** — reuses any stage artifact already sitting
+  beside the output instead of recomputing it, so a run that died in compression is not
+  charged for the five-minute repaint a second time (measured: 8s → 0.1s on a
+  retopologise+compress run). A zero-byte artifact counts as a stage that died mid-write
+  rather than one that finished, so the stage that actually failed is the one re-run.
 - **Pixal3D as a backend** — `scripts/bootstrap_pixal3d_cpp.sh` builds the C++/GGML runtime
   (raven38/pixal3d.cpp) with Metal and fetches the 8.1 GB single-view Q8_0 weights;
   `scripts/pixal3d_generate.py` runs image → textured GLB; the viewer offers it alongside

@@ -92,6 +92,16 @@ def retopo_command(
     ]
 
 
+def reuse(path: Path, resume: bool) -> bool:
+    """Whether a stage can be skipped because its artifact is already there.
+
+    A zero-byte file is a stage that died mid-write, not one that finished; treating it
+    as complete would hand the next stage a truncated GLB instead of re-running the stage
+    that actually failed.
+    """
+    return resume and path.is_file() and path.stat().st_size > 0
+
+
 def _run(command: list[str], log: Path, label: str) -> None:
     """Run one stage, tee its output to a log, and fail loudly."""
     print(f"[{label}] {' '.join(command[:4])} ...", flush=True)
@@ -102,7 +112,13 @@ def _run(command: list[str], log: Path, label: str) -> None:
         raise SystemExit(f"[{label}] failed (exit {process.returncode}); last lines:\n{tail}")
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The command-line surface, separately from running it.
+
+    Extracted so a test can assert the flags and their defaults without a Blender run:
+    every one of these reaches a stage that costs minutes, and a default that silently
+    drifts produces a differently-tuned asset rather than an error.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("source", type=Path, help="generated GLB to finish")
     parser.add_argument("image", type=Path, help="source concept art, for the repaint")
@@ -127,8 +143,19 @@ def main() -> int:
     parser.add_argument("--skip-paint", action="store_true",
                         help="stop after retopology, keeping the transferred texture")
     parser.add_argument("--skip-compress", action="store_true")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="reuse any stage artifact already sitting beside the output instead of "
+             "recomputing it. The repaint is five to six minutes of a six-minute run, so "
+             "a run that died in compression must not pay for it twice. Only safe with "
+             "the settings the intermediates were made with -- change one and start over",
+    )
     parser.add_argument("--blender", type=Path, default=BLENDER)
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     for path in (args.source, args.image):
         if not path.is_file():
@@ -145,28 +172,36 @@ def main() -> int:
 
     retopo_glb = Path(f"{stem}_retopo.glb")
     step = time.time()
-    emit_stage("retopologise", f"Retopologising to {args.faces:,} faces")
-    _run(
-        retopo_command(
-            args.source, retopo_glb, args.faces, args.atlas, args.angle,
-            args.voxel, args.metallic, args.roughness, args.ior, args.blender,
-        ),
-        Path(f"{stem}_retopo.log"), "retopologise",
-    )
+    if reuse(retopo_glb, args.resume):
+        emit_stage("retopologise", f"Reusing {retopo_glb.name}")
+    else:
+        emit_stage("retopologise", f"Retopologising to {args.faces:,} faces")
+        _run(
+            retopo_command(
+                args.source, retopo_glb, args.faces, args.atlas, args.angle,
+                args.voxel, args.metallic, args.roughness, args.ior, args.blender,
+            ),
+            Path(f"{stem}_retopo.log"), "retopologise",
+        )
     timings["retopologise"] = round(time.time() - step, 1)
 
     current = retopo_glb
     if not args.skip_paint:
-        sys.path.insert(0, str(SCRIPTS))
-        from hunyuan_mlx_xiong_generate import run_paint
-
         painted = Path(f"{stem}_painted.glb")
         step = time.time()
-        emit_stage("repaint", f"Repainting from {args.image.name} at {args.paint_res}px")
-        run_paint(
-            current, args.image, painted, args.paint_seed, args.paint_res,
-            args.paint_steps, args.paint_tex, started,
-        )
+        if reuse(painted, args.resume):
+            emit_stage("repaint", f"Reusing {painted.name}")
+        else:
+            # Imported here, not at the top: it pulls in MLX and the paint venv, which a
+            # resume that already has the painted GLB has no reason to wait for.
+            sys.path.insert(0, str(SCRIPTS))
+            from hunyuan_mlx_xiong_generate import run_paint
+
+            emit_stage("repaint", f"Repainting from {args.image.name} at {args.paint_res}px")
+            run_paint(
+                current, args.image, painted, args.paint_seed, args.paint_res,
+                args.paint_steps, args.paint_tex, started,
+            )
         timings["repaint"] = round(time.time() - step, 1)
         current = painted
 
@@ -193,6 +228,7 @@ def main() -> int:
         report = []
 
     record = {
+        "resumed": args.resume,
         "source": str(args.source),
         "image": str(args.image),
         "output": str(args.output),
