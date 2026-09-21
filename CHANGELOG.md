@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A visual README.** The page now opens on three source images above the models
+  generated from them, and carries a 360° turntable of one of them — a still cannot show
+  that a result is a real model rather than a flattering angle. Also `social-preview.jpg`,
+  the 1280x640 card for when the repo is linked on X, Slack or Discord (upload it under
+  *Settings → General → Social preview*; GitHub cannot take it from the tree). 543 KB
+  added in total, against a documented budget in `docs/images/README.md`.
 - **`pixal3d_generate.py --gss/--gsh`** — guidance strength is now reachable from the
   wrapper, and `--gss` defaults to 10 rather than leaving `trellis-cli` on 7.5. That
   default is what dropped the warrior girl's sword blade entirely; 10 recovers it.
