@@ -264,7 +264,10 @@ merge (`merge_vertices(merge_tex=True, merge_norm=True)`).
 
 ## Credits
 
-This repo trains nothing and invents nothing — it wraps other people's models and the
-Apple Silicon ports that made them run on a Mac at all. Grateful to everyone who built
-before me; they are named, per backend, in
-[`docs/info_and_credits.md`](docs/info_and_credits.md).
+This repo trains nothing and invents nothing — it builds upon other people's models and
+work. What it *does* add is filling the gaps that exist to make some of these models work
+on Apple Silicon, and improving the overall experience. Grateful to everyone who built
+before me; they are named and credited in
+[`docs/info_and_credits.md`](docs/info_and_credits.md) — also a special thanks to Claude
+and Codex for being my partners through this! Not just helping me build, but teaching me
+so much along the way. Yes, I just credited AI.
