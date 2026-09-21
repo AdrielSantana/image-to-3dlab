@@ -53,6 +53,9 @@ function backendCard(backend) {
   const size = backend.state === 'partial'
     ? `${backend.human_present} of ${backend.human_expected}`
     : backend.human_expected;
+  // Say where the weights are when they are not here yet but the backend still works.
+  const later = backend.action === 'none' && backend.bytes_present === 0
+    ? ' · weights download on your first run' : '';
   const minutes = backend.setup_minutes ? ` · ${roughly(backend.setup_minutes)} to set up` : '';
 
   card.innerHTML = `
@@ -61,7 +64,7 @@ function backendCard(backend) {
       <div class="setup-card-title">
         <strong>${backend.label}</strong>
         ${backend.recommended ? '<span class="setup-pill">start here</span>' : ''}
-        <div class="setup-card-state">${meta.text} · ${size}${minutes}</div>
+        <div class="setup-card-state">${meta.text} · ${size}${minutes}${later}</div>
       </div>
       <div class="setup-card-action"></div>
     </div>
@@ -86,20 +89,20 @@ function backendCard(backend) {
     </details>`;
 
   const action = card.querySelector('.setup-card-action');
-  if (backend.state === 'ready') {
+  // Driven by the server's `action`, not inferred from state here. Build and weights
+  // are independent: a built TRELLIS with no weights is usable and must not be offered a
+  // Set up button, because re-running a finished bootstrap fails on its own patches.
+  const LABELS = { build: 'Set up', download: 'Download', resume: 'Resume download' };
+  if (backend.action === 'none') {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
-    action.appendChild(removeButton(backend));
   } else {
     const button = document.createElement('button');
-    button.textContent = !backend.setup_fetches_weights
-      ? 'Set up'
-      : (backend.state === 'partial' ? 'Resume download' : 'Download');
+    button.textContent = LABELS[backend.action];
     button.onclick = () => confirmDownload(backend, button);
     action.appendChild(button);
-    // A part-downloaded backend is the other case where reclaiming makes sense: the
-    // files are there, they are not usable yet, and they may be the corrupt ones.
-    if (backend.state === 'partial') action.appendChild(removeButton(backend));
   }
+  // Reclaiming is about bytes on disk, not about whether the backend works.
+  if (backend.bytes_present > 0) action.appendChild(removeButton(backend));
   return card;
 }
 
