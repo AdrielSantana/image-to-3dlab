@@ -53,7 +53,9 @@
 #generate-overall-label { color: #cfe3ff; }
 #generate-overall-eta { opacity: .75; white-space: nowrap; }
 .progress-track { height: 9px; margin: 12px 0 16px; background: #0d0f12; border-radius: 99px; overflow: hidden; }
-#generate-overall-bar { height: 100%; width: 0; background: linear-gradient(90deg, #4d84c0, #7eb4ef); transition: width .2s; }
+/* Every track's fill, not just Generate's: the Finish panel's bar was an id this rule
+   never named, so it sat empty for the whole run (found 2026-09-21). */
+.progress-track > div { height: 100%; width: 0; background: linear-gradient(90deg, #4d84c0, #7eb4ef); transition: width .2s; }
 #generate-stages { display: grid; gap: 8px; }
 .stage-row { display: grid; grid-template-columns: 18px 1fr auto; gap: 7px; align-items: center; padding: 7px 8px;
              border-radius: 5px; background: #14161a; color: #8993a2; }
@@ -69,3 +71,4 @@
   .generate-grid { grid-template-columns: 1fr; }
   #generate-progress-box { min-height: 420px; }
 }
+.stage-row.failed { color: #f0a9a0; }

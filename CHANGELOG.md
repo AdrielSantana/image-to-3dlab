@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
 ### Fixed
+- **The last stage in a progress panel never ticked.** A stage was only marked done when
+  a *later* stage started, and the last stage has none, so it sat on "estimating…" for
+  good. A terminal event now completes the whole list (and marks the running stage failed
+  on an error). Affected Generate as well as Finish.
+- **The Finish progress bar never filled.** Its fill was styled by `#generate-overall-bar`
+  alone, an id the Finish panel's identically structured bar does not have; the rule is
+  now `.progress-track > div`.
+- **Stages with no sub-progress claimed to be estimating.** Retopology and compression
+  report no percentage of their own, and the panel rendered that as `· ~estimating…`,
+  which reads as a stall. They now read `running`.
 - **Normal bakes came out as rainbow confetti, and now do not.** The decode is non-manifold,
   so winding repair cannot converge and roughly half the rays returned the hit normal
   reversed — 48.9% of hits more than 90° from the low-poly normal, upper quartile 164°. A

@@ -73,3 +73,16 @@ def test_the_mlx_attention_choice_is_still_offered():
 def test_skipping_the_repaint_hides_only_the_paint_fields():
     assert "finish-paint-fields" in _element_ids(INDEX)
     assert "f('finish-paint-fields').hidden = f('finish-skip-paint').checked;" in FINISH
+
+
+def test_every_progress_track_has_a_styled_fill():
+    """The bar inside a .progress-track must be reachable by a rule that paints it.
+
+    `#generate-overall-bar` was the only selector, so the Finish panel's identically
+    structured bar rendered as an empty groove for the whole run (found 2026-09-21).
+    """
+    css = (VIEWER / "styles" / "generate.css").read_text()
+    assert ".progress-track > div" in css, "the fill is styled per-id, so a new track shows nothing"
+
+    tracks = re.findall(r'<div class="progress-track"><div id="([^"]+)"></div></div>', INDEX)
+    assert len(tracks) >= 2, "expected the Generate and Finish tracks to share this markup"
