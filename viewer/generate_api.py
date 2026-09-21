@@ -1424,6 +1424,10 @@ def _hunyuan_xiong_readiness() -> dict[str, Any]:
         },
         "weights": weights_status,
         "missing_weights": missing,
+        # Per model, so the Shape model dropdown can disable what is not on disk instead
+        # of letting a run fail minutes in. Downloading only the default route is now the
+        # norm, so absent models are the expected case rather than a broken install.
+        "model_availability": model_availability,
         "ready": ready,
         "warning": (
             "Benchmarked 2026-08-19 on Flicker, octree=512, quantize=8, 30 steps (shape "

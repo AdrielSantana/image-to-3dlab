@@ -307,6 +307,24 @@ async function refreshSetup() {
     // The mlx attention backend is optional: generation works without it on the stock
     // sdpa path. But offering it when the checkout is unpatched or mlx is missing would
     // crash a run partway through, so the options are disabled rather than left to fail.
+    // Same treatment the mlx attention options get: offering a model whose weights are
+    // absent lets a run fail minutes in, so it is disabled and labelled instead. Only the
+    // default route is downloaded now, so this is the ordinary case, not a broken install.
+    if (backendId === 'hunyuan-mlx-xiong' && s.model_availability) {
+      const select = g('xiong-model');
+      if (select) {
+        for (const option of select.querySelectorAll('option')) {
+          const present = s.model_availability[option.value] !== false;
+          option.disabled = !present;
+          const suffix = ' — not downloaded';
+          option.textContent = option.textContent.replace(suffix, '') + (present ? '' : suffix);
+        }
+        if (select.selectedOptions[0]?.disabled) {
+          const first = [...select.options].find((o) => !o.disabled);
+          if (first) select.value = first.value;
+        }
+      }
+    }
     if (backendId === 'trellis') {
       const mlx = s.mlx_attention || {};
       const sel = g('generate-attention');

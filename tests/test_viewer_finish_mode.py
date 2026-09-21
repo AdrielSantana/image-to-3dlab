@@ -143,3 +143,14 @@ def test_removing_weights_needs_the_backend_id_typed_out():
     assert "!== backend.id.toLowerCase()" in SETUP
     # And it must never fall through to the request on a mistyped or cancelled prompt.
     assert "if (typed === null) return;" in SETUP
+
+
+def test_absent_shape_models_are_disabled_rather_than_left_to_fail():
+    """Only the default Hunyuan route is downloaded now, so 2.1 and 2.0-turbo are usually
+    absent. Offering them anyway lets a run die minutes in, which is the failure the mlx
+    attention options were already disabled to avoid."""
+    assert "s.model_availability" in GENERATE
+    assert "option.disabled = !present" in GENERATE
+    assert "not downloaded" in GENERATE
+    # And the selection must move off an option it just disabled.
+    assert "select.selectedOptions[0]?.disabled" in GENERATE
