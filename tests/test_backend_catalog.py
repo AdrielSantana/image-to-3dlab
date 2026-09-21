@@ -88,27 +88,37 @@ def test_an_interrupted_download_reads_as_partial_not_ready():
     # A directory that exists but holds a tenth of the bytes is a failed fetch. Calling it
     # ready is how someone debugs a backend that was never fully downloaded.
     expected = 10 * bc.GB
-    assert bc._state([{"bytes_present": expected, "bytes_expected": expected}]) == "ready"
-    assert bc._state([{"bytes_present": expected // 10, "bytes_expected": expected}]) == "partial"
-    assert bc._state([{"bytes_present": 0, "bytes_expected": expected}]) == "missing"
+    w = bc._weights_state
+    assert w([{"bytes_present": expected, "bytes_expected": expected}]) == "ready"
+    assert w([{"bytes_present": expected // 10, "bytes_expected": expected}]) == "partial"
+    assert w([{"bytes_present": 0, "bytes_expected": expected}]) == "missing"
 
 
 def test_a_slightly_short_download_still_counts_as_ready():
     # The size constants are measured and approximate, so the floor has to tolerate drift;
     # an exact comparison made a fully installed TRELLIS.2 report "partial" at 92%.
     expected = 10 * bc.GB
-    assert bc._state([{"bytes_present": int(expected * 0.9), "bytes_expected": expected}]) == "ready"
+    assert bc._weights_state(
+        [{"bytes_present": int(expected * 0.9), "bytes_expected": expected}]) == "ready"
 
 
-def test_onboarding_is_needed_only_when_nothing_is_ready(monkeypatch):
+def test_onboarding_is_needed_only_when_nothing_is_ready(monkeypatch, tmp_path):
     status = bc.catalog_status()
     assert status["needs_onboarding"] is (status["ready_count"] == 0)
 
+    # A fresh clone: no weights *and* nothing built. Weights alone are not enough to
+    # decide this, since a built TRELLIS with no weights is usable.
+    import dataclasses
+    absent = tmp_path / "nothing-here"
     monkeypatch.setattr(bc, "_dir_state", lambda path: (False, 0))
+    monkeypatch.setattr(bc, "CATALOG", tuple(
+        dataclasses.replace(b, build_probes=(absent,)) for b in bc.CATALOG
+    ))
     empty = bc.catalog_status()
     assert empty["needs_onboarding"] is True
     assert empty["ready_count"] == 0
     assert all(b["state"] == "missing" for b in empty["backends"])
+    assert all(b["action"] == "build" for b in empty["backends"])
 
 
 def test_backends_are_listed_best_first():
@@ -142,3 +152,34 @@ def test_trellis_setup_is_a_build_not_a_download():
 def test_the_flag_reaches_the_browser():
     trellis = next(b for b in bc.catalog_status()["backends"] if b["id"] == "trellis")
     assert trellis["setup_fetches_weights"] is False
+
+
+def test_a_built_trellis_with_no_weights_is_ready_not_missing():
+    """Its bootstrap installs the code and fetches nothing; the weights come on first run.
+
+    Reporting it as missing offered a Set up button that re-ran a finished bootstrap,
+    which then died on its own already-applied patches (hit for real 2026-09-21 while
+    testing against an empty HF_HOME).
+    """
+    none_present = [{"bytes_present": 0, "bytes_expected": 10 * bc.GB}]
+    assert bc._state(none_present, built=True, setup_fetches=False) == "ready"
+    assert bc._action(none_present, built=True, setup_fetches=False) == "none"
+
+
+def test_an_unbuilt_backend_is_offered_a_build_whatever_its_weights():
+    weights = [{"bytes_present": 10 * bc.GB, "bytes_expected": 10 * bc.GB}]
+    assert bc._state(weights, built=False, setup_fetches=True) == "missing"
+    assert bc._action(weights, built=False, setup_fetches=True) == "build"
+
+
+def test_a_built_backend_missing_weights_is_offered_the_download():
+    empty = [{"bytes_present": 0, "bytes_expected": 10 * bc.GB}]
+    half = [{"bytes_present": 5 * bc.GB, "bytes_expected": 10 * bc.GB}]
+    full = [{"bytes_present": 10 * bc.GB, "bytes_expected": 10 * bc.GB}]
+    assert bc._action(empty, built=True, setup_fetches=True) == "download"
+    assert bc._action(half, built=True, setup_fetches=True) == "resume"
+    assert bc._action(full, built=True, setup_fetches=True) == "none"
+
+
+def test_a_backend_with_no_declared_probes_is_never_called_unbuilt():
+    assert all(b.build_present or b.build_probes for b in bc.CATALOG)

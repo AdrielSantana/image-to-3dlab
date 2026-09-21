@@ -78,16 +78,28 @@ class Backend:
     # arrive lazily on the first generation run. The distinction changes what the
     # confirmation says and whether byte progress means anything.
     setup_fetches_weights: bool = True
+    # Files that prove the code side is installed: a compiled binary, a venv interpreter.
+    # Weights and build are independent, and conflating them offers "Set up" to someone
+    # who already has the build, which re-runs a bootstrap that then fails on its own
+    # already-applied patches (hit for real 2026-09-21).
+    build_probes: tuple[Path, ...] = ()
     extra_steps: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def bytes_expected(self) -> int:
         return sum(w.bytes_expected for w in self.weights)
 
+    @property
+    def build_present(self) -> bool:
+        """True when nothing is declared, so a weights-only backend is never 'unbuilt'."""
+        return all(p.exists() for p in self.build_probes)
+
     def describe(self) -> dict[str, Any]:
         weights = [w.describe() for w in self.weights]
         present = sum(w["bytes_present"] for w in weights)
+        built = self.build_present
         return {
+            "build_present": built,
             "id": self.id,
             "label": self.label,
             "rank": self.rank,
@@ -105,7 +117,8 @@ class Backend:
             "human_expected": human_bytes(self.bytes_expected),
             "bytes_present": present,
             "human_present": human_bytes(present),
-            "state": _state(weights),
+            "state": _state(weights, built, self.setup_fetches_weights),
+            "action": _action(weights, built, self.setup_fetches_weights),
             "percent_present": _percent(present, self.bytes_expected),
         }
 
@@ -123,6 +136,7 @@ CATALOG: tuple[Backend, ...] = (
         license_url="https://huggingface.co/raven38/pixal3d-sv-q8_0-v1",
         install="scripts/bootstrap_pixal3d_cpp.sh",
         setup_minutes=20,
+        build_probes=(REPO / "vendor" / "pixal3d-cpp" / "build" / "trellis-cli",),
         weights=(
             # One entry, not two: the bootstrap moves BiRefNet *into* pixal3d-sv/, so a
             # second set pointed at the parent directory would count everything twice.
@@ -143,6 +157,8 @@ CATALOG: tuple[Backend, ...] = (
         license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
         install="uv sync + hunyuan_mlx/download_weights.py",
         setup_minutes=25,
+        build_probes=(REPO / "hunyuan_mlx" / "shape" / ".venv" / "bin" / "python",
+                      REPO / "hunyuan_mlx" / "paint" / ".venv" / "bin" / "python"),
         caveat=(
             "The Hunyuan weights are not licensed for use in the EU, the UK or South Korea. "
             "Check the licence before downloading."
@@ -172,6 +188,7 @@ CATALOG: tuple[Backend, ...] = (
         install="viewer",
         setup_minutes=60,
         setup_fetches_weights=False,
+        build_probes=(REPO / "vendor" / "trellis-space-mac" / ".venv" / "bin" / "python",),
         weights=(
             WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(14.0 * GB),
                       HF_HUB_DIR / "models--microsoft--TRELLIS.2-4B"),
@@ -235,7 +252,7 @@ def _dir_state(path: Path) -> tuple[bool, int]:
     return total > 0, total
 
 
-def _state(weights: list[dict[str, Any]]) -> str:
+def _weights_state(weights: list[dict[str, Any]]) -> str:
     """ready, partial or missing, judged against expected size rather than mere existence.
 
     A directory that exists but holds a tenth of the bytes is an interrupted download, and
@@ -249,6 +266,31 @@ def _state(weights: list[dict[str, Any]]) -> str:
     if any(w["bytes_present"] > 0 for w in weights):
         return "partial"
     return "missing"
+
+
+def _state(weights: list[dict[str, Any]], built: bool, setup_fetches: bool) -> str:
+    """The backend's state, which is the build and the weights together.
+
+    The subtlety is TRELLIS: its bootstrap installs the code and fetches nothing, so a
+    built TRELLIS with no weights is *usable* -- the weights download on the first
+    generation run. Reporting that as "missing" sent someone to a Set up button that
+    re-ran a completed bootstrap.
+    """
+    if not built:
+        return "missing"
+    if not setup_fetches:
+        return "ready"
+    return _weights_state(weights)
+
+
+def _action(weights: list[dict[str, Any]], built: bool, setup_fetches: bool) -> str:
+    """What the button should offer: build, fetch, resume, or nothing."""
+    if not built:
+        return "build"
+    if not setup_fetches:
+        return "none"
+    state = _weights_state(weights)
+    return {"ready": "none", "partial": "resume"}.get(state, "download")
 
 
 def _percent(present: int, expected: int) -> int:
