@@ -49,7 +49,7 @@ artifact. See the [investigation and input guidance](docs/trellis2-flat-illustra
 ## Quick start — web UI (recommended)
 
 ```bash
-git clone <repo> && cd image-to-3dlab
+git clone https://github.com/Bingeljell/image-to-3dlab.git && cd image-to-3dlab
 python3 -m venv .venv && .venv/bin/pip install Pillow
 .venv/bin/python viewer/serve.py
 # opens http://127.0.0.1:8777/viewer/index.html
@@ -261,3 +261,10 @@ Conventions: Conventional Commits, Keep a Changelog (`CHANGELOG.md`), test-first
 **backface-culled, by eye** — glTF is double-sided by default, so a hollow mesh looks fine
 in preview and fails only in a game engine. Measure holes with a **position-only** vertex
 merge (`merge_vertices(merge_tex=True, merge_norm=True)`).
+
+## Credits
+
+This repo trains nothing and invents nothing — it wraps other people's models and the
+Apple Silicon ports that made them run on a Mac at all. Grateful to everyone who built
+before me; they are named, per backend, in
+[`docs/info_and_credits.md`](docs/info_and_credits.md).
