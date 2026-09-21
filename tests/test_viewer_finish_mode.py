@@ -93,3 +93,37 @@ def test_the_finish_mode_can_list_and_resume_runs_on_disk():
     # this list is the only way back to a run whose browser tab was closed.
     assert "/api/finish/runs" in FINISH
     assert "/resume" in FINISH
+
+
+SETUP = (VIEWER / "modes" / "setup.js").read_text()
+
+
+def test_every_id_the_setup_mode_looks_up_exists_in_the_page():
+    referenced = set(re.findall(r"s\('([^']+)'\)", SETUP))
+    assert referenced, "the module should look up some elements"
+    missing = sorted(referenced - _element_ids(INDEX))
+    assert not missing, f"setup.js references ids absent from index.html: {missing}"
+
+
+def test_the_setup_mode_is_registered_and_lands_first():
+    assert "import { skipRequested } from './modes/setup.js';" in APP
+    assert "setup: byId('setup-view')" in APP
+    # First run lands on Setup & Status; ticking skip makes Generate the default. The page
+    # is never forced back, because overriding that preference would ignore the user.
+    assert "setMode(skipRequested() ? 'generate' : 'setup');" in APP
+
+
+def test_generate_no_longer_carries_the_full_setup_card():
+    # The checks moved to Setup & Status; Generate keeps one health line pointing at it.
+    ids = _element_ids(INDEX)
+    assert "health-dot" in ids and "health-text" in ids and "health-goto" in ids
+    assert "setup-checks" not in ids, "the old Setup card is still in the page"
+    assert "setHealth(" in GENERATE
+
+
+def test_the_setup_page_states_cost_and_licence_before_downloading():
+    # AGENTS.md requires naming the backend, the route, the size and asking first.
+    assert "window.confirm(" in SETUP
+    assert "will be downloaded from Hugging Face" in SETUP
+    assert "Licence:" in SETUP
+    assert "/download" in SETUP and "/cancel" in SETUP

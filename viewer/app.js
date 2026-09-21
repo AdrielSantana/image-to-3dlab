@@ -1,4 +1,5 @@
 import './modes/compare.js';
+import { skipRequested } from './modes/setup.js';
 
 import './modes/generate.js';
 import './modes/finish.js';
@@ -8,6 +9,7 @@ import { subscribeRigEditState } from './core/rig-edit-state.js';
 
 const byId = (id) => document.getElementById(id);
 const modes = {
+  setup: byId('setup-view'),
   compare: byId('compare-view'),
   generate: byId('generate-view'),
   finish: byId('finish-view'),
@@ -17,6 +19,7 @@ const modes = {
 };
 
 function setMode(activeMode) {
+  modes.setup.hidden = activeMode !== 'setup';
   modes.compare.classList.toggle('hidden', activeMode !== 'compare');
   modes.generate.hidden = activeMode !== 'generate';
   modes.finish.hidden = activeMode !== 'finish';
@@ -41,4 +44,7 @@ subscribeRigEditState(({ pendingCount }) => {
     : 'Correct the rest skeleton';
 });
 
-setMode('compare');
+// First run lands on Setup & Status, because a fresh clone can generate nothing until
+// weights exist and the page is where that is explained. Once the user ticks "skip this
+// next time" it is never the landing page again -- it stays one click away in the menu.
+setMode(skipRequested() ? 'generate' : 'setup');

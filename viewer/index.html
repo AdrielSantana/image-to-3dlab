@@ -15,6 +15,7 @@
 <body>
 <div id="mode-switch">
   <span class="lbl">image-to-3dlab</span>
+  <button id="mode-setup" class="mode" title="What is installed, what it costs on disk">Setup &amp; Status</button>
   <button id="mode-compare" class="mode on">Compare</button>
   <button id="mode-generate" class="mode">Generate</button>
   <button id="mode-finish" class="mode" title="Retopologise, repaint and compress an existing asset">Finish</button>
@@ -59,15 +60,50 @@
 <div id="err"></div>
 </section>
 
-<section id="generate-view" hidden>
-  <div id="generate-setup" class="generate-card">
-    <h2>Setup</h2>
-    <p id="setup-desc">Machine readiness for the selected backend. Serve with <code>python viewer/serve.py</code> and open <code>http://127.0.0.1:8777/viewer/index.html</code>.</p>
-    <div id="setup-checks" style="min-height:20px">checking…</div>
-    <div id="setup-run" hidden>
-      <button id="setup-run-btn">Run setup — bootstrap the clean-port build (~1h)</button>
+<section id="setup-view" hidden>
+  <div class="setup-page">
+    <header class="setup-head">
+      <div>
+        <h2>Setup &amp; Status</h2>
+        <p class="setup-sub">
+          Everything runs on your machine, so the models have to live here too. Nothing is
+          downloaded until you pick a backend and confirm. Sizes are what you should expect
+          to give up on disk.
+        </p>
+      </div>
+      <label class="check setup-skip">
+        <input id="setup-skip" type="checkbox">
+        <span>Skip this next time</span>
+        <small>Go straight to Generate. This page stays in the menu.</small>
+      </label>
+    </header>
+
+    <div id="setup-summary" class="setup-summary">checking…</div>
+    <div id="setup-backends" class="setup-backends"></div>
+
+    <div id="setup-run" class="setup-run" hidden>
+      <div class="setup-run-head">
+        <span id="setup-run-title">Downloading</span>
+        <button id="setup-run-cancel" class="ghost">Cancel</button>
+      </div>
+      <div class="progress-track"><div id="setup-run-bar"></div></div>
+      <div id="setup-run-detail" class="setup-run-detail"></div>
       <pre id="setup-log"></pre>
     </div>
+
+    <p class="setup-foot">
+      Licences belong to the projects these models come from, and each one is linked above.
+      Read the licence that applies to what you download; it governs what you may do with
+      what comes out.
+    </p>
+  </div>
+</section>
+
+<section id="generate-view" hidden>
+  <div id="generate-setup" class="health-strip">
+    <span id="health-dot" class="health-dot">•</span>
+    <span id="health-text">checking…</span>
+    <button id="health-goto" class="ghost" hidden>Open Setup &amp; Status</button>
   </div>
   <div class="generate-grid">
     <div class="generate-card">

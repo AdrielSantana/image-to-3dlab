@@ -39,6 +39,12 @@ from rig_api import (
     status_payload as rig_status_payload,
 )
 from backend_catalog import catalog_status
+from download_api import (
+    DOWNLOADS,
+    cancel as cancel_download,
+    start as start_download,
+    status_payload as download_status_payload,
+)
 from finish_api import (
     ARTIFACTS as FINISH_ARTIFACTS,
     FINISH_JOBS,
@@ -1632,6 +1638,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "setup", "run"]:
             self._start_setup()
             return
+        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"download", "cancel"}:
+            self._backend_download(parts[2], parts[3])
+            return
         if parts == ["api", "generate"]:
             self._create_job()
             return
@@ -1710,6 +1719,14 @@ class Handler(SimpleHTTPRequestHandler):
                 ]
             })
             return
+        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"events", "status"}:
+            run = DOWNLOADS.get(parts[2])
+            if run is not None:
+                if parts[3] == "events":
+                    self._stream_events(run)
+                else:
+                    self._send_json(200, download_status_payload(run))
+                return
         if len(parts) == 4 and parts[:3] == ["api", "setup", "run"] and parts[3] == "events":
             run = SETUP_RUNS.get(parts[2]) if _safe_id(parts[2]) else None
             if run is None:
@@ -2126,6 +2143,32 @@ class Handler(SimpleHTTPRequestHandler):
                     break
         except (BrokenPipeError, ConnectionResetError):
             return
+
+    def _backend_download(self, backend_id: str, action: str) -> None:
+        """Start or stop one backend's weight download.
+
+        Deliberately POST-only and per backend: this is the one call in the viewer that
+        spends the user's disk and bandwidth, and AGENTS.md requires it to name what it
+        is fetching before it runs. The page does the naming; this refuses to start a
+        second download while one is in flight.
+        """
+        try:
+            if action == "cancel":
+                cancel_download(backend_id)
+                self._send_json(202, {"backend": backend_id, "status": "cancelling"})
+                return
+            start_download(backend_id)
+        except KeyError as exc:
+            self._send_json(404, {"error": str(exc)})
+            return
+        except RuntimeError as exc:
+            self._send_json(409, {"error": str(exc)})
+            return
+        self._send_json(202, {
+            "backend": backend_id,
+            "events_url": f"/api/setup/{backend_id}/events",
+            "status_url": f"/api/setup/{backend_id}/status",
+        })
 
     def _start_setup(self) -> None:
         global SETUP_ACTIVE
