@@ -119,17 +119,30 @@ function removeButton(backend) {
   button.title = `Delete ${backend.human_present} of weights from disk`;
   button.onclick = async () => {
     const shared = backend.weights.some((w) => w.path.includes('huggingface'));
-    // eslint-disable-next-line no-alert -- deleting gigabytes deserves a blocking prompt.
-    if (!window.confirm([
+    // Typed confirmation, not a yes/no. Three Remove buttons sit in one column and each
+    // one deletes several gigabytes that take minutes to hours to replace; a misplaced
+    // click plus a reflexive OK is a real way to lose an afternoon. Typing the backend's
+    // id proves both that it was meant and *which* one was meant, which a bare "delete"
+    // would not.
+    // eslint-disable-next-line no-alert -- deliberate, and the strongest gate available.
+    const typed = window.prompt([
       `Delete ${backend.human_present} of ${backend.label} weights?`,
       '',
       ...backend.weights.filter((w) => w.present).map((w) => `  ${w.path}`),
       '',
       shared
         ? 'These live in the shared Hugging Face cache, so other tools on this machine'
-          + ' may be using them. They can be downloaded again.'
-        : 'They can be downloaded again.',
-    ].join('\n'))) return;
+          + ' may be using them.'
+        : 'This cannot be undone from here.',
+      `They can be downloaded again, which takes ${roughly(backend.setup_minutes)}.`,
+      '',
+      `Type  ${backend.id}  to confirm:`,
+    ].join('\n'), '');
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== backend.id.toLowerCase()) {
+      window.alert(`Not deleted. You typed "${typed}", expected "${backend.id}".`);
+      return;
+    }
     button.disabled = true;
     try {
       const response = await fetch(`/api/setup/${encodeURIComponent(backend.id)}/remove`,
