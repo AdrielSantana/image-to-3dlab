@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -32,7 +33,7 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "viewer"))
 
-from backend_catalog import BY_ID, Backend, human_bytes  # noqa: E402
+from backend_catalog import BY_ID, HF_HUB_DIR, Backend, human_bytes  # noqa: E402
 
 POLL_SECONDS = 2.0
 STALL_SECONDS = 90.0
@@ -159,6 +160,44 @@ def cancel(backend_id: str) -> None:
             os.killpg(run.process.pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
+
+
+def remove(backend_id: str) -> dict[str, Any]:
+    """Delete one backend's weights from disk.
+
+    Deliberately separate from cancelling. A cancelled download leaves partial files that
+    Hugging Face resumes from, so throwing them away automatically would turn a pause into
+    a restart; someone who wants the space back, or who has a corrupt download to clear,
+    asks for that explicitly.
+
+    Only paths the catalogue declares are touched, and only inside the repository or the
+    Hugging Face cache, so a bad entry cannot make this delete something else.
+    """
+    backend = BY_ID.get(backend_id)
+    if backend is None:
+        raise KeyError(f"unknown backend: {backend_id}")
+    run = DOWNLOADS.get(backend_id)
+    if run is not None and run.status not in TERMINAL:
+        raise RuntimeError("that backend is downloading right now; cancel it first")
+
+    freed, removed = 0, []
+    for weight in backend.weights:
+        path = weight.path.resolve()
+        if not _inside_known_roots(path):
+            raise RuntimeError(f"refusing to delete outside the repo or cache: {path}")
+        if not path.is_dir():
+            continue
+        from backend_catalog import _dir_state
+        freed += _dir_state(path)[1]
+        shutil.rmtree(path)
+        removed.append(str(path))
+    return {"backend": backend_id, "freed_bytes": freed,
+            "freed": human_bytes(freed), "removed": removed}
+
+
+def _inside_known_roots(path: Path) -> bool:
+    roots = (REPO.resolve(), HF_HUB_DIR.resolve())
+    return any(root == path or root in path.parents for root in roots)
 
 
 def status_payload(run: DownloadRun) -> dict[str, Any]:

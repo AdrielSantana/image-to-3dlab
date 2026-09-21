@@ -42,6 +42,7 @@ from backend_catalog import catalog_status
 from download_api import (
     DOWNLOADS,
     cancel as cancel_download,
+    remove as remove_weights,
     start as start_download,
     status_payload as download_status_payload,
 )
@@ -1638,7 +1639,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "setup", "run"]:
             self._start_setup()
             return
-        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"download", "cancel"}:
+        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"download", "cancel", "remove"}:
             self._backend_download(parts[2], parts[3])
             return
         if parts == ["api", "generate"]:
@@ -2156,6 +2157,9 @@ class Handler(SimpleHTTPRequestHandler):
             if action == "cancel":
                 cancel_download(backend_id)
                 self._send_json(202, {"backend": backend_id, "status": "cancelling"})
+                return
+            if action == "remove":
+                self._send_json(200, remove_weights(backend_id))
                 return
             start_download(backend_id)
         except KeyError as exc:

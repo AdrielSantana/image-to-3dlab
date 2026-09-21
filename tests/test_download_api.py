@@ -117,3 +117,48 @@ def test_the_hunyuan_command_pins_one_model_rather_than_all_three():
     command = dl.COMMANDS["hunyuan_xiong"]
     assert "--model" in command
     assert command[command.index("--model") + 1] == "2.0"
+
+
+def test_removal_refuses_paths_outside_the_repo_and_cache(tmp_path, monkeypatch):
+    """The guard that stops a bad catalogue entry deleting something else.
+
+    Nothing in the shipped catalogue points outside, which is exactly why this needs a
+    test: the day one does, it must fail loudly rather than run `rmtree` on it.
+    """
+    import dataclasses
+
+    import pytest
+    stray = tmp_path / "somewhere-else"
+    stray.mkdir()
+    (stray / "w.bin").write_bytes(b"x")
+    real = dl.BY_ID["pixal3d"]
+    # WeightSet is frozen, so build a stand-in rather than mutating the shipped one.
+    rogue = dataclasses.replace(
+        real, weights=(dataclasses.replace(real.weights[0], path=stray),),
+    )
+    monkeypatch.setitem(dl.BY_ID, "rogue", rogue)
+
+    with pytest.raises(RuntimeError, match="refusing to delete"):
+        dl.remove("rogue")
+    assert stray.is_dir(), "the guard let a delete through"
+
+
+def test_paths_inside_the_repo_or_cache_are_allowed():
+    assert dl._inside_known_roots(dl.REPO / "vendor" / "x") is True
+    assert dl._inside_known_roots(dl.HF_HUB_DIR / "models--a--b") is True
+    assert dl._inside_known_roots(Path("/etc")) is False
+
+
+def test_removing_an_unknown_backend_is_rejected():
+    import pytest
+    with pytest.raises(KeyError):
+        dl.remove("not-a-backend")
+
+
+def test_removal_is_refused_while_that_backend_is_downloading(monkeypatch):
+    import pytest
+    run = dl.DownloadRun(dl.BY_ID["pixal3d"])
+    run.status = "running"
+    monkeypatch.setitem(dl.DOWNLOADS, "pixal3d", run)
+    with pytest.raises(RuntimeError, match="downloading right now"):
+        dl.remove("pixal3d")

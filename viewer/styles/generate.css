@@ -129,3 +129,5 @@
 .health-dot.bad { color: #f0a9a0; }
 .health-dot.warn { color: #e8c37a; }
 .mode.needs-attention::after { content: '•'; color: #e8c37a; margin-left: 5px; }
+.setup-remove { margin-left: 8px; opacity: .65; }
+.setup-remove:hover { opacity: 1; }
