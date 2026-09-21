@@ -36,6 +36,12 @@ MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 # The gauge camera the single-view path is designed around: 20 degrees, as radians.
 DEFAULT_FOV = 0.3490658503988659
 
+# Structure guidance strength. `trellis-cli` defaults to 7.5; at that setting the warrior
+# girl lost her sword blade entirely and 10 brought it back with tighter proportions, so
+# 10 is the default here. 13 is worse -- the blade detaches from the hand.
+# See docs/pixal3d-evaluation-2026-09-20.md.
+DEFAULT_GSS = 10.0
+
 STAGES = ["stage", "views", "ss", "shape", "decode", "texture", "write"]
 STAGE_LABELS = {
     "views": "Preparing view",
@@ -64,25 +70,32 @@ def has_alpha(image: Path) -> bool:
 def build_command(
     image: Path, output: Path, res: int, seed: int, fov: float,
     models: Path = MODELS, cli: Path = CLI, matted: bool = True,
+    gss: float = DEFAULT_GSS, gsh: float | None = None,
 ) -> list[str]:
     """The `trellis-cli` invocation.
 
     Pre-matted images take `--sv-image`, which crops to the alpha bounding box the way the
     reference preprocess does and synthesizes the gauge camera. Everything else goes in
     positionally and is matted by BiRefNet first.
+
+    `--gss` is always passed rather than left to the CLI default, because that default
+    (7.5) is the setting that dropped the warrior girl's sword blade.
     """
     if matted:
         head = [str(cli), "--sv-image", str(image)]
     else:
         head = [str(cli), str(image), "--bg-removal", "birefnet"]
-    return head + [
+    command = head + [
         "--fov", str(fov),
         "--models", str(models),
         "--seed", str(seed),
         "--res", str(res),
         "--pixal3d-weights", "sv",
-        str(output),
+        "--gss", str(gss),
     ]
+    if gsh is not None:
+        command += ["--gsh", str(gsh)]
+    return command + [str(output)]
 
 
 def stage_from_banner(line: str) -> tuple[str, int] | None:
@@ -128,6 +141,14 @@ def main() -> int:
         "--fov", type=float, default=DEFAULT_FOV,
         help="gauge camera FOV in radians for the single-view rig; 0.349 is 20 degrees",
     )
+    parser.add_argument(
+        "--gss", type=float, default=DEFAULT_GSS,
+        help="structure guidance strength; 10 recovers thin props the CLI default of 7.5 drops",
+    )
+    parser.add_argument(
+        "--gsh", type=float, default=None,
+        help="shape guidance strength; left to the runtime default when unset",
+    )
     parser.add_argument("--models", type=Path, default=MODELS)
     parser.add_argument("--cli", type=Path, default=CLI)
     args = parser.parse_args()
@@ -144,13 +165,19 @@ def main() -> int:
     if not matted:
         print("[pixal3d] no alpha channel; BiRefNet will matte it first (~13s)", flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    # `trellis-cli` is launched from its own tree so it can find its Metal library, which
+    # means a relative input or output path would resolve against *that* directory and the
+    # run dies at once with "can't fopen". Absolute paths are the only safe thing to pass.
+    args.image = args.image.resolve()
+    args.output = args.output.resolve()
 
     started = time.time()
     command = build_command(
         args.image, args.output, args.res, args.seed, args.fov,
-        args.models, args.cli, matted,
+        args.models, args.cli, matted, args.gss, args.gsh,
     )
-    print(f"[pixal3d] res={args.res} seed={args.seed} matted={matted}", flush=True)
+    print(f"[pixal3d] res={args.res} seed={args.seed} gss={args.gss} matted={matted}",
+          flush=True)
 
     process = subprocess.Popen(
         command, cwd=str(PIXAL3D_ROOT), stdout=subprocess.PIPE,
