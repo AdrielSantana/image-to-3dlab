@@ -126,3 +126,19 @@ def test_human_bytes_reads_like_a_download_dialog():
     assert bc.human_bytes(0) == "0 B"
     assert bc.human_bytes(92 * 1024 ** 2) == "92.0 MB"
     assert bc.human_bytes(int(8.4 * bc.GB)) == "8.4 GB"
+
+
+def test_trellis_setup_is_a_build_not_a_download():
+    """Its bootstrap clones, patches and compiles; the weights come on first generation.
+
+    Calling that a download makes the confirmation lie and makes byte progress meaningless
+    — a healthy hour-long compile reported no growth and would have read as stalled.
+    """
+    assert bc.BY_ID["trellis"].setup_fetches_weights is False
+    assert bc.BY_ID["pixal3d"].setup_fetches_weights is True
+    assert bc.BY_ID["hunyuan_xiong"].setup_fetches_weights is True
+
+
+def test_the_flag_reaches_the_browser():
+    trellis = next(b for b in bc.catalog_status()["backends"] if b["id"] == "trellis")
+    assert trellis["setup_fetches_weights"] is False

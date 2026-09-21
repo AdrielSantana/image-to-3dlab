@@ -175,8 +175,10 @@ def _run(run: DownloadRun) -> None:
     run.emit({"phase": "queued", "overall_pct": 0,
               "detail": f"starting · {human_bytes(run.backend.bytes_expected)} expected"})
     stop = threading.Event()
-    watcher = threading.Thread(target=_watch_size, args=(run, stop), daemon=True)
-    watcher.start()
+    if run.backend.setup_fetches_weights:
+        threading.Thread(target=_watch_size, args=(run, stop), daemon=True).start()
+    else:
+        threading.Thread(target=_watch_elapsed, args=(run, stop), daemon=True).start()
     try:
         run.process = subprocess.Popen(
             COMMANDS[run.backend.id], cwd=str(REPO),
@@ -214,8 +216,10 @@ def _run(run: DownloadRun) -> None:
                   "detail": _explain(code, list(run.log))})
     else:
         run.status = "done"
+        fetched = run.backend.setup_fetches_weights
         run.emit({"phase": "done", "overall_pct": 100,
-                  "detail": f"done · {human_bytes(present)} on disk"})
+                  "detail": f"done · {human_bytes(present)} on disk" if fetched else
+                            "built · weights download on the first generation run"})
 
 
 def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
@@ -236,6 +240,24 @@ def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
         run.emit(describe_progress(
             run.backend, present, rate, eta, stalled=now - last_growth > STALL_SECONDS,
         ))
+
+
+def _watch_elapsed(run: DownloadRun, stop: threading.Event) -> None:
+    """Progress for a step that builds rather than downloads.
+
+    There is nothing to measure -- no directory grows -- so this reports elapsed time
+    against the catalogue's estimate and never claims a stall. Saying "stalled" during a
+    healthy hour-long compile is worse than saying nothing.
+    """
+    estimate = (run.backend.setup_minutes or 0) * 60
+    while not stop.wait(POLL_SECONDS * 2):
+        elapsed = time.monotonic() - run.started
+        percent = 0 if estimate <= 0 else max(0, min(95, round(elapsed / estimate * 100)))
+        run.emit({
+            "phase": "building", "overall_pct": percent,
+            "detail": f"building the Metal port · {int(elapsed // 60)} min elapsed"
+                      + (f" of roughly {estimate // 60:.0f}" if estimate else ""),
+        })
 
 
 def _explain(code: int, log: list[str]) -> str:

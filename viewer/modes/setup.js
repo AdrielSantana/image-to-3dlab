@@ -90,7 +90,9 @@ function backendCard(backend) {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
   } else {
     const button = document.createElement('button');
-    button.textContent = backend.state === 'partial' ? 'Resume download' : 'Download';
+    button.textContent = !backend.setup_fetches_weights
+      ? 'Set up'
+      : (backend.state === 'partial' ? 'Resume download' : 'Download');
     button.onclick = () => confirmDownload(backend, button);
     action.appendChild(button);
   }
@@ -100,19 +102,34 @@ function backendCard(backend) {
 /** State the cost, then ask. The confirmation is the point of the whole page. */
 function confirmDownload(backend, button) {
   const remaining = backend.bytes_expected - backend.bytes_present;
+  // Say what this particular button actually does. TRELLIS's setup builds the Metal port
+  // and fetches nothing; its weights arrive on the first generation run, and promising a
+  // download here would be a lie the progress bar then has to keep.
+  const body = backend.setup_fetches_weights
+    ? [
+      `About ${formatBytes(remaining)} will be downloaded from Hugging Face`,
+      `into ${backend.weights[0].path.replace(/\/[^/]*$/, '/')}`,
+      '',
+      'Some sources need you to be signed in to Hugging Face and to have accepted their',
+      'terms; the log will say so if the download is refused.',
+    ]
+    : [
+      `This builds the Metal port first, which takes ${roughly(backend.setup_minutes)}`,
+      'and downloads no weights.',
+      '',
+      `The ${backend.human_expected} of weights are fetched on your first generation run,`,
+      'not now.',
+    ];
   const lines = [
     `${backend.label}`,
     '',
-    `About ${formatBytes(remaining)} will be downloaded from Hugging Face`,
-    `into ${backend.weights[0].path.replace(/\/[^/]*$/, '/')}`,
+    ...body,
     '',
     `Licence: ${backend.license.name}`,
     backend.caveat ? `\n${backend.caveat}\n` : '',
-    'Some sources need you to be signed in to Hugging Face and to have accepted their',
-    'terms; the log will say so if the download is refused.',
     '',
-    'Start the download?',
-  ].filter((line) => line !== null);
+    backend.setup_fetches_weights ? 'Start the download?' : 'Start the build?',
+  ].filter(Boolean);
 
   // eslint-disable-next-line no-alert -- a deliberate, blocking confirmation: this is the
   // one action on the page that spends the user's disk and bandwidth.
@@ -132,7 +149,8 @@ function formatBytes(value) {
 async function startDownload(backend, button) {
   button.disabled = true;
   s('setup-run').hidden = false;
-  s('setup-run-title').textContent = `Downloading ${backend.label}`;
+  s('setup-run-title').textContent =
+    `${backend.setup_fetches_weights ? 'Downloading' : 'Building'} ${backend.label}`;
   s('setup-run-detail').textContent = 'starting…';
   s('setup-log').textContent = '';
   s('setup-run-bar').style.width = '0%';

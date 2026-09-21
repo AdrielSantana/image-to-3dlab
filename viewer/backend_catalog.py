@@ -73,6 +73,11 @@ class Backend:
     rank: int | None = None
     setup_minutes: int | None = None
     caveat: str | None = None
+    # Whether running this backend's setup actually fetches the weights. TRELLIS's
+    # bootstrap does not: it clones, patches and builds the Metal port, and the weights
+    # arrive lazily on the first generation run. The distinction changes what the
+    # confirmation says and whether byte progress means anything.
+    setup_fetches_weights: bool = True
     extra_steps: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -93,6 +98,7 @@ class Backend:
             "caveat": self.caveat,
             "install": self.install,
             "setup_minutes": self.setup_minutes,
+            "setup_fetches_weights": self.setup_fetches_weights,
             "extra_steps": list(self.extra_steps),
             "weights": weights,
             "bytes_expected": self.bytes_expected,
@@ -165,6 +171,7 @@ CATALOG: tuple[Backend, ...] = (
         license_url="https://huggingface.co/microsoft/TRELLIS.2-4B",
         install="viewer",
         setup_minutes=60,
+        setup_fetches_weights=False,
         weights=(
             WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(14.0 * GB),
                       HF_HUB_DIR / "models--microsoft--TRELLIS.2-4B"),
