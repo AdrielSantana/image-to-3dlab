@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`pixal3d_generate.py --gss/--gsh`** — guidance strength is now reachable from the
+  wrapper, and `--gss` defaults to 10 rather than leaving `trellis-cli` on 7.5. That
+  default is what dropped the warrior girl's sword blade entirely; 10 recovers it.
 - **`scripts/retopo_repaint.py --resume`** — reuses any stage artifact already sitting
   beside the output instead of recomputing it, so a run that died in compression is not
   charged for the five-minute repaint a second time (measured: 8s → 0.1s on a

@@ -113,6 +113,36 @@ def test_readiness_needs_the_whole_weight_set(tmp_path):
     assert px.readiness(cli, models)["ready"] is True
 
 
+def test_guidance_strength_is_always_passed_and_defaults_to_ten():
+    """The CLI's own default of 7.5 dropped the warrior girl's sword blade entirely.
+
+    Leaving `--gss` off the command line is therefore not a neutral choice, so the wrapper
+    states it on every run.
+    """
+    command = px.build_command(
+        Path("fox.png"), Path("out.glb"), 1024, 42, px.DEFAULT_FOV,
+        Path("/m"), Path("/bin/trellis-cli"), True,
+    )
+    assert command[command.index("--gss") + 1] == "10.0"
+    assert px.DEFAULT_GSS == 10.0
+
+
+def test_shape_guidance_is_omitted_unless_asked_for():
+    """`--gsh` has no tested value here, so an unset one must leave the runtime default."""
+    without = px.build_command(
+        Path("fox.png"), Path("out.glb"), 1024, 42, px.DEFAULT_FOV,
+        Path("/m"), Path("/bin/trellis-cli"), True,
+    )
+    assert "--gsh" not in without
+
+    with_gsh = px.build_command(
+        Path("fox.png"), Path("out.glb"), 1024, 42, px.DEFAULT_FOV,
+        Path("/m"), Path("/bin/trellis-cli"), True, gss=10.0, gsh=3.5,
+    )
+    assert with_gsh[with_gsh.index("--gsh") + 1] == "3.5"
+    assert with_gsh[-1] == "out.glb"  # output stays positional and last
+
+
 def test_paths_reach_the_cli_absolute(tmp_path, monkeypatch, capsys):
     """`trellis-cli` runs from its own tree, so a relative path resolves against the wrong
     directory and the run dies at once with "can't fopen". Caught for real on three assets.
