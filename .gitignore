@@ -14,6 +14,12 @@ output/
 # Nothing here is a real loss if it only exists in past commit history.
 /journal/
 
+# Where *we* pick up next session: half-finished lanes, things owed, what is parked and
+# why. Written for us, and it reads like a to-do list rather than documentation, which is
+# not what someone cloning this repo wants from docs/. Untracked 2026-09-21 with
+# `git rm --cached`; the file stays on disk and its history stays in the repo.
+/docs/resume-guidance.md
+
 # Reference photos exchanged between collaborators, not test fixtures for the pipeline.
 /images_for_you/
 
