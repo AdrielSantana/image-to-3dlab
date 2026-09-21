@@ -106,3 +106,22 @@ it uses.
   redistributed) is fine as long as BRIA itself is never actually downloaded/loaded/used —
   stub the eager constructor instead of requesting gated access, rather than treating "BRIA"
   as a word that halts all work near it.
+
+### Weights are never downloaded without an explicit choice
+
+**No script, bootstrap, viewer button or agent tool may download model weights until the
+user has confirmed which pipeline and which route they want.** Nobody should discover
+50 GB on their disk because they ran a setup step that sounded generic.
+
+This is a licensing rule as much as a disk-space one: the Hunyuan weights are not licensed
+in the EU, UK or South Korea, so "fetch everything, sort it out later" can put a user in
+breach on our behalf. It also matters for agent use; an agent driving this repo must be
+able to state what it is about to fetch and how large it is, and stop there.
+
+Concretely, a download path must: name the backend, name the route, state the size, and
+require an affirmative answer. `--yes` for non-interactive use is fine; defaulting to yes
+is not.
+
+*Status 2026-09-21: not yet true anywhere.* `scripts/bootstrap_pixal3d_cpp.sh` pulls
+8.1 GB unconditionally, `hunyuan_mlx/download_weights.py` defaults to a full set, and the
+viewer's TRELLIS **Run setup** fetches ~14 GB on one click. Fixing these is owed.
