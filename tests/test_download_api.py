@@ -7,25 +7,16 @@ subprocess itself is not exercised here; it downloads gigabytes.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import sys
 from pathlib import Path
 
 import pytest
 
-MODULE = Path(__file__).resolve().parents[1] / "viewer" / "download_api.py"
-
-
-def _load():
-    spec = importlib.util.spec_from_file_location("download_api", MODULE)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["download_api"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-dl = _load()
+# Plain import for the same reason `test_backend_catalog.py` uses one: `generate_api`
+# imports `download_api`, so a hand-loaded second copy leaves the two holding different
+# objects and a patch here never reaches the code being tested.
+import download_api as dl
 
 
 def test_progress_bars_are_stripped_to_their_last_frame():

@@ -8,33 +8,14 @@ than crash, which is why they get tests rather than a comment.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
 
-MODULE = Path(__file__).resolve().parents[1] / "viewer" / "backend_catalog.py"
-
-
-def _load():
-    # Reuse the module if anything already imported it. Loading a second copy under the
-    # same name is not a fresh start, it is a fork: `download_api` binds whichever copy
-    # existed when *it* was exec'd, so monkeypatching the other one silently does nothing
-    # and its "unsupported machine is refused" test stopped refusing. That failed only in
-    # the order `test_download_api.py test_backend_catalog.py`, which the alphabetical
-    # full-suite run never takes, so it sat here green for weeks.
-    if "backend_catalog" in sys.modules:
-        return sys.modules["backend_catalog"]
-    # Registered in sys.modules before exec: dataclasses resolves annotations through
-    # sys.modules[cls.__module__], and a spec-loaded module that skips this raises
-    # AttributeError on the first @dataclass.
-    spec = importlib.util.spec_from_file_location("backend_catalog", MODULE)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["backend_catalog"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-bc = _load()
+# A plain import, which `tests/conftest.py` makes possible by putting `viewer/` on the
+# path. Deliberately not a hand-load: `download_api`, `generate_api` and
+# `audit_model_weights` all import this module normally, and a second copy under the same
+# name is how a monkeypatch here stops reaching the code under test.
+import backend_catalog as bc
 
 
 def test_every_backend_states_a_licence_and_links_to_it():

@@ -81,6 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tab as well as Generate Image — it was only on the faster of the two steps.
 
 ### Fixed
+- **Tests and the code they test now share one copy of each module.** `viewer/` and
+  `scripts/` are not on Python's path, so test files hand-loaded their modules with
+  `importlib` — and every hand-load makes a *new* copy. Where production code imported the
+  same name, the test and the code under test held two different objects, so a
+  monkeypatch reached nothing. `tests/conftest.py` puts both directories on the path, the
+  two exposed files (`download_api`, `backend_catalog`) use a plain `import`, and
+  `tests/test_no_module_forks.py` fails if a test ever hand-loads a name production code
+  imports. Files whose module nobody else imports are untouched: a private copy cannot
+  diverge from anyone.
 - **One catalogue of backends, not two.** The Generate tab kept its own list and the
   Setup & Status page kept another, and they had drifted: Stable Fast 3D and the dgrauet
   Hunyuan route were missing from the catalogue entirely, the Xiong route was spelled two
