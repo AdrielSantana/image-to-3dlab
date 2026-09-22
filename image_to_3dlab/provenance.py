@@ -52,6 +52,21 @@ LICENSES = {
             "BRIA RMBG-2.0 is disabled and must not be loaded in commercial runs.",
         ),
     ),
+    "qwen-image-2.1": LicenseProfile(
+        classification="research-only",
+        folder="research_only",
+        license_name="Qwen Research License Agreement",
+        license_url="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
+        conditions=(
+            "NON-COMMERCIAL USE ONLY. Outputs may not be used commercially.",
+            "Attribution required: documentation must state 'Built with Qwen'.",
+            (
+                "This sits at the FRONT of the chain: any 3D asset generated from a "
+                "Qwen-Image source image inherits the restriction, including after a "
+                "Hunyuan repaint or a TRELLIS pass."
+            ),
+        ),
+    ),
 }
 
 
@@ -84,6 +99,16 @@ def validate_run_policy(
     if profile.classification != "commercial-clear" and not allow_conditional:
         raise ValueError(
             f"{backend} is {profile.classification}; manifest disallows conditional models"
+        )
+    # research-only is stricter than conditional and is not covered by allow_conditional.
+    # A non-commercial model at the front of the chain taints everything downstream of it,
+    # so it is refused for anything but a private showcase, whatever the manifest says.
+    if profile.classification == "research-only" and not (
+        use_case == "showcase" and distribution == "private"
+    ):
+        raise ValueError(
+            f"{backend} is research-only (non-commercial); it is permitted only for a "
+            f"private showcase, not for use_case={use_case!r} distribution={distribution!r}"
         )
     if (
         use_case == "game"
