@@ -127,6 +127,7 @@ These talk to a running Blender over the `execute_code` socket on port 9876 unle
 | `blender_import_character.py` | Append a rigged character (armature + skinned mesh) into the currently live Blender scene, cleaned up and positioned. |
 | `blender_wind_demo.py` | Animate labelled foliage with shader-style wind and render it to MP4. |
 | `build_showcase_reel.py` | Build a source-image -> swipe -> turntable showcase reel from a set of assets. |
+| `blender_agent.py` | Let a local LLM stage a scene in the running Blender, by calling a small set of tools. |
 
 ## Blender: change the geometry
 
