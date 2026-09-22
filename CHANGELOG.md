@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-23
+
 ### Added
 - **A `Generate Image` tab, and `Generate` is now `Generate 3D`.** The pipeline assumed you
   already had a picture; this is the step before that. Type a prompt, get an image, hand it
