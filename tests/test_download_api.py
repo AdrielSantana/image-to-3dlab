@@ -8,8 +8,11 @@ subprocess itself is not exercised here; it downloads gigabytes.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 MODULE = Path(__file__).resolve().parents[1] / "viewer" / "download_api.py"
 
@@ -162,3 +165,44 @@ def test_removal_is_refused_while_that_backend_is_downloading(monkeypatch):
     monkeypatch.setitem(dl.DOWNLOADS, "pixal3d", run)
     with pytest.raises(RuntimeError, match="downloading right now"):
         dl.remove("pixal3d")
+
+
+# --- Starting a command that is not there -----------------------------------------------
+# A Windows user reported "[WinError 2] The system cannot find the file specified" after
+# logging into Hugging Face. `Popen` had been handed `.venv/bin/python`, which on Windows
+# is spelled `.venv\\Scripts\\python.exe`, and the raw OSError went straight to the browser.
+
+
+def test_the_hunyuan_command_uses_this_os_s_interpreter_path():
+    program = Path(dl.COMMANDS["hunyuan_xiong"][0])
+    assert program.name in ("python", "python.exe")
+    assert program.parent.name in ("bin", "Scripts")
+
+
+def test_a_missing_venv_is_explained_rather_than_reported_as_errno_2(tmp_path):
+    absent = tmp_path / "shape" / ".venv" / "bin" / "python"
+    message = dl._missing_executable(str(absent))
+    assert message is not None
+    assert "uv sync" in message
+    assert str(tmp_path / "shape") in message
+
+
+def test_a_missing_program_names_itself():
+    assert "not-a-real-program" in dl._missing_executable("not-a-real-program")
+
+
+def test_a_command_that_exists_is_not_second_guessed(tmp_path):
+    assert dl._missing_executable(sys.executable) is None
+    assert dl._missing_executable("sh") is None or os.name == "nt"
+
+
+def test_an_unsupported_machine_is_refused_before_anything_downloads(monkeypatch):
+    """The refusal belongs here too: the API is what spends the bandwidth."""
+    import backend_catalog
+
+    monkeypatch.setattr(backend_catalog, "host_platform", lambda: "other")
+    with pytest.raises(RuntimeError) as raised:
+        dl.start("hunyuan_xiong")
+    assert "Apple Silicon" in str(raised.value)
+    assert "Nothing has been downloaded" in str(raised.value)
+    assert "hunyuan_xiong" not in dl.DOWNLOADS

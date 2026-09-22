@@ -114,7 +114,9 @@ def test_onboarding_is_needed_only_when_nothing_is_ready(monkeypatch, tmp_path):
     monkeypatch.setattr(bc, "CATALOG", tuple(
         dataclasses.replace(b, build_probes=(absent,)) for b in bc.CATALOG
     ))
-    empty = bc.catalog_status()
+    # Pinned to a supported host: on any other machine every backend reports
+    # "unsupported", which is a different question from "not installed yet".
+    empty = bc.catalog_status(host=bc.APPLE)
     assert empty["needs_onboarding"] is True
     assert empty["ready_count"] == 0
     assert all(b["state"] == "missing" for b in empty["backends"])
@@ -183,3 +185,52 @@ def test_a_built_backend_missing_weights_is_offered_the_download():
 
 def test_a_backend_with_no_declared_probes_is_never_called_unbuilt():
     assert all(b.build_present or b.build_probes for b in bc.CATALOG)
+
+
+# --- Which machines a backend runs on ---------------------------------------------------
+# Reported from a Windows user who got "[WinError 2] The system cannot find the file
+# specified" after logging into Hugging Face. The viewer had offered them a Set up button
+# for an MLX backend that cannot exist on their machine, and the failure surfaced as a raw
+# OS error. NVIDIA support is coming, so support is per-backend data, not a Mac check.
+
+
+def test_a_virtualenv_interpreter_is_named_the_way_this_os_names_it(monkeypatch):
+    project = Path("/somewhere/shape")
+    monkeypatch.setattr(bc.os, "name", "posix")
+    assert bc.venv_python(project).as_posix().endswith(".venv/bin/python")
+    monkeypatch.setattr(bc.os, "name", "nt")
+    assert bc.venv_python(project).as_posix().endswith(".venv/Scripts/python.exe")
+
+
+def test_every_backend_says_which_machines_it_runs_on():
+    for backend in bc.CATALOG:
+        assert backend.runs_on, backend.id
+        assert all(p in bc.PLATFORM_LABELS for p in backend.runs_on), backend.id
+
+
+def test_an_unsupported_machine_is_never_offered_a_download():
+    """The whole point: no button, no bytes, and a sentence saying why."""
+    for backend in bc.catalog_status(host="other")["backends"]:
+        assert backend["supported_here"] is False, backend["id"]
+        assert backend["state"] == "unsupported", backend["id"]
+        assert backend["action"] == "none", backend["id"]
+        assert backend["platform_note"], backend["id"]
+
+
+def test_the_page_can_tell_a_wrong_machine_from_an_empty_one():
+    """"Nothing installed" and "nothing installable" look identical in a list of states."""
+    assert bc.catalog_status(host="other")["host"]["any_backend_runs_here"] is False
+    assert bc.catalog_status(host=bc.APPLE)["host"]["any_backend_runs_here"] is True
+
+
+def test_adding_a_cuda_route_is_a_one_string_change():
+    """The gate must not be a Mac check, because NVIDIA support is coming.
+
+    Declaring the platform on one backend is the whole change; nothing else should need
+    editing for it to become installable on that machine.
+    """
+    import dataclasses
+    cuda_pixal3d = dataclasses.replace(bc.BY_ID["pixal3d"], runs_on=(bc.APPLE, bc.NVIDIA))
+    assert cuda_pixal3d.runs_here(bc.NVIDIA) is True
+    assert cuda_pixal3d.describe(bc.NVIDIA)["state"] != "unsupported"
+    assert bc.BY_ID["hunyuan_xiong"].runs_here(bc.NVIDIA) is False

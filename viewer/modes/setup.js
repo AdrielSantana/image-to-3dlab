@@ -35,6 +35,7 @@ const STATE_META = {
   ready: { dot: '●', cls: 'ok', text: 'installed' },
   partial: { dot: '◐', cls: 'warn', text: 'partly downloaded' },
   missing: { dot: '○', cls: 'off', text: 'not installed' },
+  unsupported: { dot: '–', cls: 'off', text: 'not available on this machine' },
 };
 
 /** A setup time a person would say out loud: "about 20 min", "about an hour". */
@@ -70,6 +71,8 @@ function backendCard(backend) {
     </div>
     <p class="setup-card-best">${backend.best_for}</p>
     <p class="setup-card-trade">${backend.tradeoff}</p>
+    ${backend.platform_note
+      ? `<p class="setup-card-caveat">${backend.platform_note}</p>` : ''}
     ${backend.caveat ? `<p class="setup-card-caveat">${backend.caveat}</p>` : ''}
     <details class="setup-card-detail">
       <summary>What gets downloaded</summary>
@@ -93,7 +96,11 @@ function backendCard(backend) {
   // are independent: a built TRELLIS with no weights is usable and must not be offered a
   // Set up button, because re-running a finished bootstrap fails on its own patches.
   const LABELS = { build: 'Set up', download: 'Download', resume: 'Resume download' };
-  if (backend.action === 'none') {
+  // A backend that cannot run here gets no button at all. Offering one would spend
+  // gigabytes of someone's bandwidth on a build that fails partway through.
+  if (backend.supported_here === false) {
+    action.innerHTML = `<span class="setup-unavailable">needs ${backend.requires}</span>`;
+  } else if (backend.action === 'none') {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
   } else {
     const button = document.createElement('button');
@@ -261,6 +268,15 @@ function applyEvent(event) {
 function summarise(catalog) {
   const ready = catalog.backends.filter((b) => b.state === 'ready');
   const onDisk = catalog.backends.reduce((total, b) => total + b.bytes_present, 0);
+  // Said before anything else, because "nothing is installed" and "nothing can be
+  // installed here" look the same in a list of cards, and only one of them is fixable
+  // by clicking a button. Someone on the wrong machine deserves to know on arrival.
+  if (catalog.host && !catalog.host.any_backend_runs_here) {
+    return `<strong>This machine is ${catalog.host.label}.</strong> `
+      + `Every backend here needs ${catalog.host.supported.join(' or ')}, so there is `
+      + `nothing to install yet. NVIDIA support is on the way — the backends below `
+      + `are listed so you can see what is coming.`;
+  }
   if (!ready.length) {
     return `<strong>No backend installed yet.</strong> Pick one below. `
       + `The recommended one is about ${catalog.backends[0].human_expected}.`;

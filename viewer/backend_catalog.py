@@ -22,6 +22,8 @@ silently downloading those weights in a restricted region is a harm we would be 
 from __future__ import annotations
 
 import os
+import platform
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,50 @@ REPO = Path(__file__).resolve().parents[1]
 HF_HUB_DIR = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
 
 GB = 1024 ** 3
+
+# Which machines a backend can run on. Apple Silicon is the only answer today -- MLX, the
+# Metal kernels and the shell bootstraps all assume it -- but NVIDIA support is coming, so
+# this is per-backend data rather than one "is this a Mac?" test. Adding a CUDA route later
+# means adding a string to that backend's `runs_on`, not unpicking a platform check.
+APPLE = "apple-silicon"
+NVIDIA = "nvidia"
+PLATFORM_LABELS = {APPLE: "an Apple Silicon Mac", NVIDIA: "an NVIDIA GPU"}
+
+
+def venv_python(project: Path) -> Path:
+    """The interpreter inside a project's `.venv`, named the way this OS names it.
+
+    Windows puts it in `Scripts/python.exe`, everywhere else it is `bin/python`. Hardcoding
+    the POSIX spelling is what turned a Windows visit into "[WinError 2] The system cannot
+    find the file specified" with no clue as to which file.
+    """
+    if os.name == "nt":
+        return project / ".venv" / "Scripts" / "python.exe"
+    return project / ".venv" / "bin" / "python"
+
+
+def host_platform() -> str:
+    """What this machine is, in the vocabulary backends declare support in.
+
+    Deliberately cheap and structural -- `sys.platform` and the CPU architecture, no driver
+    probing. The question here is only "could this backend run here at all", asked before
+    offering someone a multi-gigabyte download; whether a specific toolchain is present is
+    the bootstrap's business. When the CUDA route lands, detecting it belongs in here.
+    """
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        return APPLE
+    return "other"
+
+
+def host_label(host: str) -> str:
+    """This machine, named the way its owner would name it."""
+    if host in PLATFORM_LABELS:
+        return PLATFORM_LABELS[host].removeprefix("an ").removeprefix("a ")
+    return f"{platform.system() or 'this machine'} ({platform.machine()})"
+
+
+def runs_on_phrase(backend: Backend) -> str:
+    return " or ".join(PLATFORM_LABELS.get(p, p) for p in backend.runs_on)
 
 
 @dataclass(frozen=True)
@@ -84,6 +130,9 @@ class Backend:
     # already-applied patches (hit for real 2026-09-21).
     build_probes: tuple[Path, ...] = ()
     extra_steps: tuple[str, ...] = field(default_factory=tuple)
+    # The machines this route works on. Default rather than per-entry because every route
+    # is Apple-only today; the day one of them runs on CUDA, it says so here.
+    runs_on: tuple[str, ...] = (APPLE,)
 
     @property
     def bytes_expected(self) -> int:
@@ -94,12 +143,23 @@ class Backend:
         """True when nothing is declared, so a weights-only backend is never 'unbuilt'."""
         return all(p.exists() for p in self.build_probes)
 
-    def describe(self) -> dict[str, Any]:
+    def runs_here(self, host: str | None = None) -> bool:
+        return (host or host_platform()) in self.runs_on
+
+    def describe(self, host: str | None = None) -> dict[str, Any]:
         weights = [w.describe() for w in self.weights]
         present = sum(w["bytes_present"] for w in weights)
         built = self.build_present
+        supported = self.runs_here(host)
         return {
             "build_present": built,
+            "supported_here": supported,
+            "requires": runs_on_phrase(self),
+            # Said once, in words, so the screen can explain instead of a button failing.
+            "platform_note": None if supported else (
+                f"Needs {runs_on_phrase(self)}. Setting it up on this machine would "
+                f"download gigabytes and then fail, so the button is off."
+            ),
             "id": self.id,
             "label": self.label,
             "rank": self.rank,
@@ -117,8 +177,10 @@ class Backend:
             "human_expected": human_bytes(self.bytes_expected),
             "bytes_present": present,
             "human_present": human_bytes(present),
-            "state": _state(weights, built, self.setup_fetches_weights),
-            "action": _action(weights, built, self.setup_fetches_weights),
+            "state": "unsupported" if not supported else
+                     _state(weights, built, self.setup_fetches_weights),
+            "action": "none" if not supported else
+                      _action(weights, built, self.setup_fetches_weights),
             "percent_present": _percent(present, self.bytes_expected),
         }
 
@@ -157,8 +219,8 @@ CATALOG: tuple[Backend, ...] = (
         license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
         install="uv sync + hunyuan_mlx/download_weights.py",
         setup_minutes=25,
-        build_probes=(REPO / "hunyuan_mlx" / "shape" / ".venv" / "bin" / "python",
-                      REPO / "hunyuan_mlx" / "paint" / ".venv" / "bin" / "python"),
+        build_probes=(venv_python(REPO / "hunyuan_mlx" / "shape"),
+                      venv_python(REPO / "hunyuan_mlx" / "paint")),
         caveat=(
             "The Hunyuan weights are not licensed for use in the EU, the UK or South Korea. "
             "Check the licence before downloading."
@@ -188,7 +250,7 @@ CATALOG: tuple[Backend, ...] = (
         install="viewer",
         setup_minutes=60,
         setup_fetches_weights=False,
-        build_probes=(REPO / "vendor" / "trellis-space-mac" / ".venv" / "bin" / "python",),
+        build_probes=(venv_python(REPO / "vendor" / "trellis-space-mac"),),
         weights=(
             WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(14.0 * GB),
                       HF_HUB_DIR / "models--microsoft--TRELLIS.2-4B"),
@@ -206,16 +268,30 @@ CATALOG: tuple[Backend, ...] = (
 BY_ID = {backend.id: backend for backend in CATALOG}
 
 
-def catalog_status() -> dict[str, Any]:
-    """The whole catalogue merged with what is actually on disk."""
-    backends = [backend.describe() for backend in sorted(CATALOG, key=_rank_key)]
+def catalog_status(host: str | None = None) -> dict[str, Any]:
+    """The whole catalogue merged with what is actually on disk, for this machine.
+
+    The host is reported alongside the backends because "nothing is installed" and "nothing
+    can be installed here" look identical in a list of states, and only one of them is
+    worth a download button.
+    """
+    host = host or host_platform()
+    backends = [backend.describe(host) for backend in sorted(CATALOG, key=_rank_key)]
     ready = [b for b in backends if b["state"] == "ready"]
+    runnable = [b for b in backends if b["supported_here"]]
     return {
         "schema_version": 1,
         # The onboarding screen exists for exactly this condition, so the server decides
         # it rather than leaving each client to re-derive the rule.
         "needs_onboarding": not ready,
         "ready_count": len(ready),
+        "host": {
+            "id": host,
+            "label": host_label(host),
+            "any_backend_runs_here": bool(runnable),
+            "supported": sorted({PLATFORM_LABELS.get(p, p)
+                                 for b in CATALOG for p in b.runs_on}),
+        },
         "backends": backends,
     }
 

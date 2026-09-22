@@ -33,7 +33,14 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "viewer"))
 
-from backend_catalog import BY_ID, HF_HUB_DIR, Backend, human_bytes  # noqa: E402
+from backend_catalog import (  # noqa: E402
+    BY_ID,
+    HF_HUB_DIR,
+    Backend,
+    human_bytes,
+    runs_on_phrase,
+    venv_python,
+)
 
 POLL_SECONDS = 2.0
 STALL_SECONDS = 90.0
@@ -47,7 +54,7 @@ COMMANDS: dict[str, list[str]] = {
     "trellis": [sys.executable, str(REPO / "scripts" / "bootstrap_trellis_space_macos.py")],
     "pixal3d": ["bash", str(REPO / "scripts" / "bootstrap_pixal3d_cpp.sh")],
     "hunyuan_xiong": [
-        str(REPO / "hunyuan_mlx" / "shape" / ".venv" / "bin" / "python"),
+        str(venv_python(REPO / "hunyuan_mlx" / "shape")),
         str(REPO / "hunyuan_mlx" / "download_weights.py"),
         # Explicitly the default route, not every model. Without --model this fetches all
         # three shape checkpoints, which is 23 GB where the default route needs 5.
@@ -140,6 +147,13 @@ def start(backend_id: str) -> DownloadRun:
         raise KeyError(f"unknown backend: {backend_id}")
     if backend_id not in COMMANDS:
         raise RuntimeError(f"{backend.label} has no automated setup yet")
+    # Checked here rather than only in the browser, because the API is the thing that
+    # spends someone's bandwidth and an unsupported machine cannot finish the job.
+    if not backend.runs_here():
+        raise RuntimeError(
+            f"{backend.label} needs {runs_on_phrase(backend)}, which this machine is not. "
+            f"Nothing has been downloaded."
+        )
     with LOCK:
         if active() is not None:
             raise RuntimeError("a download is already running")
@@ -157,8 +171,11 @@ def cancel(backend_id: str) -> None:
     run.cancelled = True
     if run.process is not None and run.process.poll() is None:
         try:
-            os.killpg(run.process.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
+            if os.name == "nt":
+                run.process.terminate()
+            else:
+                os.killpg(run.process.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
             pass
 
 
@@ -209,8 +226,31 @@ def status_payload(run: DownloadRun) -> dict[str, Any]:
     }
 
 
+def _missing_executable(program: str) -> str | None:
+    """Why a command cannot start, said in words, before the OS says it in error codes.
+
+    `Popen` on a path that is not there raises `FileNotFoundError`, whose message reaches
+    the browser as "[Errno 2] No such file or directory" -- or, reported for real from a
+    Windows machine, "[WinError 2] The system cannot find the file specified". Neither says
+    which file or what to do about it. Checked first, it can.
+    """
+    if shutil.which(program) or Path(program).exists():
+        return None
+    path = Path(program)
+    venv = next((parent for parent in path.parents if parent.name == ".venv"), None)
+    if venv is not None:
+        return (f"the Python environment at {venv} has not been created yet. "
+                f"Run `uv sync` in {venv.parent}, then try again.")
+    return f"`{program}` is not installed, or not on this machine's PATH."
+
+
 def _run(run: DownloadRun) -> None:
     run.status = "running"
+    missing = _missing_executable(COMMANDS[run.backend.id][0])
+    if missing is not None:
+        run.status = "error"
+        run.emit({"phase": "error", "overall_pct": 0, "detail": f"cannot start: {missing}"})
+        return
     run.emit({"phase": "queued", "overall_pct": 0,
               "detail": f"starting · {human_bytes(run.backend.bytes_expected)} expected"})
     stop = threading.Event()
@@ -226,7 +266,10 @@ def _run(run: DownloadRun) -> None:
                  # progress signal, so ask the downloader not to draw them at all.
                  "HF_HUB_DISABLE_PROGRESS_BARS": "1"},
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
-            start_new_session=True,
+            # Its own process group, so cancelling kills the downloader's children too.
+            # POSIX-only: Windows rejects the argument outright, and `cancel` falls back to
+            # terminating the process there.
+            **({"start_new_session": True} if os.name != "nt" else {}),
         )
         assert run.process.stdout is not None
         for raw in run.process.stdout:

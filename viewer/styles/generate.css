@@ -103,6 +103,8 @@
   background: #2b4a6f; color: #cfe3ff; padding: 2px 6px; border-radius: 99px;
   margin-left: 6px; vertical-align: 2px; }
 .setup-ready { color: #7fd6a0; font-size: 12px; }
+/* Stated, not greyed out: a disabled-looking button invites clicking it again. */
+.setup-unavailable { color: #8a8f98; font-size: 12px; text-align: right; }
 .setup-card-best { font-size: 12px; margin: 8px 0 2px; }
 .setup-card-trade { font-size: 12px; opacity: .7; margin: 0; }
 .setup-card-caveat { font-size: 12px; margin: 8px 0 0; padding: 7px 9px; border-radius: 6px;
