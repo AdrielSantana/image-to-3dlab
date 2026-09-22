@@ -1,5 +1,8 @@
 # Repository Guide
 
+How to communicate in this repo: Keep your answers short. No jargon - if we have to use abbriviations or jargon
+we must explain it. We simplify everything. We don't over think or over explain. Brevity is important. Humour and wit is acceptable. 
+
 Local Apple Silicon **image → 3D** pipeline wrapping four backends (SF3D, TRELLIS.2, and
 two Hunyuan3D-MLX paths — see `docs/hunyuan-mlx-recipes.md`, not the old ComfyUI
 route) behind one CLI, with license provenance as a first-class concern.
