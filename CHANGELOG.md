@@ -73,6 +73,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeping every intermediate and writing a JSON record of the settings used, so assets
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
+### Changed
+- **Generation timings no longer read as hardware-neutral advice.** "10 steps is enough"
+  and "1024 is slowest" were written on one Mac; on a fast GPU the extra step costs under
+  a second and the advice inverts. The hints now give the mechanism rather than the
+  verdict, and the "timings are from one machine, share yours" line is on the Generate 3D
+  tab as well as Generate Image — it was only on the faster of the two steps.
+
 ### Fixed
 - **One catalogue of backends, not two.** The Generate tab kept its own list and the
   Setup & Status page kept another, and they had drifted: Stable Fast 3D and the dgrauet
