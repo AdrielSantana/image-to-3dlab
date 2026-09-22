@@ -14,8 +14,13 @@ could not finish on a 32 GB machine. See `docs/pixal3d-evaluation-2026-09-20.md`
 
 **Single-view needs a camera.** Pixal3D conditions on pixel-aligned features projected
 through an explicit camera, so `--sv-image` synthesizes a front gauge camera at `--fov`
-(20 degrees by default). A pre-matted RGBA image goes straight in; anything else is matted
-first with BiRefNet, which costs ~13s and changes the cutout, so alpha is preferred.
+(20 degrees by default). A pre-matted RGBA image goes straight in; anything else is cut out
+with u2net first (~5s), because a background left in becomes *geometry* -- a grey studio
+backdrop came back as two enormous white sheets either side of a fox's head. `--no-matte`
+skips it, `--matte` forces it.
+
+Note that an alpha *channel* is not a matte: Qwen-Image writes RGBA whose alpha is opaque
+noise, and both this wrapper and trellis-cli used to read that as "already cut out".
 
 Deliberately not `--pipeline-type 512`: the single-view weight family has no res-512
 texture flow.
@@ -55,16 +60,71 @@ STAGE_LABELS = {
 BANNER_STAGES = {1: "views", 2: "ss", 3: "shape", 4: "decode", 5: "texture", 6: "write"}
 
 
+# A real cutout leaves a lot of the frame empty -- a centred subject is typically 30-60%
+# transparent. This floor only has to separate that from an alpha channel that cuts nothing.
+# u2net, as `trellis_backend.py` uses. Never BRIA RMBG -- a licence guardrail.
+MATTE_MODEL = "u2net"
+MATTE_MIN_TRANSPARENT = 0.02
+MATTE_TRANSPARENT_BELOW = 16
+
+
 def has_alpha(image: Path) -> bool:
-    """Whether the image carries a matte already.
+    """Whether the image carries a matte already -- a real one, not just a fourth channel.
 
     A pre-matted RGBA image skips BiRefNet entirely, which is both faster and a better
     comparison: the cutout is then identical to whatever else was run on that image.
+
+    **The mode is not the question.** Qwen-Image through `stable-diffusion.cpp` writes RGBA
+    whose alpha is noise in the 219-255 range with nothing transparent in it. Trusting the
+    mode meant skipping BiRefNet on an image that had never been cut out, so Pixal3D
+    reconstructed the backdrop as geometry: the grey studio background of a low-poly fox
+    came back as two enormous white sheets either side of its head (2026-09-22).
+
+    So the contents decide. An image counts as matted only when a meaningful share of it is
+    actually transparent, which a stray antialiased pixel or a soft vignette will not reach.
     """
     from PIL import Image
 
     with Image.open(image) as opened:
-        return opened.mode in ("RGBA", "LA") or "transparency" in opened.info
+        if opened.mode not in ("RGBA", "LA") and "transparency" not in opened.info:
+            return False
+        alpha = opened.convert("RGBA").getchannel("A")
+
+    histogram = alpha.histogram()
+    transparent = sum(histogram[:MATTE_TRANSPARENT_BELOW])
+    return transparent / (alpha.width * alpha.height) >= MATTE_MIN_TRANSPARENT
+
+
+def _rembg_remove(image, session=None):
+    """Indirection so a test can stand in for a 170 MB model download."""
+    import rembg
+
+    return rembg.remove(image, session=session or rembg.new_session(MATTE_MODEL))
+
+
+def matte_path(image: Path) -> Path:
+    return image.with_name(f"{image.stem}__matted.png")
+
+
+def matte(image: Path, destination: Path | None = None) -> Path:
+    """Cut the subject out ourselves, with u2net, and write an RGBA beside the source.
+
+    We do this rather than passing `--bg-removal birefnet` because that was measured and
+    does nothing: trellis-cli decides "already matted" from the alpha channel's presence,
+    the same mistake `has_alpha` used to make, so a Qwen image with its junk alpha sails
+    straight through uncut. Handing over a real cutout removes the guess entirely.
+
+    u2net specifically, matching `image_to_3dlab/trellis_backend.py`. **Never BRIA RMBG**,
+    which this repo's generation pipeline must not load.
+    """
+    from PIL import Image
+
+    destination = destination or matte_path(image)
+    with Image.open(image) as opened:
+        cut = _rembg_remove(opened.convert("RGB"))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    cut.save(destination)
+    return destination
 
 
 def build_command(
@@ -74,17 +134,20 @@ def build_command(
 ) -> list[str]:
     """The `trellis-cli` invocation.
 
-    Pre-matted images take `--sv-image`, which crops to the alpha bounding box the way the
-    reference preprocess does and synthesizes the gauge camera. Everything else goes in
-    positionally and is matted by BiRefNet first.
+    Everything takes `--sv-image`, which crops to the alpha bounding box the way the
+    reference preprocess does and synthesizes the gauge camera. An image that is not
+    already cut out additionally asks the CLI for BiRefNet matting.
 
     `--gss` is always passed rather than left to the CLI default, because that default
     (7.5) is the setting that dropped the warrior girl's sword blade.
     """
-    if matted:
-        head = [str(cli), "--sv-image", str(image)]
-    else:
-        head = [str(cli), str(image), "--bg-removal", "birefnet"]
+    # Always `--sv-image`, matted or not: `--pixal3d-weights` is refused without it
+    # ("--pixal3d-weights requires --views DIR or --sv-image PATH"), and those weights are
+    # the entire reason to use this backend. An unmatted image is handed to BiRefNet by the
+    # CLI instead of being pre-cut by us.
+    head = [str(cli), "--sv-image", str(image)]
+    if not matted:
+        head += ["--bg-removal", "birefnet"]
     command = head + [
         "--fov", str(fov),
         "--models", str(models),
@@ -149,6 +212,14 @@ def main() -> int:
         "--gsh", type=float, default=None,
         help="shape guidance strength; left to the runtime default when unset",
     )
+    parser.add_argument(
+        "--matte", dest="matte", action="store_true", default=None,
+        help="force background removal even if the image looks cut out already",
+    )
+    parser.add_argument(
+        "--no-matte", dest="matte", action="store_false",
+        help="never matte; use the image exactly as given (u2net can eat thin structures)",
+    )
     parser.add_argument("--models", type=Path, default=MODELS)
     parser.add_argument("--cli", type=Path, default=CLI)
     args = parser.parse_args()
@@ -161,19 +232,31 @@ def main() -> int:
             f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d_cpp.sh"
         )
 
-    matted = has_alpha(args.image)
-    if not matted:
-        print("[pixal3d] no alpha channel; BiRefNet will matte it first (~13s)", flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # `trellis-cli` is launched from its own tree so it can find its Metal library, which
     # means a relative input or output path would resolve against *that* directory and the
     # run dies at once with "can't fopen". Absolute paths are the only safe thing to pass.
+    # Resolved *before* matting, so the cutout is written beside the real source and the
+    # path handed to the CLI is absolute whichever branch produced it.
     args.image = args.image.resolve()
     args.output = args.output.resolve()
 
+    image = args.image
+    matted = has_alpha(image)
+    # `--matte` / `--no-matte` override the detection; by default it decides. Left to
+    # itself, an image that is already cut out keeps its own matte, and anything else --
+    # every picture the Generate Image tab makes included -- gets one.
+    if args.matte is False:
+        print("[pixal3d] --no-matte: using the image exactly as given", flush=True)
+    elif args.matte or not matted:
+        print(f"[pixal3d] matting with {MATTE_MODEL} (~5s)", flush=True)
+        image = matte(image)
+        matted = True
+        print(f"[pixal3d] matted image: {image}", flush=True)
+
     started = time.time()
     command = build_command(
-        args.image, args.output, args.res, args.seed, args.fov,
+        image, args.output, args.res, args.seed, args.fov,
         args.models, args.cli, matted, args.gss, args.gsh,
     )
     print(f"[pixal3d] res={args.res} seed={args.seed} gss={args.gss} matted={matted}",
