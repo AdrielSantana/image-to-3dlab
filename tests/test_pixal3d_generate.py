@@ -38,11 +38,15 @@ def test_a_matted_image_uses_the_single_view_path():
 
 
 def test_an_unmatted_image_is_handed_to_birefnet():
+    # Corrected 2026-09-22. This asserted `"--sv-image" not in command`, pinning a command
+    # line the CLI refuses outright: `--pixal3d-weights` requires `--sv-image` or `--views`.
+    # It passed because `has_alpha` never returned False, so the branch it describes had
+    # never once been executed. A test can only pin behaviour something actually runs.
     command = px.build_command(
         Path("fox.jpg"), Path("out.glb"), res=1024, seed=42, fov=px.DEFAULT_FOV,
         models=Path("/m"), cli=Path("/bin/trellis-cli"), matted=False,
     )
-    assert "--sv-image" not in command
+    assert "--sv-image" in command
     assert command[command.index("--bg-removal") + 1] == "birefnet"
 
 
@@ -170,3 +174,137 @@ def test_paths_reach_the_cli_absolute(tmp_path, monkeypatch, capsys):
     command = recorded["command"]
     assert command[command.index("--sv-image") + 1] == str(image.resolve())
     assert command[-1] == str((tmp_path / "out" / "gnome.glb").resolve())
+
+
+# --- An alpha channel is not a cutout ----------------------------------------------------
+#
+# Found the hard way on 2026-09-22, in the promo reel for the release whose headline is the
+# text-to-image step. Qwen-Image through stable-diffusion.cpp writes RGBA, but its alpha is
+# noise in the 219-255 range with nothing actually transparent. `has_alpha` tested the file
+# mode, so it answered "already matted", BiRefNet was skipped, and Pixal3D reconstructed the
+# grey backdrop as geometry -- two enormous white sheets either side of a fox's head.
+#
+# The mode tells you a fourth channel exists. Only the contents tell you it means anything.
+
+
+def _image(tmp_path, mode, alpha=None, name="i.png"):
+    from PIL import Image
+    im = Image.new(mode, (64, 64), (200, 120, 60) if mode == "RGB" else (200, 120, 60, 255))
+    if alpha is not None:
+        im.putalpha(Image.fromarray(alpha))
+    path = tmp_path / name
+    im.save(path)
+    return path
+
+
+def test_an_opaque_alpha_channel_does_not_count_as_matted(tmp_path):
+    """The actual bug: RGBA, no transparency, so it must still be sent to BiRefNet."""
+    import numpy as np
+    noise = np.random.default_rng(0).integers(219, 256, (64, 64), dtype=np.uint8)
+    assert px.has_alpha(_image(tmp_path, "RGBA", noise)) is False
+
+
+def test_a_real_cutout_counts_as_matted(tmp_path):
+    """A genuine matte leaves large regions fully transparent, corners included."""
+    import numpy as np
+    a = np.zeros((64, 64), dtype=np.uint8)
+    a[16:48, 16:48] = 255            # subject in the middle, background cut away
+    assert px.has_alpha(_image(tmp_path, "RGBA", a)) is True
+
+
+def test_an_image_with_no_alpha_channel_is_not_matted(tmp_path):
+    assert px.has_alpha(_image(tmp_path, "RGB")) is False
+
+
+def test_a_barely_transparent_edge_is_not_mistaken_for_a_matte(tmp_path):
+    """Antialiasing or a soft vignette is not a cutout, and must not skip BiRefNet."""
+    import numpy as np
+    a = np.full((64, 64), 255, dtype=np.uint8)
+    a[0, 0] = 0                       # a single transparent pixel
+    assert px.has_alpha(_image(tmp_path, "RGBA", a)) is False
+
+
+def test_an_unmatted_image_still_uses_the_single_view_path():
+    """`--pixal3d-weights` only works with `--sv-image`, matted or not.
+
+    The old un-matted branch passed the image positionally, which the CLI rejects with
+    "--pixal3d-weights requires --views DIR or --sv-image PATH". Nobody noticed because
+    `has_alpha` never returned False until the alpha check was fixed on 2026-09-22 --
+    so this branch had been dead and broken at the same time.
+    """
+    command = px.build_command(Path("i.png"), Path("o.glb"), 1024, 42, 0.349, matted=False)
+    assert "--sv-image" in command
+    # BiRefNet does the cutting, since we have not done it ourselves.
+    assert command[command.index("--bg-removal") + 1] == "birefnet"
+    # And the image is never a bare positional, which is what broke it.
+    assert command[command.index("--sv-image") + 1] == "i.png"
+    assert command[-1] == "o.glb"
+
+
+def test_a_matted_image_is_not_sent_through_birefnet_again():
+    command = px.build_command(Path("i.png"), Path("o.glb"), 1024, 42, 0.349, matted=True)
+    assert "--sv-image" in command
+    assert "--bg-removal" not in command
+
+
+# --- Matting is ours to do, not the CLI's ------------------------------------------------
+#
+# Asking trellis-cli to matte (`--bg-removal birefnet`) was measured on 2026-09-22 and it
+# changed nothing: the winged fox came back byte-identical in geometry, 934,330 faces and
+# the same extents. Its own docs say "a pre-matted image keeps its alpha", so the junk
+# Qwen alpha reads as pre-matted to it exactly as it did to us. We cut the image out
+# ourselves and hand over a real matte, so nothing downstream has to guess.
+
+
+def test_matting_writes_a_real_cutout_beside_the_source(tmp_path, monkeypatch):
+    from PIL import Image
+    import numpy as np
+
+    source = tmp_path / "fox.png"
+    Image.new("RGB", (32, 32), (200, 120, 60)).save(source)
+
+    def fake_remove(image, session=None):
+        out = image.convert("RGBA")
+        a = np.zeros((32, 32), dtype=np.uint8)
+        a[8:24, 8:24] = 255
+        out.putalpha(Image.fromarray(a))
+        return out
+
+    monkeypatch.setattr(px, "_rembg_remove", fake_remove)
+    matted = px.matte(source, tmp_path / "cut.png")
+    assert matted.is_file()
+    # And the result must satisfy our own matte test, or we have solved nothing.
+    assert px.has_alpha(matted) is True
+
+
+def test_the_matte_is_named_so_it_is_obvious_it_is_not_the_original(tmp_path):
+    assert "matted" in px.matte_path(tmp_path / "fox.png").name
+
+
+def test_the_matted_path_reaches_the_cli_absolute(tmp_path, monkeypatch):
+    """Matting must not undo the absolute-path rule: the cutout is what the CLI opens.
+
+    The first version mattted before resolving, so an image given relatively reached
+    trellis-cli relative and would have died with "can't fopen" -- the exact failure the
+    resolve exists to prevent, reintroduced through a new branch.
+    """
+    image = tmp_path / "gnome.png"
+    image.write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+    recorded = {}
+
+    def fake_popen(command, **kwargs):
+        recorded["command"] = command
+        raise SystemExit(0)
+
+    monkeypatch.setattr(px, "has_alpha", lambda _: False)          # forces the matte branch
+    monkeypatch.setattr(px, "matte", lambda p, d=None: px.matte_path(p))
+    monkeypatch.setattr(px, "readiness", lambda *a, **k: {"ready": True})
+    monkeypatch.setattr(px.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(sys, "argv", ["pixal3d_generate.py", "gnome.png", "out/gnome.glb"])
+    with pytest.raises(SystemExit):
+        px.main()
+
+    passed = recorded["command"][recorded["command"].index("--sv-image") + 1]
+    assert Path(passed).is_absolute(), passed
+    assert "matted" in passed

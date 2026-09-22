@@ -81,6 +81,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tab as well as Generate Image — it was only on the faster of the two steps.
 
 ### Fixed
+- **A generated image's background came back as geometry.** Pixal3D was handed pictures
+  that had never been cut out, so it reconstructed the backdrop as mesh: the flat grey
+  studio background behind a low-poly fox returned as two enormous white sheets either
+  side of its head, welded to the model. Two faults, one behind the other. `has_alpha()`
+  decided "already matted" from the file's *mode*, and Qwen-Image writes RGBA whose alpha
+  is opaque noise (219-255, nothing transparent, corners included) -- so background
+  removal was skipped on every image the new Generate Image tab produces. Behind that, the
+  un-matted branch built a command line `trellis-cli` rejects outright (`--pixal3d-weights`
+  requires `--sv-image`), which had never been noticed because the first fault meant it had
+  never once run. `has_alpha` now inspects the channel rather than the mode, and the
+  subject is cut out with u2net before generation, with `--matte` / `--no-matte` to
+  override. Asking `trellis-cli` to matte instead was measured and does nothing: it makes
+  the same mode-based mistake, and the mesh came back with identical extents and face
+  count.
 - **Tests and the code they test now share one copy of each module.** `viewer/` and
   `scripts/` are not on Python's path, so test files hand-loaded their modules with
   `importlib` — and every hand-load makes a *new* copy. Where production code imported the
