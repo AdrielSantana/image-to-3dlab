@@ -70,6 +70,16 @@ function closeStream() {
 
 function applyEvent(event) {
   if (event.phase === 'sampling') {
+    // The decode starts the moment the last step lands, and says nothing until it has
+    // FINISHED several minutes later. Announcing it here rather than waiting for that
+    // line is the difference between "working" and "frozen on step 10 of 10", which is
+    // exactly how it read the first time someone else used this.
+    if (event.step >= event.total_steps) {
+      setStatus('All steps done. Decoding the image now — this part is silent and takes '
+                + 'a couple of minutes at 768px, longer at 1024.');
+      setBar(92);
+      return;
+    }
     const eta = event.eta_seconds ? `, about ${humanSeconds(event.eta_seconds)} left` : '';
     setStatus(`Step ${event.step} of ${event.total_steps} (${event.seconds_per_step.toFixed(1)}s each${eta})`);
     // Sampling is most of the run but not all of it; the decode is the rest, so the bar
@@ -78,8 +88,8 @@ function applyEvent(event) {
     return;
   }
   if (event.phase === 'decoding') {
-    setStatus('Decoding the image. This part is quiet and takes a couple of minutes.');
-    setBar(95);
+    setStatus(`Decode finished in ${humanSeconds(event.decode_seconds)}. Saving…`);
+    setBar(97);
     return;
   }
   if (event.status === 'done') {
