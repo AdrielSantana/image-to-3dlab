@@ -602,6 +602,31 @@
     <div class="generate-card">
       <h2>Credits</h2>
       <p>This repo wraps other people's models and ports. Attribution, by pipeline:</p>
+      <h3>Qwen-Image 2.1 (Generate Image)</h3>
+      <ul>
+        <li><strong>Which model, exactly:</strong>
+          <a href="https://huggingface.co/leejet/Qwen-Image-2.1-GGUF">leejet/Qwen-Image-2.1-GGUF</a>,
+          the <code>Q8_0</code> file. That is a straight quantisation of the official
+          <a href="https://huggingface.co/Qwen/Qwen-Image-2.1">Qwen/Qwen-Image-2.1</a>
+          &mdash; <strong>the stock model, not an uncensored finetune.</strong> The
+          <code>abenzerps</code> GGUF repo is also stock; its card says an uncensored
+          version is still in development. Running locally there is no safety checker
+          anywhere in the pipeline, which is why any of these can feel unfiltered: that is
+          a property of running it yourself, not of the weights. Swapping in a different
+          variant is one file, the <code>--diffusion-model</code> argument; the text
+          encoder and VAE stay as they are.</li>
+        <li>Text encoder:
+          <a href="https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF">Qwen3-VL-8B-Instruct</a>
+          (<code>Q4_K_M</code>). Qwen-Image reads prompts with a vision-language model,
+          which is why the encoder is so large.</li>
+        <li>VAE: <a href="https://huggingface.co/Comfy-Org/Qwen-Image-2.1">Comfy-Org/Qwen-Image-2.1</a>.</li>
+        <li>Runtime: <a href="https://github.com/leejet/stable-diffusion.cpp">leejet/stable-diffusion.cpp</a>
+          (MIT), a prebuilt Metal binary. No ComfyUI needed.</li>
+        <li><strong>Licence: Qwen Research License, non-commercial only</strong>, and it
+          asks that you say &ldquo;Built with Qwen&rdquo;. Anything generated from these
+          weights inherits that, including a mesh made from a generated picture, so runs
+          land in <code>output/images/research_only/</code>.</li>
+      </ul>
       <h3>TRELLIS.2 (clean port)</h3>
       <ul>
         <li>Mac/Metal port foundation: <a href="https://github.com/pedronaugusto/trellis2-apple">pedronaugusto/trellis2-apple</a>, plus Pedro Naugusto's <code>mtlbvh</code>, <code>mtldiffrast</code>, and <code>mtlgemm</code> Metal kernel libraries.</li>

@@ -12,7 +12,17 @@ Drop in a picture of a character or object; get back a `.glb` (with PBR texture)
 `.provenance.json` sidecar recording exactly how it was made and under which licenses. This should make your game-dev or whatever else you're up to easier to manage.
 Everything runs on your Mac; nothing is uploaded to a cloud service.
 
-Five backends, one Generate page. Sadly life is full of trade-offs, so pick the tradeoff you want (lol):
+**No picture to start from?** There is now a **Generate Image** tab that makes one. Type a
+prompt, get a source image, hand it to **Generate 3D**. It runs Qwen-Image 2.1 on your own
+machine, about four and a half minutes an image on an M-series Mac.
+
+![Three creatures generated from text prompts on a laptop: a low-poly fox in 4m22s, a storm ram in 4m32s, and a glitch hummingbird in 4m48s](docs/images/prompt-to-source-image.jpg)
+
+Built with Qwen. Those weights are **non-commercial**, and anything you build from a
+generated picture inherits that, so the pipeline sorts those runs into their own folder and
+says so in the sidecar. Bring your own image and none of that applies.
+
+Five backends, one Generate 3D page. Sadly life is full of trade-offs, so pick the tradeoff you want (lol):
 
 | Backend | Best for | Setup | License |
 |---|---|---|---|
