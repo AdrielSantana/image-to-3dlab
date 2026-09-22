@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A `Generate Image` tab, and `Generate` is now `Generate 3D`.** The pipeline assumed you
+  already had a picture; this is the step before that. Type a prompt, get an image, hand it
+  to Generate 3D. It runs Qwen-Image 2.1 locally through `stable-diffusion.cpp` on Metal.
+  Defaults are the measured fast ones rather than the upstream recipe: the model does not
+  use guidance, so `--cfg-scale 6.0` was doing two passes per step for nothing.
+- **`scripts/bootstrap_qwen_image.py`** — installs that route: a prebuilt
+  `stable-diffusion.cpp` binary and 13.4 GB of weights. It names the backend, the route,
+  the size and the licence, then stops until you agree. Setup & Status lists it alongside
+  the 3D backends and its download button runs this.
+- **A `research-only` licence class in `provenance.py`.** Qwen-Image is non-commercial, and
+  unlike the existing classes that permits no commercial use at all. `validate_run_policy`
+  allows it only for a private showcase, and `allow_conditional` is not consent to it. The
+  restriction sits at the front of the chain, so a mesh made from a generated picture
+  inherits it.
+- **`scripts/blender_agent.py`** — lets a local model build and light a scene in Blender by
+  calling a fixed set of verbs rather than writing Blender Python, which small models get
+  wrong. Each round that changes the scene is rendered and the picture handed back, so the
+  model sees its own work.
 - **A visual README.** The page now opens on three source images above the models
   generated from them, and carries a 360° turntable of one of them — a still cannot show
   that a result is a real model rather than a flattering angle. Also `social-preview.jpg`,
