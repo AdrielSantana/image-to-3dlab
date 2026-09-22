@@ -124,8 +124,37 @@ def test_onboarding_is_needed_only_when_nothing_is_ready(monkeypatch, tmp_path):
 
 
 def test_backends_are_listed_best_first():
+    """Ranked routes come first, in order; unranked ones follow.
+
+    `rank` has always been optional on Backend, but nothing was unranked until the
+    text-to-image route arrived. It is not competing for "which 3D backend should a
+    newcomer pick", so it has no rank and sorts to the end.
+    """
     ranks = [b["rank"] for b in bc.catalog_status()["backends"]]
-    assert ranks == sorted(ranks)
+    ranked = [r for r in ranks if r is not None]
+    assert ranked == sorted(ranked)
+    assert ranks == ranked + [None] * (len(ranks) - len(ranked))
+
+
+def test_an_unranked_backend_is_never_the_recommendation():
+    for backend in bc.catalog_status()["backends"]:
+        if backend["rank"] is None:
+            assert backend["recommended"] is False
+
+
+def test_image_and_3d_routes_are_distinguishable():
+    """The Setup page groups them, and 'kind' is how it knows which is which."""
+    kinds = {b["id"]: b["kind"] for b in bc.catalog_status()["backends"]}
+    assert kinds["qwen-image"] == "image"
+    assert all(k in {"image", "3d"} for k in kinds.values())
+    assert "3d" in kinds.values()
+
+
+def test_the_image_route_states_its_non_commercial_licence():
+    """It sits at the front of the chain, so its restriction reaches everything after it."""
+    entry = next(b for b in bc.catalog_status()["backends"] if b["id"] == "qwen-image")
+    assert "non-commercial" in entry["license"]["name"].lower()
+    assert "non-commercial" in entry["caveat"].lower()
 
 
 def test_sizes_are_stated_before_anything_is_fetched():

@@ -133,6 +133,11 @@ class Backend:
     # The machines this route works on. Default rather than per-entry because every route
     # is Apple-only today; the day one of them runs on CUDA, it says so here.
     runs_on: tuple[str, ...] = (APPLE,)
+    # What this route produces. Everything here made a mesh until Qwen-Image arrived, and a
+    # text-to-image step sits one stage upstream of the rest of the pipeline: it is for
+    # people who do not have a source image yet. The page groups on this rather than
+    # guessing from the label.
+    kind: str = "3d"
 
     @property
     def bytes_expected(self) -> int:
@@ -162,6 +167,7 @@ class Backend:
             ),
             "id": self.id,
             "label": self.label,
+            "kind": self.kind,
             "rank": self.rank,
             "recommended": self.rank == 1,
             "best_for": self.best_for,
@@ -261,6 +267,39 @@ CATALOG: tuple[Backend, ...] = (
                       92 * 1024 ** 2,
                       HF_HUB_DIR / "models--wkcn--TinyCLIP-ViT-8M-16-Text-3M-YFCC15M",
                       note="Advisory only. Generation works without it."),
+        ),
+    ),
+    Backend(
+        id="qwen-image",
+        label="Qwen-Image 2.1 (text to image)",
+        kind="image",
+        best_for="Makes the source image when you do not have one. Prompt in, picture out.",
+        tradeoff=(
+            "Non-commercial licence, and the restriction carries into any 3D asset you "
+            "make from the picture."
+        ),
+        license_name="Qwen Research License (non-commercial)",
+        license_url="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
+        install="Prebuilt stable-diffusion.cpp binary in vendor/sdcpp/",
+        setup_minutes=15,
+        build_probes=(REPO / "vendor" / "sdcpp" / "sd-cli",),
+        caveat=(
+            "The Qwen Research License is non-commercial only and asks that you say "
+            "'Built with Qwen'. Anything you generate from one of these images inherits "
+            "that, including after a Hunyuan repaint."
+        ),
+        weights=(
+            WeightSet("Qwen-Image 2.1 diffusion model (Q8_0)",
+                      "leejet/Qwen-Image-2.1-GGUF", int(7.69 * GB),
+                      HF_HUB_DIR / "models--leejet--Qwen-Image-2.1-GGUF"),
+            WeightSet("Qwen3-VL-8B text encoder (Q4_K_M)",
+                      "Qwen/Qwen3-VL-8B-Instruct-GGUF", int(5.03 * GB),
+                      HF_HUB_DIR / "models--Qwen--Qwen3-VL-8B-Instruct-GGUF",
+                      note="Qwen-Image reads your prompt with a vision-language model, "
+                           "which is why the text encoder is this large."),
+            WeightSet("Qwen-Image 2.1 VAE", "Comfy-Org/Qwen-Image-2.1", int(0.68 * GB),
+                      HF_HUB_DIR / "models--Comfy-Org--Qwen-Image-2.1",
+                      note="Turns the generated latent back into pixels."),
         ),
     ),
 )
