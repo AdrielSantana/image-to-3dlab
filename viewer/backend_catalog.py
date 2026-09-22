@@ -133,6 +133,11 @@ class Backend:
     # The machines this route works on. Default rather than per-entry because every route
     # is Apple-only today; the day one of them runs on CUDA, it says so here.
     runs_on: tuple[str, ...] = (APPLE,)
+    # Whether the viewer can install this route by itself. Two of them it cannot: SF3D
+    # wants a shell bootstrap and dgrauet's Hunyuan shape stage is a manual vendor clone
+    # because it is Tencent-licensed. Listing them with a button that throws is worse than
+    # listing them with the command to run, so the page says which it is.
+    automated_setup: bool = True
     # What this route produces. Everything here made a mesh until Qwen-Image arrived, and a
     # text-to-image step sits one stage upstream of the rest of the pipeline: it is for
     # people who do not have a source image yet. The page groups on this rather than
@@ -183,10 +188,12 @@ class Backend:
             "human_expected": human_bytes(self.bytes_expected),
             "bytes_present": present,
             "human_present": human_bytes(present),
+            "automated_setup": self.automated_setup,
             "state": "unsupported" if not supported else
                      _state(weights, built, self.setup_fetches_weights),
             "action": "none" if not supported else
-                      _action(weights, built, self.setup_fetches_weights),
+                      _action(weights, built, self.setup_fetches_weights,
+                              self.automated_setup),
             "percent_present": _percent(present, self.bytes_expected),
         }
 
@@ -240,6 +247,57 @@ CATALOG: tuple[Backend, ...] = (
                       int(5.0 * GB), REPO / "hunyuan_mlx" / "shape" / "weights" / "Hunyuan3D-2"),
             WeightSet("Hunyuan3D-2.1 paint (PBR)", "tencent/Hunyuan3D-2.1", int(8.3 * GB),
                       REPO / "hunyuan_mlx" / "paint" / "weights"),
+        ),
+    ),
+    Backend(
+        id="hunyuan-mlx",
+        label="Hunyuan3D-MLX (dgrauet shape + Xiong paint)",
+        rank=4,
+        best_for="The older Hunyuan pairing: dgrauet's shape stage, Xiong's paint stage.",
+        tradeoff=(
+            "Two projects bolted together, and the shape half is a manual vendor clone. "
+            "Prefer the Xiong full pipeline unless you specifically want this shape model."
+        ),
+        license_name="MIT (Xiong paint code); Tencent Hunyuan Community License (weights)",
+        license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
+        install="Manual: clone dgrauet's port into vendor/hunyuan-mlx, then uv sync",
+        automated_setup=False,
+        setup_minutes=40,
+        build_probes=(REPO / "vendor" / "hunyuan-mlx" / ".venv" / "bin" / "python",
+                      venv_python(REPO / "hunyuan_mlx" / "paint")),
+        caveat=(
+            "The Hunyuan weights are not licensed for use in the EU, the UK or South Korea. "
+            "Check the licence before downloading."
+        ),
+        extra_steps=(
+            "The shape half stays vendor-cloned on purpose: it is Tencent-licensed code, "
+            "not just weights. See docs/hunyuan-mlx-recipes.md.",
+        ),
+        weights=(
+            WeightSet("Hunyuan3D-2.1 shape, MLX port", "dgrauet/hunyuan3d-2.1-mlx",
+                      int(13.0 * GB),
+                      HF_HUB_DIR / "models--dgrauet--hunyuan3d-2.1-mlx"),
+            WeightSet("Hunyuan3D-2.1 paint (PBR)", "tencent/Hunyuan3D-2.1", int(8.3 * GB),
+                      REPO / "hunyuan_mlx" / "paint" / "weights",
+                      note="The same paint weights the Xiong route uses. Downloading it "
+                           "for one route installs it for both."),
+        ),
+    ),
+    Backend(
+        id="sf3d",
+        label="Stable Fast 3D",
+        rank=5,
+        best_for="Fastest of the lot, and the smallest download. Good for a quick look.",
+        tradeoff="Lowest fidelity here, and it bakes lighting into the texture.",
+        license_name="Stability AI Community License (non-commercial under $1M revenue)",
+        license_url="https://huggingface.co/stabilityai/stable-fast-3d",
+        install="scripts/bootstrap_macos.sh",
+        automated_setup=False,
+        setup_minutes=20,
+        build_probes=(REPO / "vendor" / "stable-fast-3d" / "sf3d" / "system.py",),
+        weights=(
+            WeightSet("Stable Fast 3D", "stabilityai/stable-fast-3d", int(3.7 * GB),
+                      HF_HUB_DIR / "models--stabilityai--stable-fast-3d"),
         ),
     ),
     Backend(
@@ -305,6 +363,59 @@ CATALOG: tuple[Backend, ...] = (
 )
 
 BY_ID = {backend.id: backend for backend in CATALOG}
+
+# The Generate tab spells one route differently from the catalogue, and renaming either
+# would break a saved setting or a download key for no gain. One alias costs a line; two
+# half-synchronised id namespaces cost an afternoon, which is what they already cost once.
+ALIASES = {"hunyuan-mlx-xiong": "hunyuan_xiong"}
+
+
+def resolve(backend_id: str) -> Backend | None:
+    """One way to look a route up, whichever spelling the caller happens to hold."""
+    return BY_ID.get(ALIASES.get(backend_id, backend_id))
+
+
+def readiness(backend_id: str, host: str | None = None) -> dict[str, Any] | None:
+    """Is this route installed, in the shape the Generate tab's readiness strip reads.
+
+    This is the catalogue's answer, derived from the same data the Setup & Status page
+    shows, so a route is never installed according to one screen and unknown to the other.
+    Backends with a live probe of their own layer detail on top of this (which of three
+    Hunyuan checkpoints is present, how many of nine GGUF files); everything else, and
+    every image route, is served from here alone.
+
+    ``ready`` means "a run can start", not "everything is downloaded". TRELLIS fetches its
+    weights lazily on first use, so gating generation on a full cache would refuse a
+    working install.
+    """
+    backend = resolve(backend_id)
+    if backend is None:
+        return None
+    described = backend.describe(host)
+    weights = {
+        w["source"]: {"label": w["label"], "present": w["present"], "human": w["human_present"]}
+        for w in described["weights"]
+    }
+    missing = [w["label"] for w in described["weights"] if not w["present"]]
+    supported = described["supported_here"]
+    built = described["build_present"]
+    hint = None
+    if not supported:
+        hint = described["platform_note"]
+    elif not built:
+        hint = f"{backend.label} is not installed — run: {backend.install}"
+    return {
+        "schema_version": 1,
+        "backend": backend.id,
+        "build": {"present": built, "hint": hint},
+        "weights": weights,
+        "missing_weights": missing,
+        "ready": bool(supported and built),
+        "warning": ("first use will download missing weights" if missing and built
+                    else None),
+        "supported_here": supported,
+        "platform_note": described["platform_note"],
+    }
 
 
 def catalog_status(host: str | None = None) -> dict[str, Any]:
@@ -398,10 +509,11 @@ def _state(weights: list[dict[str, Any]], built: bool, setup_fetches: bool) -> s
     return _weights_state(weights)
 
 
-def _action(weights: list[dict[str, Any]], built: bool, setup_fetches: bool) -> str:
-    """What the button should offer: build, fetch, resume, or nothing."""
+def _action(weights: list[dict[str, Any]], built: bool, setup_fetches: bool,
+            automated: bool = True) -> str:
+    """What the button should offer: build, fetch, resume, nothing, or a command to run."""
     if not built:
-        return "build"
+        return "build" if automated else "manual"
     if not setup_fetches:
         return "none"
     state = _weights_state(weights)

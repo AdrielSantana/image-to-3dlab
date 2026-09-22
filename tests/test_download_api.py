@@ -206,3 +206,13 @@ def test_an_unsupported_machine_is_refused_before_anything_downloads(monkeypatch
     assert "Apple Silicon" in str(raised.value)
     assert "Nothing has been downloaded" in str(raised.value)
     assert "hunyuan_xiong" not in dl.DOWNLOADS
+
+
+def test_every_route_claiming_automated_setup_actually_has_a_command():
+    """The flag and the command table are two halves of one fact; a drift shows the user
+    a button that throws "has no automated setup yet" only after they click it."""
+    import backend_catalog
+
+    for backend in backend_catalog.CATALOG:
+        has_command = backend.id in dl.COMMANDS
+        assert backend.automated_setup is has_command, backend.id
