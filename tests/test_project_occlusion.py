@@ -16,7 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 trimesh = pytest.importorskip("trimesh")
 
-from project_labels import occluded
+# Not at the top of the file on purpose: `scripts/` goes on the path above, and this
+# import needs that to have happened.
+from project_labels import occluded  # noqa: E402
 
 
 def two_planes(gap: float = 0.5, n: int = 8) -> trimesh.Trimesh:

@@ -43,6 +43,11 @@ def test_inserts_a_weld_before_every_simplify():
 
 
 def test_weld_precedes_the_simplify_it_guards():
+    # Seeded, because `prev` is assigned at the *end* of the loop: without this the first
+    # iteration reads a name that does not exist yet. It never fired only because the
+    # patched output never opens with a simplify call, which is luck, not a guarantee --
+    # and the failure would be a NameError crash rather than a readable assertion.
+    prev = ""
     for line in apply_patch(SYNTHETIC, "/repo").splitlines():
         if "mesh.simplify(" in line:
             assert prev.strip() == f"{MARKER}(mesh)"
