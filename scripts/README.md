@@ -30,6 +30,7 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `bootstrap_trellis_macos.sh` | Clone and install the `shivampkumar/trellis-mac` port, with the Metal acceleration backends when Xcode's Metal compiler is present and a slower CPU bake fallback when it is not. |
 | `bootstrap_trellis_space_macos.py` | Bootstrap TRELLIS.2 on macOS from Microsoft's pinned Space source. |
 | `bootstrap_pixal3d_cpp.sh` | Clone, build and weight the Pixal3D C++/GGML runtime on Apple Silicon. |
+| `bootstrap_qwen_image.py` | Install the text-to-image route: a stable-diffusion.cpp binary and Qwen-Image weights. |
 | `pixal3d_generate.py` | End-to-end Pixal3D generation on Apple Silicon: image -> textured GLB. |
 | `trellis_space_generate.py` | Full image -> GLB generation through the CLEAN `trellis-space-mac` port on Apple Silicon. |
 | `hunyuan_mlx_generate.py` | End-to-end Hunyuan3D-MLX generation: image -> textured GLB. |
