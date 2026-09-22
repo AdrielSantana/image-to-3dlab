@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="./styles/base.css">
 <link rel="stylesheet" href="./styles/compare.css">
 <link rel="stylesheet" href="./styles/generate.css">
+<link rel="stylesheet" href="./styles/generate-image.css">
 <link rel="stylesheet" href="./styles/animate.css">
 <link rel="stylesheet" href="./styles/rig.css">
 </head>
@@ -17,7 +18,8 @@
   <span class="lbl">image-to-3dlab</span>
   <button id="mode-setup" class="mode" title="What is installed, what it costs on disk">Setup &amp; Status</button>
   <button id="mode-compare" class="mode on">Compare</button>
-  <button id="mode-generate" class="mode">Generate</button>
+  <button id="mode-generate-image" class="mode" title="No source image? Write a prompt and make one">Generate Image</button>
+  <button id="mode-generate" class="mode" title="Turn an image into a 3D mesh">Generate 3D</button>
   <button id="mode-finish" class="mode" title="Retopologise, repaint and compress an existing asset">Finish</button>
   <button id="mode-rig" class="mode" title="Correct the rest skeleton">Rig Edit</button>
   <button id="mode-animate" class="mode" title="Pose and animate the bound skeleton">Pose</button>
@@ -96,6 +98,97 @@
       Read the licence that applies to what you download; it governs what you may do with
       what comes out.
     </p>
+  </div>
+</section>
+
+<section id="generate-image-view" hidden>
+  <div id="image-health" class="health-strip">
+    <span id="image-health-dot" class="health-dot">&bull;</span>
+    <span id="image-health-text">checking&hellip;</span>
+    <button id="image-health-goto" class="ghost" hidden>Open Setup &amp; Status</button>
+  </div>
+  <div class="image-grid">
+    <div class="image-card">
+      <h2>Text &rarr; Image</h2>
+      <p class="image-intro">
+        No source image yet? Describe one. The picture this makes is what the
+        <strong>Generate 3D</strong> tab turns into a mesh.
+      </p>
+
+      <div class="field">
+        <label for="image-prompt">Prompt</label>
+        <textarea id="image-prompt" rows="7" placeholder="a cute low-poly stylised fox character, full body, standing, front three-quarter view, centered in frame, plain flat light grey background, soft even studio lighting"></textarea>
+        <small>What works: name the creature, describe its material and colour, describe any
+          glow as surface detail, then end with &ldquo;centered in frame, plain light grey
+          background, soft even studio lighting&rdquo;. Avoid motion trails and afterimages
+          &mdash; they look good and model badly, because the mesh step needs one clean
+          silhouette.</small>
+      </div>
+
+      <div class="image-row">
+        <div class="field"><label for="image-size">Size</label>
+          <select id="image-size">
+            <option value="512">512 (fastest)</option>
+            <option value="768" selected>768 (recommended)</option>
+            <option value="1024">1024 (slowest)</option>
+          </select>
+          <small>Bigger costs time in two places: every step, and the final decode.</small>
+        </div>
+        <div class="field"><label for="image-steps">Steps</label>
+          <input id="image-steps" type="number" min="1" max="50" step="1" value="10">
+          <small>10 is enough for this model. More steps, more time, little gain.</small>
+        </div>
+        <div class="field"><label for="image-seed">Seed</label>
+          <input id="image-seed" type="number" step="1" value="42">
+          <small>Same seed and prompt gives the same picture. Change it for a variation.</small>
+        </div>
+      </div>
+
+      <details class="image-advanced">
+        <summary>Advanced</summary>
+        <div class="field"><label for="image-negative">Negative prompt</label>
+          <input id="image-negative" type="text" placeholder="blurry, extra limbs"></div>
+        <div class="field"><label for="image-cfg">Guidance (cfg)</label>
+          <input id="image-cfg" type="number" min="0" max="20" step="0.5" value="1">
+          <small><strong>Leave this at 1.</strong> This model does not use guidance, so
+            anything above 1 makes it do two passes per step for no benefit. Measured: 17
+            minutes at cfg 6 against 11 at cfg 1, for the same picture.</small></div>
+        <div class="field"><label for="image-sampler">Sampler</label>
+          <select id="image-sampler"><option value="euler" selected>euler</option>
+            <option value="euler_a">euler_a</option><option value="heun">heun</option>
+            <option value="dpm2">dpm2</option><option value="dpmpp2m">dpmpp2m</option>
+            <option value="lcm">lcm</option></select></div>
+      </details>
+
+      <div class="image-actions">
+        <button id="image-run" class="primary">Generate image</button>
+        <button id="image-cancel" class="ghost" hidden>Cancel</button>
+      </div>
+      <div id="image-status" class="image-status" aria-live="polite"></div>
+      <div id="image-bar" class="image-bar" hidden><div id="image-bar-fill"></div></div>
+
+      <p class="image-licence">
+        Qwen-Image 2.1, run locally. Its licence is <strong>non-commercial</strong> and asks
+        that you say &ldquo;Built with Qwen&rdquo;. Anything you build from one of these
+        pictures inherits that, including a mesh made from it.
+        <a href="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE" target="_blank" rel="noopener">Licence</a>
+      </p>
+      <p class="image-timing">
+        Timings shown are from one Apple Silicon Mac. A faster chip does better and an
+        NVIDIA card is far quicker.
+        <a href="https://github.com/Bingeljell/image-to-3dlab/discussions" target="_blank" rel="noopener">Share yours</a>
+        so the project has more than one machine's numbers.
+      </p>
+    </div>
+
+    <div class="image-result">
+      <div id="image-empty" class="image-empty">Your image appears here.</div>
+      <img id="image-output" alt="generated image" hidden>
+      <div id="image-done" class="image-done" hidden>
+        <a id="image-download" class="ghost" download>Download PNG</a>
+        <span id="image-elapsed"></span>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -509,6 +602,31 @@
     <div class="generate-card">
       <h2>Credits</h2>
       <p>This repo wraps other people's models and ports. Attribution, by pipeline:</p>
+      <h3>Qwen-Image 2.1 (Generate Image)</h3>
+      <ul>
+        <li><strong>Which model, exactly:</strong>
+          <a href="https://huggingface.co/leejet/Qwen-Image-2.1-GGUF">leejet/Qwen-Image-2.1-GGUF</a>,
+          the <code>Q8_0</code> file. That is a straight quantisation of the official
+          <a href="https://huggingface.co/Qwen/Qwen-Image-2.1">Qwen/Qwen-Image-2.1</a>
+          &mdash; <strong>the stock model, not an uncensored finetune.</strong> The
+          <code>abenzerps</code> GGUF repo is also stock; its card says an uncensored
+          version is still in development. Running locally there is no safety checker
+          anywhere in the pipeline, which is why any of these can feel unfiltered: that is
+          a property of running it yourself, not of the weights. Swapping in a different
+          variant is one file, the <code>--diffusion-model</code> argument; the text
+          encoder and VAE stay as they are.</li>
+        <li>Text encoder:
+          <a href="https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF">Qwen3-VL-8B-Instruct</a>
+          (<code>Q4_K_M</code>). Qwen-Image reads prompts with a vision-language model,
+          which is why the encoder is so large.</li>
+        <li>VAE: <a href="https://huggingface.co/Comfy-Org/Qwen-Image-2.1">Comfy-Org/Qwen-Image-2.1</a>.</li>
+        <li>Runtime: <a href="https://github.com/leejet/stable-diffusion.cpp">leejet/stable-diffusion.cpp</a>
+          (MIT), a prebuilt Metal binary. No ComfyUI needed.</li>
+        <li><strong>Licence: Qwen Research License, non-commercial only</strong>, and it
+          asks that you say &ldquo;Built with Qwen&rdquo;. Anything generated from these
+          weights inherits that, including a mesh made from a generated picture, so runs
+          land in <code>output/images/research_only/</code>.</li>
+      </ul>
       <h3>TRELLIS.2 (clean port)</h3>
       <ul>
         <li>Mac/Metal port foundation: <a href="https://github.com/pedronaugusto/trellis2-apple">pedronaugusto/trellis2-apple</a>, plus Pedro Naugusto's <code>mtlbvh</code>, <code>mtldiffrast</code>, and <code>mtlgemm</code> Metal kernel libraries.</li>

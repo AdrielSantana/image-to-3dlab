@@ -12,6 +12,35 @@ tradeoffs. Draft as of 2026-08-18 — expand freely.
 This repo wraps other people's models and ports. It doesn't train or fine-tune anything
 itself (yet — see the fine-tuning notes if that's changed).
 
+### Qwen-Image 2.1 (the Generate Image tab)
+
+**Which model, exactly** — the question worth answering plainly, because "Qwen-Image GGUF"
+names half a dozen repositories:
+
+- **Diffusion model:** [`leejet/Qwen-Image-2.1-GGUF`](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF),
+  the `Q8_0` file. A straight quantisation of the official
+  [`Qwen/Qwen-Image-2.1`](https://huggingface.co/Qwen/Qwen-Image-2.1) by the author of
+  stable-diffusion.cpp. **This is the stock model, not an uncensored finetune.**
+- The [`abenzerps`](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF) GGUF repository is
+  also stock: its metadata says `base_model_relation: quantized`, and its card says "A fully
+  uncensored version is currently in development and will be added to this repository soon."
+- Running locally, **there is no safety checker anywhere in the pipeline.** The filtering
+  people meet on hosted services is a separate layer in front of the model, and
+  stable-diffusion.cpp has no such layer. That is why a stock local model can feel
+  unfiltered; it is a property of running it yourself, not of a particular repository.
+- Changing to a different variant is **one file**: the `--diffusion-model` argument in
+  `viewer/image_api.py`. The text encoder and VAE are unchanged.
+- **Text encoder:** [`Qwen/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF)
+  (`Q4_K_M`). Qwen-Image reads prompts with a vision-language model, which is why the
+  encoder is 5 GB on its own.
+- **VAE:** [`Comfy-Org/Qwen-Image-2.1`](https://huggingface.co/Comfy-Org/Qwen-Image-2.1).
+- **Runtime:** [`leejet/stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp)
+  (MIT), a prebuilt Metal binary. No ComfyUI.
+- **Licence:** Qwen Research License — **non-commercial only**, and it asks that you say
+  "Built with Qwen". The restriction sits at the front of the chain, so anything generated
+  from one of these pictures inherits it, including after a Hunyuan repaint. Runs land in
+  `output/images/research_only/` with a sidecar that says so.
+
 ### TRELLIS.2 (clean port)
 
 - **Mac/Metal port foundation:** [pedronaugusto/trellis2-apple](https://github.com/pedronaugusto/trellis2-apple),

@@ -30,6 +30,7 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `bootstrap_trellis_macos.sh` | Clone and install the `shivampkumar/trellis-mac` port, with the Metal acceleration backends when Xcode's Metal compiler is present and a slower CPU bake fallback when it is not. |
 | `bootstrap_trellis_space_macos.py` | Bootstrap TRELLIS.2 on macOS from Microsoft's pinned Space source. |
 | `bootstrap_pixal3d_cpp.sh` | Clone, build and weight the Pixal3D C++/GGML runtime on Apple Silicon. |
+| `bootstrap_qwen_image.py` | Install the text-to-image route: a stable-diffusion.cpp binary and Qwen-Image weights. |
 | `pixal3d_generate.py` | End-to-end Pixal3D generation on Apple Silicon: image -> textured GLB. |
 | `trellis_space_generate.py` | Full image -> GLB generation through the CLEAN `trellis-space-mac` port on Apple Silicon. |
 | `hunyuan_mlx_generate.py` | End-to-end Hunyuan3D-MLX generation: image -> textured GLB. |
@@ -127,6 +128,7 @@ These talk to a running Blender over the `execute_code` socket on port 9876 unle
 | `blender_import_character.py` | Append a rigged character (armature + skinned mesh) into the currently live Blender scene, cleaned up and positioned. |
 | `blender_wind_demo.py` | Animate labelled foliage with shader-style wind and render it to MP4. |
 | `build_showcase_reel.py` | Build a source-image -> swipe -> turntable showcase reel from a set of assets. |
+| `blender_agent.py` | Let a local LLM stage a scene in the running Blender, by calling a small set of tools. |
 
 ## Blender: change the geometry
 

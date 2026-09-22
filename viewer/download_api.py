@@ -60,6 +60,10 @@ COMMANDS: dict[str, list[str]] = {
         # three shape checkpoints, which is 23 GB where the default route needs 5.
         "--model", "2.0",
     ],
+    # --yes because the browser already asked. The confirmation AGENTS.md requires is the
+    # Setup & Status dialog; asking again on a stdin nobody is attached to would hang.
+    "qwen-image": [sys.executable, str(REPO / "scripts" / "bootstrap_qwen_image.py"),
+                   "--yes"],
 }
 
 

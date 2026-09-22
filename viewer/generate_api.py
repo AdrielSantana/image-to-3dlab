@@ -31,6 +31,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 # Sibling import must also work when tests load this file directly via importlib.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import image_api
 from rig_api import (
     ARTIFACTS as RIG_ARTIFACTS,
     RIG_JOBS,
@@ -1670,7 +1671,97 @@ class Handler(SimpleHTTPRequestHandler):
         if len(parts) == 5 and parts[:3] == ["api", "finish", "runs"] and parts[4] == "resume":
             self._resume_finish_job(parts[3])
             return
+        if parts == ["api", "image"]:
+            self._create_image_job()
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "image"] and parts[3] == "cancel":
+            self._cancel_image_job(parts[2])
+            return
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def _create_image_job(self) -> None:
+        """Start one text-to-image run. The prompt is the only required field."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length <= 0 or length > 64 * 1024:
+                self._send_json(400, {"error": "expected a small JSON body"})
+                return
+            payload = json.loads(self.rfile.read(length))
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json(400, {"error": f"could not read the request: {exc}"})
+            return
+        prompt = str(payload.get("prompt", "")).strip()
+        if not prompt:
+            self._send_json(422, {"error": "a prompt is required"})
+            return
+        if len(prompt) > image_api.MAX_PROMPT:
+            self._send_json(422, {
+                "error": f"prompt is longer than {image_api.MAX_PROMPT} characters"
+            })
+            return
+        if not image_api.BINARY.exists():
+            self._send_json(503, {
+                "error": "stable-diffusion.cpp is not installed (vendor/sdcpp/sd-cli).",
+                "needs_setup": True,
+            })
+            return
+        try:
+            image_api.resolve_weights()
+        except image_api.MissingWeights as exc:
+            self._send_json(503, {"error": str(exc), "needs_setup": True,
+                                  "missing": exc.missing})
+            return
+        try:
+            job = image_api.start(prompt, payload.get("settings") or {})
+        except RuntimeError as exc:
+            self._send_json(409, {"error": str(exc)})
+            return
+        self._send_json(202, {
+            "job_id": job.id,
+            "settings": job.settings,
+            "events_url": f"/api/image/{job.id}/events",
+            "status_url": f"/api/image/{job.id}/status",
+        })
+
+    def _cancel_image_job(self, job_id: str) -> None:
+        if not _safe_id(job_id) or job_id not in image_api.MANAGER.jobs:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if not image_api.MANAGER.cancel(job_id):
+            self._send_json(409, {"error": "that image job is not running"})
+            return
+        self._send_json(202, {"job_id": job_id, "status": "cancelling"})
+
+    def _image_events(self, job_id: str) -> None:
+        job = image_api.MANAGER.jobs.get(job_id) if _safe_id(job_id) else None
+        if job is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        index = 0
+        try:
+            while True:
+                with job.condition:
+                    if index >= len(job.events):
+                        job.condition.wait(timeout=15)
+                    pending = job.events[index:]
+                    index = len(job.events)
+                    terminal = (job.status in {"done", "error", "cancelled"}
+                                and not pending)
+                for event in pending:
+                    body = json.dumps(event, separators=(",", ":"))
+                    self.wfile.write(f"data: {body}\n\n".encode())
+                if not pending:
+                    self.wfile.write(b": keep-alive\n\n")
+                self.wfile.flush()
+                if terminal:
+                    break
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def _trellis_input_advice(self) -> None:
         """Classify one upload without creating a generation job or retaining the image."""
@@ -1713,6 +1804,39 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json(422, {"error": f"unknown backend {backend_id!r}"})
                 return
             self._send_json(200, {**spec.readiness(), "backend": spec.id})
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "image"]:
+            job = image_api.MANAGER.jobs.get(parts[2]) if _safe_id(parts[2]) else None
+            if job is None:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            if parts[3] == "events":
+                self._image_events(parts[2])
+                return
+            if parts[3] == "status":
+                self._send_json(200, job.describe())
+                return
+            if parts[3] == "result.png":
+                if job.status != "done" or not job.output_path.exists():
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                data = job.output_path.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if parts == ["api", "image", "defaults"]:
+            self._send_json(200, {
+                "defaults": image_api.DEFAULTS,
+                "samplers": list(image_api.SAMPLERS),
+                "installed": image_api.is_installed(),
+                "license": {"name": image_api.LICENSE_NAME, "url": image_api.LICENSE_URL,
+                            "attribution": image_api.ATTRIBUTION},
+            })
             return
         if parts == ["api", "backends"]:
             self._send_json(200, {

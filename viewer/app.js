@@ -1,6 +1,7 @@
 import './modes/compare.js';
 import { skipRequested } from './modes/setup.js';
 
+import './modes/generate-image.js';
 import './modes/generate.js';
 import './modes/finish.js';
 import './modes/rig-review.js';
@@ -11,6 +12,7 @@ const byId = (id) => document.getElementById(id);
 const modes = {
   setup: byId('setup-view'),
   compare: byId('compare-view'),
+  'generate-image': byId('generate-image-view'),
   generate: byId('generate-view'),
   finish: byId('finish-view'),
   rig: byId('rig-view'),
@@ -21,6 +23,7 @@ const modes = {
 function setMode(activeMode) {
   modes.setup.hidden = activeMode !== 'setup';
   modes.compare.classList.toggle('hidden', activeMode !== 'compare');
+  modes['generate-image'].hidden = activeMode !== 'generate-image';
   modes.generate.hidden = activeMode !== 'generate';
   modes.finish.hidden = activeMode !== 'finish';
   modes.rig.hidden = activeMode !== 'rig';
