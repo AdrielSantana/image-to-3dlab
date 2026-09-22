@@ -56,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
 ### Fixed
+- **The Setup & Status page now says when a backend cannot run on your machine**, instead
+  of offering a Set up button that failed with a raw `[WinError 2] The system cannot find
+  the file specified` (reported from Windows, after a successful Hugging Face login).
+  Support is declared per backend, so the NVIDIA routes will switch themselves on by
+  naming the platform rather than by unpicking a macOS check. The viewer also refuses such
+  a download server-side, so nothing is fetched before the failure.
+- **Virtual environment paths are resolved per platform** (`.venv/bin/python` against
+  `.venv\Scripts\python.exe`), and a command that is missing is now explained — "run
+  `uv sync` in ..." — rather than surfacing the operating system's error number.
 - **`pixal3d_generate.py` could not run on a relative path.** `trellis-cli` is launched from
   its own tree so it can find its Metal library, so a relative input or output resolved
   against *that* directory and the run died immediately with `can't fopen`. Both paths are
