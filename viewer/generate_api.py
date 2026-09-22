@@ -39,7 +39,7 @@ from rig_api import (
     run_job as run_rig_job,
     status_payload as rig_status_payload,
 )
-from backend_catalog import catalog_status
+from backend_catalog import catalog_status, readiness as catalog_readiness
 from download_api import (
     DOWNLOADS,
     cancel as cancel_download,
@@ -1799,11 +1799,27 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "setup"]:
             query = parse_qs(urlparse(self.path).query)
             backend_id = query.get("backend", ["trellis"])[0]
-            spec = BACKENDS.get(backend_id)
-            if spec is None:
+            # The catalogue decides what a route *is*; a backend spec, where one exists,
+            # adds the live detail only it can probe (which Hunyuan checkpoint is on disk,
+            # how many of the nine GGUF files arrived). Asking the specs first is what made
+            # the image route, which has no spec because it makes pictures rather than
+            # meshes, answer "unknown backend" for something the catalogue lists.
+            payload = catalog_readiness(backend_id)
+            if payload is None:
                 self._send_json(422, {"error": f"unknown backend {backend_id!r}"})
                 return
-            self._send_json(200, {**spec.readiness(), "backend": spec.id})
+            spec = BACKENDS.get(backend_id)
+            if spec is not None:
+                live = spec.readiness()
+                # A spec that reports no weights is not saying "this backend has none",
+                # it is saying it does not track them -- SF3D and the dgrauet Hunyuan
+                # route both return an empty dict. Letting that overwrite the catalogue
+                # would hide the weight rows the Setup page shows for the same backend.
+                for key in ("weights", "missing_weights"):
+                    if not live.get(key):
+                        live.pop(key, None)
+                payload = {**payload, **live, "backend": spec.id}
+            self._send_json(200, payload)
             return
         if len(parts) == 4 and parts[:2] == ["api", "image"]:
             job = image_api.MANAGER.jobs.get(parts[2]) if _safe_id(parts[2]) else None

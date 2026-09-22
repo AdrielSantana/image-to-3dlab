@@ -73,7 +73,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeping every intermediate and writing a JSON record of the settings used, so assets
   finished in a batch are comparable. Emits `I2L_STAGE::` progress lines.
 
+### Changed
+- **Generation timings no longer read as hardware-neutral advice.** "10 steps is enough"
+  and "1024 is slowest" were written on one Mac; on a fast GPU the extra step costs under
+  a second and the advice inverts. The hints now give the mechanism rather than the
+  verdict, and the "timings are from one machine, share yours" line is on the Generate 3D
+  tab as well as Generate Image — it was only on the faster of the two steps.
+
 ### Fixed
+- **One catalogue of backends, not two.** The Generate tab kept its own list and the
+  Setup & Status page kept another, and they had drifted: Stable Fast 3D and the dgrauet
+  Hunyuan route were missing from the catalogue entirely, the Xiong route was spelled two
+  ways, and asking the readiness endpoint about the image route answered "unknown
+  backend" for something the other page lists. `backend_catalog.py` is now the single
+  registry every route is looked up in, and a backend that has a live probe of its own
+  layers that detail on top rather than replacing it. Routes the viewer cannot install for
+  you (SF3D's shell bootstrap, the Tencent-licensed Hunyuan shape clone) say so and print
+  the command, instead of offering a button that throws on click.
+- **A test that had stopped testing anything.** `tests/test_backend_catalog.py` loaded a
+  second copy of the catalogue module under the same name, so a monkeypatch in one test
+  file landed on a different object than the code under test held. The "an unsupported
+  machine is refused before anything downloads" guard silently passed without refusing
+  anything, visible only when the two files ran in a non-alphabetical order.
 - **The Setup & Status page now says when a backend cannot run on your machine**, instead
   of offering a Set up button that failed with a raw `[WinError 2] The system cannot find
   the file specified` (reported from Windows, after a successful Hugging Face login).

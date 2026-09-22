@@ -102,6 +102,18 @@ function backendCard(backend) {
     action.innerHTML = `<span class="setup-unavailable">needs ${backend.requires}</span>`;
   } else if (backend.action === 'none') {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
+  } else if (backend.action === 'manual') {
+    // Some routes the viewer cannot install for you: SF3D wants a shell bootstrap, and
+    // the dgrauet Hunyuan shape stage is a deliberate manual clone because it is
+    // Tencent-licensed code rather than just weights. Showing the command is honest; a
+    // button that throws is not.
+    const span = document.createElement('span');
+    span.className = 'setup-manual';
+    span.textContent = 'run ';
+    const code = document.createElement('code');
+    code.textContent = backend.install;
+    span.appendChild(code);
+    action.replaceChildren(span);
   } else {
     const button = document.createElement('button');
     button.textContent = LABELS[backend.action];

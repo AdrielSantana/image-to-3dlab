@@ -16,6 +16,14 @@ MODULE = Path(__file__).resolve().parents[1] / "viewer" / "backend_catalog.py"
 
 
 def _load():
+    # Reuse the module if anything already imported it. Loading a second copy under the
+    # same name is not a fresh start, it is a fork: `download_api` binds whichever copy
+    # existed when *it* was exec'd, so monkeypatching the other one silently does nothing
+    # and its "unsupported machine is refused" test stopped refusing. That failed only in
+    # the order `test_download_api.py test_backend_catalog.py`, which the alphabetical
+    # full-suite run never takes, so it sat here green for weeks.
+    if "backend_catalog" in sys.modules:
+        return sys.modules["backend_catalog"]
     # Registered in sys.modules before exec: dataclasses resolves annotations through
     # sys.modules[cls.__module__], and a spec-loaded module that skips this raises
     # AttributeError on the first @dataclass.
@@ -120,7 +128,11 @@ def test_onboarding_is_needed_only_when_nothing_is_ready(monkeypatch, tmp_path):
     assert empty["needs_onboarding"] is True
     assert empty["ready_count"] == 0
     assert all(b["state"] == "missing" for b in empty["backends"])
-    assert all(b["action"] == "build" for b in empty["backends"])
+    # "build" where the viewer can do it, "manual" where it cannot. Both mean "not yet";
+    # neither means "nothing to offer", which is what an unsupported machine gets.
+    assert all(b["action"] in {"build", "manual"} for b in empty["backends"])
+    assert all(b["action"] == ("build" if b["automated_setup"] else "manual")
+               for b in empty["backends"])
 
 
 def test_backends_are_listed_best_first():
@@ -263,3 +275,59 @@ def test_adding_a_cuda_route_is_a_one_string_change():
     assert cuda_pixal3d.runs_here(bc.NVIDIA) is True
     assert cuda_pixal3d.describe(bc.NVIDIA)["state"] != "unsupported"
     assert bc.BY_ID["hunyuan_xiong"].runs_here(bc.NVIDIA) is False
+
+
+# --- One catalogue, every route ----------------------------------------------------------
+#
+# The catalogue and the Generate tab's backend table grew apart: the tab offered sf3d and
+# hunyuan-mlx, which the catalogue had never heard of, and spelled the Xiong route
+# `hunyuan-mlx-xiong` where the catalogue said `hunyuan_xiong`. Nobody noticed until
+# `/api/setup?backend=qwen-image` answered "unknown backend" for a route that plainly
+# exists. These tests are the guard: one registry of routes, one way to look a route up.
+
+
+def test_every_route_the_generate_tab_offers_is_in_the_catalogue():
+    """The drift that started this: two lists of backends, only one of them complete."""
+    offered = {"trellis", "sf3d", "hunyuan-mlx", "hunyuan-mlx-xiong", "pixal3d"}
+    for backend_id in offered:
+        assert bc.resolve(backend_id) is not None, backend_id
+
+
+def test_a_route_is_found_by_either_spelling():
+    assert bc.resolve("hunyuan-mlx-xiong") is bc.BY_ID["hunyuan_xiong"]
+    assert bc.resolve("hunyuan_xiong") is bc.BY_ID["hunyuan_xiong"]
+
+
+def test_an_id_nobody_uses_is_still_unknown():
+    assert bc.resolve("nonesuch") is None
+    assert bc.readiness("nonesuch") is None
+
+
+def test_the_image_route_answers_the_readiness_question_like_any_other():
+    """The reported bug: the image route was a backend everywhere except here."""
+    payload = bc.readiness("qwen-image")
+    assert payload is not None
+    assert payload["backend"] == "qwen-image"
+    assert set(payload) >= {"build", "weights", "missing_weights", "ready", "warning"}
+    assert isinstance(payload["build"]["present"], bool)
+
+
+def test_readiness_names_missing_weights_by_label_not_by_path():
+    """A path is not an answer to "what is missing"; the label is what the card shows."""
+    payload = bc.readiness("qwen-image")
+    labels = {w["label"] for w in payload["weights"].values()}
+    assert set(payload["missing_weights"]) <= labels
+
+
+def test_a_route_that_cannot_run_here_is_never_reported_ready():
+    payload = bc.readiness("pixal3d", host="other")
+    assert payload["ready"] is False
+    assert payload["build"]["hint"]
+
+
+def test_there_is_only_ever_one_catalogue_module():
+    """Two copies under one name is how a monkeypatch lands on the wrong object."""
+    import backend_catalog
+
+    assert backend_catalog is bc
+    assert sys.modules["backend_catalog"] is bc

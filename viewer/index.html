@@ -130,13 +130,14 @@
           <select id="image-size">
             <option value="512">512 (fastest)</option>
             <option value="768" selected>768 (recommended)</option>
-            <option value="1024">1024 (slowest)</option>
+            <option value="1024">1024 (best detail, slowest)</option>
           </select>
           <small>Bigger costs time in two places: every step, and the final decode.</small>
         </div>
         <div class="field"><label for="image-steps">Steps</label>
           <input id="image-steps" type="number" min="1" max="50" step="1" value="10">
-          <small>10 is enough for this model. More steps, more time, little gain.</small>
+          <small>10 is a good starting point. Each extra step costs the same again, so
+            raise it if your machine is quick and you want more detail.</small>
         </div>
         <div class="field"><label for="image-seed">Seed</label>
           <input id="image-seed" type="number" step="1" value="42">
@@ -315,6 +316,12 @@
       <button id="generate-submit" disabled>Generate</button>
       <button id="generate-cancel">Cancel job</button>
       <div id="generate-status"></div>
+      <p class="image-timing">
+        Timings shown are from one Apple Silicon Mac. A faster chip does better and an
+        NVIDIA card is far quicker.
+        <a href="https://github.com/Bingeljell/image-to-3dlab/discussions" target="_blank" rel="noopener">Share yours</a>
+        so the project has more than one machine's numbers.
+      </p>
     </div>
     <div id="generate-right">
       <div id="generate-progress-box" class="generate-card">
