@@ -41,6 +41,7 @@ from rig_api import (
     status_payload as rig_status_payload,
 )
 from backend_catalog import catalog_status, readiness as catalog_readiness
+from welcome_api import payload as welcome_payload
 from download_api import (
     DOWNLOADS,
     cancel as cancel_download,
@@ -1796,6 +1797,10 @@ class Handler(SimpleHTTPRequestHandler):
         parts = self._path_parts()
         if parts == ["api", "catalog"]:
             self._send_json(200, catalog_status())
+            return
+        if parts == ["api", "welcome"]:
+            since = parse_qs(urlparse(self.path).query).get("since", [None])[0]
+            self._send_json(200, welcome_payload(since))
             return
         if parts == ["api", "setup"]:
             query = parse_qs(urlparse(self.path).query)

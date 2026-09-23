@@ -1,5 +1,6 @@
 import './modes/compare.js';
 import { skipRequested } from './modes/setup.js';
+import { welcomeOnArrival } from './modes/welcome.js';
 
 import './modes/generate-image.js';
 import './modes/generate.js';
@@ -39,6 +40,11 @@ for (const mode of Object.keys(modes)) {
   byId(`mode-${mode}`).onclick = () => setMode(mode);
 }
 
+// The welcome card's "Get started" button asks for a screen by name.
+document.addEventListener('viewer:navigate', (event) => {
+  if (modes[event.detail?.mode]) setMode(event.detail.mode);
+});
+
 subscribeRigEditState(({ pendingCount }) => {
   const button = byId('mode-rig');
   button.classList.toggle('has-pending', pendingCount > 0);
@@ -51,3 +57,4 @@ subscribeRigEditState(({ pendingCount }) => {
 // weights exist and the page is where that is explained. Once the user ticks "skip this
 // next time" it is never the landing page again -- it stays one click away in the menu.
 setMode(skipRequested() ? 'generate' : 'setup');
+welcomeOnArrival();

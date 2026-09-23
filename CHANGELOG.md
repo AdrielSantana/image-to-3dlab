@@ -24,12 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Metal on a Mac). It also fetches DINOv2 (1.1 GB) up front, which SF3D used to download
   unannounced on its first run, and explains the gated licence step if Hugging Face refuses.
   Setup & Status can now install SF3D by itself.
+- **A welcome card, which also announces updates.** On a first visit it says hello, names
+  your machine and lists the routes that run on it. After an update it shows once more
+  with what changed, read from this changelog. Nothing phones home. Click the name in the
+  top bar to see it again. The name lives in `viewer/brand.json`.
 - **No silent CPU runs on NVIDIA.** If stable-diffusion.cpp cannot reach the GPU it quietly
   runs on the CPU instead, which takes many minutes per picture. The installer now checks
   for the GPU before downloading weights, and the viewer stops a CPU-only image job at
   once. Both say what fixes it (on a headless Linux box, `apt install libegl1 libgl1`).
 
 ### Fixed
+- `image_to_3dlab.__version__` said 0.1.0 through the 0.2.0 release. A test now keeps
+  it in step with this changelog.
 - Generate Image read sd-cli's output in 256-byte blocks, so short lines could sit unseen
   until more arrived. It now reads whatever is there.
 
