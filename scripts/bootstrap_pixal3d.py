@@ -230,6 +230,12 @@ def cmake_flags(kind: str, nvcc: str | None = None, arch: str | None = None) -> 
     return flags
 
 
+def build_command(jobs: int) -> list[str]:
+    """Always with a job count. A bare `-j` is unbounded, and on a 96-CPU, 31 GB pod the
+    kernel killed the nvcc jobs it started."""
+    return ["cmake", "--build", str(BUILD), "--target", "trellis-cli", "-j", str(jobs)]
+
+
 def fetch_source(ref: str) -> None:
     """Check out pixal3d.cpp at `ref` into VENDOR, which may already hold the weights.
 
@@ -276,8 +282,7 @@ def build_from_source(kind: str) -> Path:
     print(f"Building ({'Metal' if kind == 'metal-source' else 'CUDA'})", flush=True)
     subprocess.run(["cmake", "-S", str(VENDOR), "-B", str(BUILD), *generator, *flags],
                    check=True)
-    subprocess.run(["cmake", "--build", str(BUILD), "--target", "trellis-cli", "-j"],
-                   check=True)
+    subprocess.run(build_command(host.build_jobs()), check=True)
     if not build_present():
         raise SystemExit("The build finished without trellis-cli.")
     return cli_path()

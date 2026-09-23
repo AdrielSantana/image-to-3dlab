@@ -131,3 +131,46 @@ def test_nvcc_that_cannot_start_has_no_version():
     def missing(*a, **k):
         raise FileNotFoundError("nvcc")
     assert host.nvcc_cuda_version("/nowhere/nvcc", run=missing) is None
+
+
+# A RunPod 4090 container reported 96 CPUs and had 31 GB; an unbounded `cmake --build -j`
+# ran dozens of nvcc jobs at once and the kernel killed them (2026-09-23, pod run #3).
+GB = 1024 ** 3
+
+
+def test_build_jobs_are_capped_by_memory_not_just_cpus():
+    assert host.build_jobs(cpus=96, memory_bytes=31 * GB, per_job_bytes=3 * GB) == 10
+
+
+def test_build_jobs_are_capped_by_cpus_when_memory_is_plentiful():
+    assert host.build_jobs(cpus=8, memory_bytes=256 * GB, per_job_bytes=3 * GB) == 8
+
+
+def test_build_jobs_never_drop_below_one():
+    assert host.build_jobs(cpus=4, memory_bytes=1 * GB, per_job_bytes=3 * GB) == 1
+
+
+def test_with_no_arguments_it_measures_this_machine():
+    assert host.build_jobs() >= 1
+
+
+def test_container_cpu_quota_beats_the_host_count(tmp_path):
+    (tmp_path / "cpu.max").write_text("1020000 100000\n")
+    assert host.cgroup_cpus(tmp_path) == 10
+    (tmp_path / "cpu.max").write_text("max 100000\n")
+    assert host.cgroup_cpus(tmp_path) is None
+    assert host.cgroup_cpus(tmp_path / "absent") is None
+
+
+def test_container_memory_limit_is_read_from_cgroup_v2_or_v1(tmp_path):
+    (tmp_path / "memory.max").write_text("30999998464\n")
+    assert host.cgroup_memory(tmp_path) == 30999998464
+    (tmp_path / "memory.max").write_text("max\n")
+    assert host.cgroup_memory(tmp_path) is None
+    v1 = tmp_path / "v1"
+    (v1 / "memory").mkdir(parents=True)
+    (v1 / "memory" / "memory.limit_in_bytes").write_text("8589934592\n")
+    assert host.cgroup_memory(v1) == 8589934592
+    # cgroup v1 spells "no limit" as a huge number, which must not read as a limit.
+    (v1 / "memory" / "memory.limit_in_bytes").write_text("9223372036854771712\n")
+    assert host.cgroup_memory(v1) is None

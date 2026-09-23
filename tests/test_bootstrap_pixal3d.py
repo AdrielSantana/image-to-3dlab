@@ -248,3 +248,10 @@ def test_cuda_source_build_without_a_known_card_lets_cmake_ask():
 
 def test_metal_build_passes_no_cuda_flags():
     assert not any("CUDA" in f for f in boot.cmake_flags("metal-source"))
+
+
+def test_the_build_command_names_a_job_count():
+    """A bare `-j` is unbounded: dozens of nvcc jobs on a 96-CPU, 31 GB pod got OOM-killed."""
+    command = boot.build_command(jobs=10)
+    assert command[-2:] == ["-j", "10"]
+    assert "trellis-cli" in command

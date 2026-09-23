@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup & Status showed "0 B of 8.4 GB" while Pixal3D fetched its 674 MB build, and on a
   slow line would have called it stalled. Until weights arrive it now shows the current
   step, and only claims a stall once they have started.
+- Pixal3D's CUDA compile ran one job per CPU with no limit, and on a 96-CPU machine
+  with 31 GB of memory the compilers were killed for running out of it. It now caps the
+  job count by memory as well, and reads a container's real limits, not the host's.
 
 ### Removed
 - `scripts/bootstrap_pixal3d_cpp.sh`, superseded by `scripts/bootstrap_pixal3d.py`.

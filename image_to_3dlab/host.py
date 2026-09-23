@@ -7,6 +7,7 @@ Everything else is "other", and a backend that does not list it will not offer a
 
 from __future__ import annotations
 
+import os
 import platform
 import re
 import shutil
@@ -120,6 +121,62 @@ def nvcc_cuda_version(nvcc: str | None,
         return None
     match = re.search(r"release\s+(\d+)\.(\d+)", result.stdout or "")
     return (int(match[1]), int(match[2])) if match else None
+
+
+CGROUP = Path("/sys/fs/cgroup")
+# cgroup v1 spells "no limit" as a page-rounded 2**63; anything past this is not a limit.
+_NO_LIMIT = 1 << 60
+
+
+def cgroup_cpus(root: Path = CGROUP) -> int | None:
+    """The container's CPU quota, rounded down, or None when there is none.
+
+    Containers report the host's CPU count (96 on a RunPod 4090) while being allowed a
+    fraction of it; the quota is the real number.
+    """
+    try:
+        quota, period = (root / "cpu.max").read_text().split()[:2]
+    except (OSError, ValueError):
+        return None
+    if quota == "max":
+        return None
+    return max(1, int(quota) // int(period))
+
+
+def cgroup_memory(root: Path = CGROUP) -> int | None:
+    """The container's memory limit in bytes (cgroup v2, then v1), or None."""
+    for path in (root / "memory.max", root / "memory" / "memory.limit_in_bytes"):
+        try:
+            text = path.read_text().strip()
+        except OSError:
+            continue
+        if text.isdigit() and int(text) < _NO_LIMIT:
+            return int(text)
+        return None
+    return None
+
+
+def total_memory() -> int | None:
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def build_jobs(cpus: int | None = None, memory_bytes: int | None = None,
+               per_job_bytes: int = 3 * 1024 ** 3) -> int:
+    """How many compile jobs to run at once: capped by CPUs *and* by memory.
+
+    A CUDA compile job can take a few GB, so a bare `-j` on a machine with many cores and
+    modest RAM gets its compilers killed. Called with no arguments, it measures this
+    machine, preferring the container's limits over the host's.
+    """
+    if cpus is None and memory_bytes is None:
+        cpus = cgroup_cpus() or os.cpu_count()
+        memory_bytes = cgroup_memory() or total_memory()
+    by_memory = memory_bytes // per_job_bytes if memory_bytes else None
+    limits = [n for n in (cpus, by_memory) if n is not None]
+    return max(1, min(limits, default=1))
 
 
 def executable(directory: Path, name: str, family: str | None = None) -> Path:
