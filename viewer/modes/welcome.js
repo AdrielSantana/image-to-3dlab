@@ -71,6 +71,7 @@ function render(payload, seen, reopened) {
   s('welcome-title').textContent = title;
   s('welcome-tagline').textContent = payload.brand.tagline || '';
   s('welcome-machine').innerHTML = renderMachine(payload);
+  s('welcome-machine').hidden = false;
   const news = renderNews(payload);
   s('welcome-news').innerHTML = news;
   s('welcome-news').hidden = !news;
@@ -112,6 +113,24 @@ document.addEventListener('viewer:modechange', async (event) => {
   }
 });
 
+/**
+ * The server predates this page: typically code updated while the viewer kept running.
+ * The brand is a plain file, so the name still shows; the rest waits for a restart.
+ */
+async function renderWithoutServer() {
+  try {
+    const brand = await (await fetch('./brand.json')).json();
+    s('welcome-title').textContent = `Welcome to ${brand.name}`;
+    s('welcome-tagline').textContent = brand.tagline || '';
+    document.title = brand.name;
+  } catch (_) { /* the static title stays */ }
+  s('welcome-kicker').textContent = 'Restart needed';
+  s('welcome-machine').innerHTML = '<p>The viewer\'s code changed while it was running. '
+    + 'Restart it (Ctrl-C, then run <code>python viewer/serve.py</code> again) to see '
+    + 'what runs on this machine and what\'s new.</p>';
+  s('welcome-machine').hidden = false;
+}
+
 /** On arrival: land on About once for a first visit or an update, else stay quiet. */
 export async function welcomeOnArrival() {
   const seen = lastSeen();
@@ -126,7 +145,7 @@ export async function welcomeOnArrival() {
       render(await fetchWelcome(null), seen, true);
     }
   } catch (error) {
-    // A static-only viewer has no API; the page works without this section.
     console.warn(error);
+    await renderWithoutServer();
   }
 }
