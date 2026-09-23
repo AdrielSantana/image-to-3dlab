@@ -40,7 +40,7 @@ from rig_api import (
     run_job as run_rig_job,
     status_payload as rig_status_payload,
 )
-from backend_catalog import catalog_status, readiness as catalog_readiness
+from backend_catalog import _dir_state, catalog_status, readiness as catalog_readiness
 from welcome_api import payload as welcome_payload
 from update_api import check as update_check
 from download_api import (
@@ -173,7 +173,7 @@ def weights_on_disk(cache_dir: Path | None = None) -> dict[str, dict[str, Any]]:
     for repo, label in WEIGHT_REPOS:
         path = hub / repo
         if path.is_dir():
-            size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+            size = _dir_state(path)[1]
             out[repo] = {"label": label, "present": True, "bytes": size,
                          "human": _human_bytes(size)}
         else:
@@ -1380,7 +1380,7 @@ def _hunyuan_xiong_shape_weights_status() -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for name, path in HUNYUAN_XIONG_SHAPE_MODELS.items():
         present = path.is_dir()
-        size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if present else 0
+        size = _dir_state(path)[1]
         out[name] = {"label": f"Hunyuan3D-MLX shape weights ({name})", "present": present,
                      "bytes": size, "human": _human_bytes(size)}
     return out

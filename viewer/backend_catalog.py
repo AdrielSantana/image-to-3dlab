@@ -476,14 +476,21 @@ def _dir_state(path: Path) -> tuple[bool, int]:
     if not path.is_dir():
         return False, 0
     total = 0
+    seen: set[tuple[int, int]] = set()
     for item in path.rglob("*"):
         try:
-            # Skip symlinks. The Hugging Face cache stores one copy under `blobs/` and
-            # links to it from `snapshots/`, so following both counts every byte twice and
-            # a 16 GB backend reports 30 GB, which makes the progress percentage nonsense.
-            if item.is_symlink() or not item.is_file():
+            # Count each real file once, by inode. The Hugging Face cache links
+            # `snapshots/` at `blobs/`, so counting both doubles every byte (16 GB reads
+            # as 30 GB). Newer huggingface_hub puts the blobs outside this folder
+            # entirely, so links must be followed, or 13.4 GB reads as 120 B.
+            if not item.is_file():  # follows links; a dangling one is not a file
                 continue
-            total += item.stat().st_size
+            info = item.stat()
+            key = (info.st_dev, info.st_ino)
+            if key in seen:
+                continue
+            seen.add(key)
+            total += info.st_size
         except OSError:
             continue
     return total > 0, total

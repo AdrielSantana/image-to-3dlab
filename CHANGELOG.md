@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it in step with this changelog.
 - Generate Image read sd-cli's output in 256-byte blocks, so short lines could sit unseen
   until more arrived. It now reads whatever is there.
+- Setup & Status said a finished download was a few bytes ("done · 120 B") with newer
+  huggingface_hub, which stores the files outside each model's folder and links to them.
+  Sizes now follow the links and count each file once.
 
 ### Removed
 - `scripts/bootstrap_pixal3d_cpp.sh`, superseded by `scripts/bootstrap_pixal3d.py`.
