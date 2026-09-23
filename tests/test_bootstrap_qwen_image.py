@@ -183,3 +183,47 @@ def test_finish_install_flattens_and_marks_executable(tmp_path, monkeypatch):
     assert binary == tmp_path / "sd-cli"
     assert (tmp_path / "libstable-diffusion.so").exists()
     assert binary.stat().st_mode & 0o111
+
+
+def _nvidia_linux(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "binary_present", lambda: True)
+
+
+def test_nvidia_install_stops_before_the_weights_if_the_gpu_is_unreachable(
+        monkeypatch, capsys):
+    """Verify the environment before the expensive step: 13 GB of weights are no use to a
+    binary that will run on the CPU."""
+    _nvidia_linux(monkeypatch)
+    monkeypatch.setattr(boot, "probe_gpu", lambda *a: "load_backend: loaded CPU backend")
+    monkeypatch.setattr(boot, "install_weights", lambda: pytest.fail("downloaded"))
+    assert boot.main(["--yes"]) == 1
+    assert "libegl1 libgl1" in capsys.readouterr().out
+
+
+def test_nvidia_install_continues_when_the_gpu_answers(monkeypatch):
+    _nvidia_linux(monkeypatch)
+    monkeypatch.setattr(boot, "probe_gpu", lambda *a: "ggml_vulkan: Found 1 Vulkan devices:")
+    fetched = []
+    monkeypatch.setattr(boot, "install_weights", lambda: fetched.append(1))
+    assert boot.main(["--yes"]) == 0
+    assert fetched == [1]
+
+
+def test_a_mac_is_not_probed(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "macos-arm64")
+    monkeypatch.setattr(boot, "binary_present", lambda: True)
+    monkeypatch.setattr(boot, "probe_gpu", lambda *a: pytest.fail("probed a Mac"))
+    monkeypatch.setattr(boot, "install_weights", lambda: None)
+    assert boot.main(["--yes"]) == 0
+
+
+def test_probe_gpu_runs_the_binary_and_returns_its_chatter(tmp_path):
+    fake = tmp_path / "sd-cli"
+    fake.write_text("#!/bin/sh\necho 'ggml_vulkan: Found 1 Vulkan devices:'\nexit 1\n")
+    fake.chmod(0o755)
+    assert "Found 1" in boot.probe_gpu(fake)
+
+
+def test_probe_gpu_survives_a_binary_that_will_not_start(tmp_path):
+    assert boot.probe_gpu(tmp_path / "missing") == ""

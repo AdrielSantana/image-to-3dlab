@@ -21,6 +21,7 @@ import argparse
 import json
 import shutil
 import stat
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -32,6 +33,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from image_to_3dlab import host
+from image_to_3dlab.sdcpp import NO_GPU_HELP, gpu_found
 
 VENDOR = REPO / "vendor" / "sdcpp"
 BINARY = host.executable(VENDOR, "sd-cli")
@@ -184,6 +186,22 @@ def finish_install(destination: Path) -> Path:
     return binary
 
 
+def probe_gpu(binary: Path = BINARY) -> str:
+    """Start sd-cli just long enough to load its backends, and return what it printed.
+
+    It is pointed at a model that does not exist, so it exits right after announcing
+    which backends it found.
+    """
+    try:
+        result = subprocess.run(
+            [str(binary), "--diffusion-model", str(VENDOR / "no-such-model.gguf"),
+             "-p", "probe"],
+            capture_output=True, text=True, timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return (result.stdout or "") + (result.stderr or "")
+
+
 def install_weights() -> None:
     try:
         from huggingface_hub import hf_hub_download
@@ -227,6 +245,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nsd-cli is already installed at {BINARY}, leaving it alone.")
         else:
             install_binary()
+        # The NVIDIA builds load their GPU backend at run time and fall back to the CPU
+        # without a word if it cannot reach the driver. Catch that now, not 13 GB later.
+        if target() in ("linux-nvidia", "windows-nvidia"):
+            if not gpu_found(probe_gpu()):
+                print("\n" + NO_GPU_HELP + "\nThe weights were not downloaded.")
+                return 1
+            print("sd-cli found the NVIDIA GPU.")
     if weights:
         install_weights()
     print("\nDone. Open the viewer's Generate Image tab.")

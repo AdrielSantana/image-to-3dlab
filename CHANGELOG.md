@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiles locally instead, and otherwise it says which driver to install. It names
   the route, the size and the licence and asks before downloading, which the shell
   script never did.
+- **No silent CPU runs on NVIDIA.** If stable-diffusion.cpp cannot reach the GPU it quietly
+  runs on the CPU instead, which takes many minutes per picture. The installer now checks
+  for the GPU before downloading weights, and the viewer stops a CPU-only image job at
+  once. Both say what fixes it (on a headless Linux box, `apt install libegl1 libgl1`).
+
+### Fixed
+- Generate Image read sd-cli's output in 256-byte blocks, so short lines could sit unseen
+  until more arrived. It now reads whatever is there.
 
 ### Removed
 - `scripts/bootstrap_pixal3d_cpp.sh`, superseded by `scripts/bootstrap_pixal3d.py`.
