@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Text to image to 3D on NVIDIA (Linux, and Windows untested).** The Generate Image
+  tab and the Pixal3D route now run on a Linux or Windows machine with an NVIDIA card as
+  well as on Apple Silicon. Nothing was ported: both upstreams publish NVIDIA builds, and
+  the installers now choose the right one for the machine. The CUDA runtime is bundled,
+  so there is no CUDA toolkit to install.
+- **`scripts/bootstrap_pixal3d.py`** replaces `bootstrap_pixal3d_cpp.sh`. Macs still build
+  from source with Metal; NVIDIA machines get upstream's prebuilt CUDA 12 build. It names
+  the route, the size and the licence and asks before downloading, which the shell
+  script never did.
+
+### Removed
+- `scripts/bootstrap_pixal3d_cpp.sh`, superseded by `scripts/bootstrap_pixal3d.py`.
+
 ## [0.2.0] - 2026-09-23
 
 ### Added

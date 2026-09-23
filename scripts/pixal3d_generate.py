@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""End-to-end Pixal3D generation on Apple Silicon: image -> textured GLB.
+"""End-to-end Pixal3D generation: image -> textured GLB, on a Mac or an NVIDIA card.
 
     python scripts/pixal3d_generate.py input.png output.glb [--res 1024] [--seed 42]
 
 Wraps `trellis-cli` from `vendor/pixal3d-cpp` (raven38/pixal3d.cpp), a C++/GGML runtime
-with Metal kernels. Build it with `scripts/bootstrap_pixal3d_cpp.sh`.
+with Metal kernels on a Mac and CUDA on NVIDIA. Install it with
+`scripts/bootstrap_pixal3d.py`.
 
 **Why this port and not the PyTorch one.** `pawel-mazurkiewicz/Pixal3D-mac` loads ~22 GB of
 bf16 weights before sampling and its low-VRAM mode moves models between CPU and GPU, which
@@ -30,12 +31,17 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from image_to_3dlab.host import executable
+
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
-CLI = PIXAL3D_ROOT / "build" / "trellis-cli"
+CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 
 # The gauge camera the single-view path is designed around: 20 degrees, as radians.
@@ -229,7 +235,7 @@ def main() -> int:
     state = readiness(args.cli, args.models)
     if not state["ready"]:
         raise SystemExit(
-            f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d_cpp.sh"
+            f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d.py"
         )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

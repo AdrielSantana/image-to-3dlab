@@ -52,7 +52,7 @@ TERMINAL = {"done", "error", "cancelled"}
 # viewer shows the first to everyone and only ever runs the second on request.
 COMMANDS: dict[str, list[str]] = {
     "trellis": [sys.executable, str(REPO / "scripts" / "bootstrap_trellis_space_macos.py")],
-    "pixal3d": ["bash", str(REPO / "scripts" / "bootstrap_pixal3d_cpp.sh")],
+    "pixal3d": [sys.executable, str(REPO / "scripts" / "bootstrap_pixal3d.py"), "--yes"],
     "hunyuan_xiong": [
         str(venv_python(REPO / "hunyuan_mlx" / "shape")),
         str(REPO / "hunyuan_mlx" / "download_weights.py"),

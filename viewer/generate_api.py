@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 # Sibling import must also work when tests load this file directly via importlib.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import image_api
+from image_to_3dlab.host import executable  # image_api put the repo on sys.path
 from rig_api import (
     ARTIFACTS as RIG_ARTIFACTS,
     RIG_JOBS,
@@ -76,7 +77,7 @@ TINYCLIP_TIMEOUT_SECONDS = 300
 HUNYUAN_WRAPPER = REPO / "scripts" / "hunyuan_mlx_generate.py"
 HUNYUAN_PYTHON = REPO / "vendor" / "hunyuan-mlx" / ".venv" / "bin" / "python"
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
-PIXAL3D_CLI = PIXAL3D_ROOT / "build" / "trellis-cli"
+PIXAL3D_CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 PIXAL3D_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 PIXAL3D_WRAPPER = REPO / "scripts" / "pixal3d_generate.py"
 
@@ -1528,8 +1529,8 @@ def _pixal3d_readiness() -> dict[str, Any]:
             "present": ready,
             "hint": None if ready else (
                 "Pixal3D is not set up — missing: " + "; ".join(missing)
-                + ". Run scripts/bootstrap_pixal3d_cpp.sh (needs Xcode's Metal compiler; "
-                "8.1 GB of weights)."
+                + ". Set it up from Setup & Status, or run "
+                "python scripts/bootstrap_pixal3d.py (8.4 GB of weights)."
             ),
         },
         "weights": {
@@ -1584,7 +1585,7 @@ BACKENDS.update({
         parse_line=_hunyuan_parse_line, readiness=_hunyuan_xiong_readiness,
     ),
     "pixal3d": BackendSpec(
-        id="pixal3d", label="Pixal3D (C++/GGML, Metal)",
+        id="pixal3d", label="Pixal3D (C++/GGML)",
         interpreter=Path(sys.executable), wrapper=PIXAL3D_WRAPPER,
         default_settings=PIXAL3D_DEFAULT_SETTINGS, stages=PIXAL3D_STAGES,
         stage_labels=PIXAL3D_STAGE_LABELS, requires_alpha=False,

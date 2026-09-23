@@ -29,16 +29,19 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from image_to_3dlab import host as _host
+from image_to_3dlab.host import APPLE, NVIDIA
+
 HF_HUB_DIR = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
 
 GB = 1024 ** 3
 
-# Which machines a backend can run on. Apple Silicon is the only answer today -- MLX, the
-# Metal kernels and the shell bootstraps all assume it -- but NVIDIA support is coming, so
-# this is per-backend data rather than one "is this a Mac?" test. Adding a CUDA route later
-# means adding a string to that backend's `runs_on`, not unpicking a platform check.
-APPLE = "apple-silicon"
-NVIDIA = "nvidia"
+# Which machines a backend can run on is per-backend data rather than one "is this a
+# Mac?" test, so a route gains NVIDIA support by adding a string to its `runs_on`. The
+# detection itself lives in `image_to_3dlab.host`, shared with the bootstraps.
 PLATFORM_LABELS = {APPLE: "an Apple Silicon Mac", NVIDIA: "an NVIDIA GPU"}
 
 
@@ -55,16 +58,11 @@ def venv_python(project: Path) -> Path:
 
 
 def host_platform() -> str:
-    """What this machine is, in the vocabulary backends declare support in.
+    """What this machine is: APPLE, NVIDIA or "other". See `image_to_3dlab.host`.
 
-    Deliberately cheap and structural -- `sys.platform` and the CPU architecture, no driver
-    probing. The question here is only "could this backend run here at all", asked before
-    offering someone a multi-gigabyte download; whether a specific toolchain is present is
-    the bootstrap's business. When the CUDA route lands, detecting it belongs in here.
+    Kept as a name here because the viewer and its tests reach for it on this module.
     """
-    if sys.platform == "darwin" and platform.machine() == "arm64":
-        return APPLE
-    return "other"
+    return _host.host_platform()
 
 
 def host_label(host: str) -> str:
@@ -203,15 +201,19 @@ class Backend:
 CATALOG: tuple[Backend, ...] = (
     Backend(
         id="pixal3d",
-        label="Pixal3D (C++/GGML, Metal)",
+        label="Pixal3D (C++/GGML)",
         rank=1,
         best_for="Best results we have. One pass, ~6 min, no repaint needed.",
-        tradeoff="Needs Xcode's Metal compiler, not just the command-line tools.",
+        tradeoff=(
+            "On a Mac it compiles locally and needs full Xcode for the Metal compiler. "
+            "On NVIDIA it downloads a prebuilt CUDA build instead."
+        ),
         license_name="MIT (code + flow weights); DINOv3 License (bundled encoder)",
         license_url="https://huggingface.co/raven38/pixal3d-sv-q8_0-v1",
-        install="scripts/bootstrap_pixal3d_cpp.sh",
+        install="scripts/bootstrap_pixal3d.py",
+        runs_on=(APPLE, NVIDIA),
         setup_minutes=20,
-        build_probes=(REPO / "vendor" / "pixal3d-cpp" / "build" / "trellis-cli",),
+        build_probes=(_host.executable(REPO / "vendor" / "pixal3d-cpp" / "build", "trellis-cli"),),
         weights=(
             # One entry, not two: the bootstrap moves BiRefNet *into* pixal3d-sv/, so a
             # second set pointed at the parent directory would count everything twice.
@@ -339,8 +341,9 @@ CATALOG: tuple[Backend, ...] = (
         license_name="Qwen Research License (non-commercial)",
         license_url="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
         install="Prebuilt stable-diffusion.cpp binary in vendor/sdcpp/",
+        runs_on=(APPLE, NVIDIA),
         setup_minutes=15,
-        build_probes=(REPO / "vendor" / "sdcpp" / "sd-cli",),
+        build_probes=(_host.executable(REPO / "vendor" / "sdcpp", "sd-cli"),),
         caveat=(
             "The Qwen Research License is non-commercial only and asks that you say "
             "'Built with Qwen'. Anything you generate from one of these images inherits "
