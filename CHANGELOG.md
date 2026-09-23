@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Metal on a Mac). It also fetches DINOv2 (1.1 GB) up front, which SF3D used to download
   unannounced on its first run, and explains the gated licence step if Hugging Face refuses.
   Setup & Status can now install SF3D by itself.
+- **A one-line installer, which is also the updater.** `install.sh` (Mac and Linux) and
+  `install.ps1` (Windows, untested) check the machine, install the code and Python 3.11,
+  and print how to start the viewer. Re-running moves to the newest release and refuses to
+  overwrite local edits. They download no model weights. `--yes` and `--dry-run` are
+  there for scripts and agents.
 - **An About page, which also announces updates.** `Credits & Info` is now `About`. Its top
   says hello, names your machine and lists the routes that run on it, with what changed
   in the latest release read from this changelog. The viewer lands there once on a first

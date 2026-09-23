@@ -54,14 +54,22 @@ severe colour drift on flat/vector-style illustrations; prefer photographs or so
 
 ## Quick start: web UI (recommended)
 
+**Mac or Linux:**
 ```bash
-git clone https://github.com/Bingeljell/image-to-3dlab.git && cd image-to-3dlab
-python3 -m venv .venv && .venv/bin/pip install Pillow
-.venv/bin/python viewer/serve.py
-# opens http://127.0.0.1:8777/viewer/index.html
+curl -fsSL https://raw.githubusercontent.com/Bingeljell/image-to-3dlab/main/install.sh | bash
 ```
 
-That's it. No other deps needed until you pick a backend below.
+**Windows** (untested, tell us how it goes):
+```powershell
+irm https://raw.githubusercontent.com/Bingeljell/image-to-3dlab/main/install.ps1 | iex
+```
+
+It checks your machine, installs the code and Python 3.11, and prints how to start the
+viewer. It downloads **no model weights**: you choose those in **Setup & Status**, which
+states each size and licence and asks first. To update, run the same line again.
+
+For scripts and agents: `curl -fsSL …/install.sh | bash -s -- --yes --dir ~/lab`
+(`--dry-run` shows what it would do).
 
 Go to **Generate**, pick a backend from the dropdown. Each one has its own **Setup**
 status telling you exactly what's missing:
