@@ -20,12 +20,20 @@ def test_weight_size_matches_the_catalogue():
         boot.WEIGHTS_GB * backend_catalog.GB, rel=0.01)
 
 
+@pytest.fixture
+def new_driver(monkeypatch):
+    """A driver new enough for upstream's CUDA 12.9 prebuilt, and no compiler."""
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (12, 9))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: None)
+
+
 @pytest.mark.parametrize("key,route,size", [
     ("macos-arm64", "built from source with Metal", "Xcode"),
     ("linux-nvidia", "CUDA 12 prebuilt", "~640 MB"),
     ("windows-nvidia", "CUDA 12 prebuilt", "~610 MB"),
 ])
-def test_announcement_names_backend_route_size_and_licence(monkeypatch, key, route, size):
+def test_announcement_names_backend_route_size_and_licence(monkeypatch, new_driver,
+                                                           key, route, size):
     monkeypatch.setattr(boot, "target", lambda: key)
     text = boot.announcement()
     for needle in ("Pixal3D", route, size, "8.4 GB", "MIT", "DINOv3"):
@@ -40,7 +48,7 @@ def test_unsupported_machine_is_refused_before_anything_is_fetched(monkeypatch, 
     assert "Apple Silicon Mac, or Linux/Windows with an NVIDIA card" in capsys.readouterr().out
 
 
-def test_no_yes_and_no_terminal_means_no_download(monkeypatch):
+def test_no_yes_and_no_terminal_means_no_download(monkeypatch, new_driver):
     monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
     monkeypatch.setattr(boot.sys, "stdin", io.StringIO(""))
     monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("built"))
@@ -48,7 +56,7 @@ def test_no_yes_and_no_terminal_means_no_download(monkeypatch):
     assert boot.main([]) == 1
 
 
-def test_rerun_on_an_installed_tree_does_not_rebuild(monkeypatch, capsys):
+def test_rerun_on_an_installed_tree_does_not_rebuild(monkeypatch, capsys, new_driver):
     monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
     monkeypatch.setattr(boot, "build_present", lambda: True)
     monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("rebuilt"))
@@ -59,7 +67,7 @@ def test_rerun_on_an_installed_tree_does_not_rebuild(monkeypatch, capsys):
     assert fetched == [1]  # the weight fetch resumes, it does not restart
 
 
-def test_build_only_and_weights_only_do_one_half_each(monkeypatch):
+def test_build_only_and_weights_only_do_one_half_each(monkeypatch, new_driver):
     monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
     monkeypatch.setattr(boot, "build_present", lambda: False)
     called = []
@@ -151,3 +159,57 @@ def test_the_viewer_runs_this_script_with_yes():
 
     command = download_api.COMMANDS["pixal3d"]
     assert command[1].endswith("bootstrap_pixal3d.py") and "--yes" in command
+
+
+# Pixal3D's CUDA 12 prebuilt is compiled with CUDA 12.9. On the RunPod 4090 (driver 570,
+# CUDA 12.8) it died at its first kernel: "the provided PTX was compiled with an
+# unsupported toolchain". So the driver decides the route.
+@pytest.mark.parametrize("key,cuda,nvcc,expected", [
+    ("linux-nvidia", (12, 9), None, "prebuilt"),
+    ("linux-nvidia", (13, 0), "/usr/local/cuda/bin/nvcc", "prebuilt"),
+    ("linux-nvidia", (12, 8), "/usr/local/cuda/bin/nvcc", "cuda-source"),
+    ("linux-nvidia", (12, 8), None, None),
+    ("linux-nvidia", None, None, None),
+    ("windows-nvidia", (12, 9), None, "prebuilt"),
+    # A Windows source build is a Visual Studio project of its own; not offered.
+    ("windows-nvidia", (12, 8), "C:/cuda/nvcc.exe", None),
+    ("macos-arm64", None, None, "metal-source"),
+])
+def test_the_driver_picks_the_route(key, cuda, nvcc, expected):
+    assert boot.build_kind(key, cuda, nvcc) == expected
+
+
+def test_an_old_driver_without_a_compiler_is_told_what_to_update(monkeypatch, capsys):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (12, 8))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: None)
+    monkeypatch.setattr(boot, "build_present", lambda: False)
+    monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("built"))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: pytest.fail("downloaded"))
+    assert boot.main(["--yes"]) == 1
+    out = capsys.readouterr().out
+    assert "575" in out and "12.8" in out
+
+
+def test_an_old_driver_with_a_compiler_announces_a_local_cuda_build(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (12, 8))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: "/usr/local/cuda/bin/nvcc")
+    text = boot.announcement()
+    assert "compiled locally with CUDA" in text and "prebuilt" not in text
+
+
+def test_cuda_source_build_targets_this_card(monkeypatch):
+    flags = boot.cmake_flags("cuda-source", nvcc="/usr/local/cuda/bin/nvcc", arch="89")
+    assert "-DGGML_CUDA=ON" in flags
+    assert "-DCMAKE_CUDA_ARCHITECTURES=89" in flags
+    assert "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc" in flags
+
+
+def test_cuda_source_build_without_a_known_card_lets_cmake_ask():
+    flags = boot.cmake_flags("cuda-source", nvcc="nvcc", arch=None)
+    assert "-DCMAKE_CUDA_ARCHITECTURES=native" in flags
+
+
+def test_metal_build_passes_no_cuda_flags():
+    assert not any("CUDA" in f for f in boot.cmake_flags("metal-source"))

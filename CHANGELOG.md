@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the installers now choose the right one for the machine. The CUDA runtime is bundled,
   so there is no CUDA toolkit to install.
 - **`scripts/bootstrap_pixal3d.py`** replaces `bootstrap_pixal3d_cpp.sh`. Macs still build
-  from source with Metal; NVIDIA machines get upstream's prebuilt CUDA 12 build. It names
+  from source with Metal. NVIDIA machines get upstream's prebuilt CUDA 12 build when the
+  driver is 575 or newer; on Linux with an older driver and the CUDA toolkit installed it
+  compiles locally instead, and otherwise it says which driver to install. It names
   the route, the size and the licence and asks before downloading, which the shell
   script never did.
 

@@ -6,8 +6,10 @@ machine:
 
 - **Apple Silicon:** cloned and compiled from source, because Metal kernels need the
   local Xcode toolchain. That needs full Xcode, not just the Command Line Tools.
-- **Linux or Windows with an NVIDIA card:** upstream's prebuilt CUDA 12 build. The CUDA
-  runtime ships inside it, so there is no CUDA toolkit to install.
+- **Linux or Windows with an NVIDIA card:** upstream's prebuilt CUDA 12 build, runtime
+  included, when the driver is new enough for it (575+, i.e. CUDA 12.9). On Linux with an
+  older driver and the CUDA toolkit installed, it compiles locally with CUDA instead.
+  Otherwise it says which driver to install and stops.
 
 The **weights** are the single-view Q8_0 set plus the BiRefNet matting model, 8.4 GB.
 
@@ -55,7 +57,11 @@ PREBUILT_RELEASE = "v0.10.1-desktop-alpha"
 RELEASE_API = "https://api.github.com/repos/raven38/pixal3d.cpp/releases/tags/{tag}"
 
 # CUDA 12 rather than upstream's unversioned CUDA build (which is newer): CUDA 12 runs on
-# older drivers, and the runtime is bundled either way.
+# older drivers, and the runtime is bundled either way. "Older" has a floor, though: the
+# CUDA 12 build is compiled with 12.9, and on a 12.8 driver it died at its first kernel
+# ("the provided PTX was compiled with an unsupported toolchain", RunPod 4090, 2026-09-23).
+PREBUILT_MIN_CUDA = (12, 9)
+PREBUILT_MIN_DRIVER = "575"
 PREBUILTS = {
     "linux-nvidia": ("trellis-cuda12-linux-x64.tar.gz", "~640 MB"),
     "windows-nvidia": ("trellis-cuda12-windows-x64.zip", "~610 MB"),
@@ -68,15 +74,63 @@ LICENCE = (
 
 # Looked up through the module so a test can pretend to be another machine.
 target = host.build_target
+driver_cuda = host.driver_cuda_version
+
+
+def find_nvcc() -> str | None:
+    """The CUDA compiler: on PATH, or where the toolkit installs it by default. Its
+    absence from PATH is normal, so the default location is worth checking."""
+    found = shutil.which("nvcc")
+    if found:
+        return found
+    default = Path("/usr/local/cuda/bin/nvcc")
+    return str(default) if default.exists() else None
+
+
+def build_kind(key: str | None, cuda: tuple[int, int] | None,
+               nvcc: str | None) -> str | None:
+    """`prebuilt`, `cuda-source`, `metal-source`, or None when nothing will run here."""
+    if key == "macos-arm64":
+        return "metal-source"
+    if key in PREBUILTS and cuda is not None and cuda >= PREBUILT_MIN_CUDA:
+        return "prebuilt"
+    # A Windows source build is a Visual Studio project of its own; not offered.
+    if key == "linux-nvidia" and nvcc:
+        return "cuda-source"
+    return None
+
+
+def current_kind(key: str | None) -> str | None:
+    return build_kind(key, driver_cuda() if key in PREBUILTS else None, find_nvcc())
 
 
 def route_and_size(key: str | None) -> tuple[str, str] | None:
-    if key == "macos-arm64":
+    kind = current_kind(key)
+    if kind == "metal-source":
         return "built from source with Metal", "compiled locally, needs full Xcode"
-    if key in PREBUILTS:
+    if kind == "cuda-source":
+        return (f"compiled locally with CUDA (driver older than {PREBUILT_MIN_DRIVER})",
+                "a few minutes of compiling, needs the CUDA toolkit")
+    if kind == "prebuilt":
         name, size = PREBUILTS[key]
         return f"CUDA 12 prebuilt ({name}, {PREBUILT_RELEASE})", size
     return None
+
+
+def no_route_message(key: str | None) -> str:
+    if key not in PREBUILTS:
+        return ("Pixal3D needs an Apple Silicon Mac, or Linux/Windows with an NVIDIA card "
+                "(nvidia-smi must list it). Nothing downloaded.")
+    cuda = driver_cuda()
+    have = f"{cuda[0]}.{cuda[1]}" if cuda else "unknown"
+    need = f"{PREBUILT_MIN_CUDA[0]}.{PREBUILT_MIN_CUDA[1]}"
+    lines = [(f"Your NVIDIA driver supports CUDA {have}; Pixal3D's prebuilt needs {need} "
+              f"(driver {PREBUILT_MIN_DRIVER} or newer)."),
+             f"Update the NVIDIA driver to {PREBUILT_MIN_DRIVER}+ and run this again."]
+    if key == "linux-nvidia":
+        lines.append("Or install the CUDA toolkit (nvcc) and this compiles Pixal3D locally.")
+    lines.append("Nothing downloaded.")
+    return "\n".join(lines)
 
 
 def announcement(build: bool = True, weights: bool = True) -> str:
@@ -159,13 +213,45 @@ def install_prebuilt(key: str) -> Path:
     return cli
 
 
-def build_from_source() -> Path:
-    """The Apple Silicon path: clone, fetch submodules, compile with Metal."""
-    for tool in ("cmake", "ninja", "git"):
+def cmake_flags(kind: str, nvcc: str | None = None, arch: str | None = None) -> list[str]:
+    flags = ["-DCMAKE_BUILD_TYPE=Release"]
+    if kind == "cuda-source":
+        flags += ["-DGGML_CUDA=ON",
+                  # `native` asks the card at configure time; a known arch skips that.
+                  f"-DCMAKE_CUDA_ARCHITECTURES={arch or 'native'}",
+                  f"-DCMAKE_CUDA_COMPILER={nvcc}"]
+    return flags
+
+
+def fetch_source(ref: str) -> None:
+    """Check out pixal3d.cpp at `ref` into VENDOR, which may already hold the weights.
+
+    `git clone` refuses a non-empty directory, and a `--weights-only` run beforehand makes
+    it non-empty, so this initialises in place and fetches instead.
+    """
+    if not (VENDOR / ".git").is_dir():
+        print(f"Fetching {UPSTREAM} @ {ref}", flush=True)
+        VENDOR.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", str(VENDOR)], check=True)
+        subprocess.run(["git", "-C", str(VENDOR), "remote", "add", "origin", UPSTREAM],
+                       check=True)
+        subprocess.run(["git", "-C", str(VENDOR), "fetch", "-q", "--depth", "1", "origin",
+                        ref], check=True)
+        subprocess.run(["git", "-C", str(VENDOR), "checkout", "-q", "FETCH_HEAD"],
+                       check=True)
+    print("Fetching vendored ggml and friends", flush=True)
+    subprocess.run(["git", "-C", str(VENDOR), "submodule", "update", "--init",
+                    "--recursive"], check=True)
+
+
+def build_from_source(kind: str) -> Path:
+    """Clone and compile: Metal on a Mac, CUDA on Linux with an older driver."""
+    needed = ("cmake", "ninja", "git") if kind == "metal-source" else ("cmake", "git")
+    for tool in needed:
         if shutil.which(tool) is None:
-            raise SystemExit(f"{tool} not found (brew install {tool})")
-    if subprocess.run(["xcrun", "--find", "metal"], capture_output=True,
-                      check=False).returncode != 0:
+            raise SystemExit(f"{tool} not found. Install it and run this again.")
+    if kind == "metal-source" and subprocess.run(
+            ["xcrun", "--find", "metal"], capture_output=True, check=False).returncode != 0:
         # Printed rather than run: both need sudo or change a system-wide setting.
         raise SystemExit(
             "Metal compiler unavailable. With full Xcode installed, this is usually:\n"
@@ -175,23 +261,24 @@ def build_from_source() -> Path:
             "xcodebuild -downloadComponent MetalToolchain\n"
             "then re-run this script with DEVELOPER_DIR set."
         )
-    if not (VENDOR / ".git").is_dir():
-        print(f"Cloning {UPSTREAM}", flush=True)
-        subprocess.run(["git", "clone", "--depth", "1", UPSTREAM, str(VENDOR)], check=True)
-    print("Fetching vendored ggml and friends", flush=True)
-    subprocess.run(["git", "-C", str(VENDOR), "submodule", "update", "--init",
-                    "--recursive"], check=True)
-    print("Building (Metal is the default backend on Apple)", flush=True)
-    subprocess.run(["cmake", "-S", str(VENDOR), "-B", str(BUILD), "-G", "Ninja",
-                    "-DCMAKE_BUILD_TYPE=Release"], check=True)
-    subprocess.run(["cmake", "--build", str(BUILD), "-j"], check=True)
+    # The Mac build has always tracked upstream's default branch; the CUDA build pins the
+    # same release the prebuilts come from, which is the one tested on NVIDIA.
+    fetch_source("HEAD" if kind == "metal-source" else PREBUILT_RELEASE)
+    flags = cmake_flags(kind, find_nvcc(), host.compute_capability())
+    generator = ["-G", "Ninja"] if shutil.which("ninja") else []
+    print(f"Building ({'Metal' if kind == 'metal-source' else 'CUDA'})", flush=True)
+    subprocess.run(["cmake", "-S", str(VENDOR), "-B", str(BUILD), *generator, *flags],
+                   check=True)
+    subprocess.run(["cmake", "--build", str(BUILD), "--target", "trellis-cli", "-j"],
+                   check=True)
     if not build_present():
         raise SystemExit("The build finished without trellis-cli.")
     return cli_path()
 
 
 def install_build(key: str) -> Path:
-    return build_from_source() if key == "macos-arm64" else install_prebuilt(key)
+    kind = current_kind(key)
+    return install_prebuilt(key) if kind == "prebuilt" else build_from_source(kind)
 
 
 def flatten_matte(models: Path) -> None:
@@ -232,9 +319,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     key = target()
-    if key is None:
-        print("Pixal3D needs an Apple Silicon Mac, or Linux/Windows with an NVIDIA card "
-              "(nvidia-smi must list it). Nothing downloaded.")
+    if current_kind(key) is None:
+        print(no_route_message(key))
         return 1
 
     build = not args.weights_only

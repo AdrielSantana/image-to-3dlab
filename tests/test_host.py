@@ -83,3 +83,31 @@ def test_executable_gets_exe_only_on_windows(tmp_path: Path):
 ])
 def test_build_target_maps_the_machine_to_a_prebuilt(platform_id, family, expected):
     assert host.build_target(platform_id, family) == expected
+
+
+# The header `nvidia-smi` printed on the RunPod 4090 used for the 2026-09-23 test.
+SMI_HEADER = """
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.195.03             Driver Version: 570.195.03     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+"""
+
+
+def test_driver_cuda_version_is_read_from_the_smi_header():
+    which = lambda _: "/usr/bin/nvidia-smi"
+    assert host.driver_cuda_version(which=which, run=_smi(0, SMI_HEADER)) == (12, 8)
+
+
+def test_driver_cuda_version_is_none_without_a_driver_or_a_header():
+    assert host.driver_cuda_version(which=lambda _: None) is None
+    which = lambda _: "/usr/bin/nvidia-smi"
+    assert host.driver_cuda_version(which=which, run=_smi(0, "no header here")) is None
+    assert host.driver_cuda_version(which=which, run=_smi(9, SMI_HEADER)) is None
+
+
+def test_compute_capability_drops_the_dot():
+    """CMake wants `89`, nvidia-smi says `8.9`."""
+    which = lambda _: "/usr/bin/nvidia-smi"
+    assert host.compute_capability(which=which, run=_smi(0, "8.9\n")) == "89"
+    assert host.compute_capability(which=which, run=_smi(0, "garbage")) is None
+    assert host.compute_capability(which=lambda _: None) is None
