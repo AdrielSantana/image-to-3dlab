@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Metal on a Mac). It also fetches DINOv2 (1.1 GB) up front, which SF3D used to download
   unannounced on its first run, and explains the gated licence step if Hugging Face refuses.
   Setup & Status can now install SF3D by itself.
+- **The viewer says when a new version is out.** While it runs, it asks GitHub at most once
+  a day for the newest release (nothing about you is sent) and shows a slim banner with the
+  exact line that updates this install. Offline, nothing happens. Dismiss it until the next
+  release, turn it off on the About page, or set `I3D_NO_UPDATE_CHECK=1`.
 - **A one-line installer, which is also the updater.** `install.sh` (Mac and Linux) and
   `install.ps1` (Windows, untested) check the machine, install the code and Python 3.11,
   and print how to start the viewer. Re-running moves to the newest release and refuses to
@@ -32,8 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An About page, which also announces updates.** `Credits & Info` is now `About`. Its top
   says hello, names your machine and lists the routes that run on it, with what changed
   in the latest release read from this changelog. The viewer lands there once on a first
-  visit and once after each update; nothing phones home. The name in the top bar opens it
-  too, and lives in `viewer/brand.json`.
+  visit and once after each update. The name in the top bar opens it too, and lives in
+  `viewer/brand.json`.
 - **No silent CPU runs on NVIDIA.** If stable-diffusion.cpp cannot reach the GPU it quietly
   runs on the CPU instead, which takes many minutes per picture. The installer now checks
   for the GPU before downloading weights, and the viewer stops a CPU-only image job at

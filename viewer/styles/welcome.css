@@ -36,3 +36,16 @@
   text-align: left; }
 .about-table th { color: #9bc8ff; font-weight: 600; }
 .about-table td:not(:first-child), .about-table th:not(:first-child) { white-space: nowrap; }
+
+.welcome-updates { font-size: 12px; opacity: .75; display: flex; gap: 8px; align-items: center; }
+
+/* A slim bar under the menu when a newer release is out. */
+#update-banner { position: fixed; top: 42px; left: 0; right: 0; z-index: 29; display: flex;
+  flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 12px; font-size: 12px;
+  background: #1f3550; border-bottom: 1px solid #3b6ea5; color: #e8f1fc; }
+#update-banner[hidden] { display: none; }
+#update-banner code { background: #0008; padding: 2px 6px; border-radius: 4px;
+  max-width: 100%; overflow-x: auto; white-space: nowrap; }
+#update-banner a { color: #9bc8ff; }
+#update-banner button { padding: 2px 9px; }
+#update-dismiss { margin-left: auto; }

@@ -1,6 +1,7 @@
 import './modes/compare.js';
 import { skipRequested } from './modes/setup.js';
 import { welcomeOnArrival } from './modes/welcome.js';
+import { checkForUpdates } from './modes/update.js';
 
 import './modes/generate-image.js';
 import './modes/generate.js';
@@ -59,3 +60,4 @@ subscribeRigEditState(({ pendingCount }) => {
 // next time" it is never the landing page again -- it stays one click away in the menu.
 setMode(skipRequested() ? 'generate' : 'setup');
 welcomeOnArrival();
+checkForUpdates();

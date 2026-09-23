@@ -756,3 +756,34 @@ def test_welcome_points_at_setup_until_something_is_installed():
     ) == [{"label": "Set up a route", "mode": "setup"},
           {"label": "Make something", "mode": "generate-image"},
           None]
+
+
+def _run_banner(expr: str):
+    module_url = (REPO / "viewer" / "components" / "update-banner.js").as_uri()
+    program = f"import * as b from {json.dumps(module_url)}; console.log(JSON.stringify({expr}));"
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
+CHECK = {"enabled": True, "newer": True, "current": "0.2.0", "latest": "0.3.0",
+         "url": "https://github.com/x/releases/tag/v0.3.0", "command": "curl … | bash"}
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_update_banner_shows_for_a_newer_release_until_dismissed():
+    check = json.dumps(CHECK)
+    shown, dismissed, next_one = _run_banner(
+        f"[b.bannerFor({check}, null), b.bannerFor({check}, '0.3.0'),"
+        f" b.bannerFor({check}, '0.2.9')]")
+    assert "0.3.0 is out" in shown["text"] and shown["command"] == "curl … | bash"
+    assert dismissed is None
+    assert next_one is not None  # dismissing an older release does not hide a newer one
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_update_banner_stays_hidden_when_off_or_up_to_date():
+    off = json.dumps({**CHECK, "enabled": False})
+    same = json.dumps({**CHECK, "newer": False})
+    assert _run_banner(f"[b.bannerFor({off}, null), b.bannerFor({same}, null),"
+                       " b.bannerFor(null, null)]") == [None, None, None]

@@ -1,8 +1,8 @@
 """The welcome card: who we are, what this machine can run, and what changed.
 
 It doubles as the announcements channel. The page remembers the last version it showed
-and asks for news since then, so an update is announced once, from `CHANGELOG.md`. Nothing
-phones home: the news is whatever changelog shipped with the code on disk.
+and asks for news since then, so an update is announced once, from the `CHANGELOG.md` that
+shipped with the code on disk.
 """
 
 from __future__ import annotations

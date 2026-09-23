@@ -26,6 +26,13 @@
   <button id="mode-animate" class="mode" title="Pose and animate the bound skeleton">Pose</button>
   <button id="mode-about" class="mode" title="Who we are, what runs on this machine, and what's new">About</button>
 </div>
+<div id="update-banner" role="status" hidden>
+  <span id="update-text"></span>
+  <code id="update-command"></code>
+  <button id="update-copy">Copy</button>
+  <a id="update-notes" target="_blank" rel="noopener">What's new</a>
+  <button id="update-dismiss" aria-label="Hide until the next release">&times;</button>
+</div>
 <section id="compare-view">
 <div id="bar">
   <button id="add" title="add another pane, side by side">＋ add pane <span id="addcount">(0/3)</span></button>
@@ -621,6 +628,8 @@
         </p>
         <button id="welcome-go" class="on" hidden>Get started</button>
       </div>
+      <label class="welcome-updates"><input id="update-check-toggle" type="checkbox" checked>
+        Check GitHub once a day for a new release. Nothing about you is sent.</label>
     </div>
     <div class="generate-card">
       <h2>Credits</h2>
