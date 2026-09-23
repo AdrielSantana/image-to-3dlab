@@ -39,7 +39,7 @@ def _load_sf3d(repo: Path):
         from sf3d.utils import remove_background, resize_foreground
     except ImportError as exc:
         raise RuntimeError(
-            "SF3D or a compiled extension could not be imported. Run scripts/bootstrap_macos.sh. "
+            "SF3D or a compiled extension could not be imported. Run scripts/bootstrap_sf3d.py. "
             f"Original error: {exc}"
         ) from exc
     return SF3D, remove_background, resize_foreground
@@ -81,12 +81,22 @@ def _run(
     return output_path
 
 
+def pick_device(forced_cpu: bool, cuda: bool, mps: bool) -> str:
+    """CUDA on an NVIDIA card, MPS on a Mac, else CPU; `SF3D_USE_CPU=1` forces CPU."""
+    if forced_cpu:
+        return "cpu"
+    if cuda:
+        return "cuda"
+    return "mps" if mps else "cpu"
+
+
 def generate_sf3d(image: Path, output_dir: Path, options: SF3DOptions) -> Path:
     import torch
 
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     forced_cpu = os.environ.get("SF3D_USE_CPU") == "1"
-    device = "cpu" if forced_cpu or not torch.backends.mps.is_available() else "mps"
+    device = pick_device(forced_cpu, torch.cuda.is_available(),
+                         torch.backends.mps.is_available())
     output_path = output_dir.resolve() / f"{image.stem}_sf3d.glb"
     try:
         return _run(image, output_path, options, device)

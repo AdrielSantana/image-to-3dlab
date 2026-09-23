@@ -53,6 +53,7 @@ TERMINAL = {"done", "error", "cancelled"}
 COMMANDS: dict[str, list[str]] = {
     "trellis": [sys.executable, str(REPO / "scripts" / "bootstrap_trellis_space_macos.py")],
     "pixal3d": [sys.executable, str(REPO / "scripts" / "bootstrap_pixal3d.py"), "--yes"],
+    "sf3d": [sys.executable, str(REPO / "scripts" / "bootstrap_sf3d.py"), "--yes"],
     "hunyuan_xiong": [
         str(venv_python(REPO / "hunyuan_mlx" / "shape")),
         str(REPO / "hunyuan_mlx" / "download_weights.py"),

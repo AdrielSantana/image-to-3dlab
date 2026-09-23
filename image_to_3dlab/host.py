@@ -93,6 +93,16 @@ def host_platform(sys_platform: str | None = None, machine: str | None = None,
     return OTHER
 
 
+def find_nvcc() -> str | None:
+    """The CUDA compiler: on PATH, or where the toolkit installs it by default. Its
+    absence from PATH is normal, so the default location is worth checking."""
+    found = shutil.which("nvcc")
+    if found:
+        return found
+    default = Path("/usr/local/cuda/bin/nvcc")
+    return str(default) if default.exists() else None
+
+
 def executable(directory: Path, name: str, family: str | None = None) -> Path:
     """`directory/name`, spelled the way this OS spells a program."""
     suffix = ".exe" if (family or os_family()) == "windows" else ""

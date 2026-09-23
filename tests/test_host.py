@@ -111,3 +111,8 @@ def test_compute_capability_drops_the_dot():
     assert host.compute_capability(which=which, run=_smi(0, "8.9\n")) == "89"
     assert host.compute_capability(which=which, run=_smi(0, "garbage")) is None
     assert host.compute_capability(which=lambda _: None) is None
+
+
+def test_find_nvcc_prefers_path(monkeypatch):
+    monkeypatch.setattr(host.shutil, "which", lambda _: "/opt/cuda/bin/nvcc")
+    assert host.find_nvcc() == "/opt/cuda/bin/nvcc"

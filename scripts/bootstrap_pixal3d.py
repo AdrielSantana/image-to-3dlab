@@ -75,16 +75,7 @@ LICENCE = (
 # Looked up through the module so a test can pretend to be another machine.
 target = host.build_target
 driver_cuda = host.driver_cuda_version
-
-
-def find_nvcc() -> str | None:
-    """The CUDA compiler: on PATH, or where the toolkit installs it by default. Its
-    absence from PATH is normal, so the default location is worth checking."""
-    found = shutil.which("nvcc")
-    if found:
-        return found
-    default = Path("/usr/local/cuda/bin/nvcc")
-    return str(default) if default.exists() else None
+find_nvcc = host.find_nvcc
 
 
 def build_kind(key: str | None, cuda: tuple[int, int] | None,

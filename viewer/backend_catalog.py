@@ -293,13 +293,21 @@ CATALOG: tuple[Backend, ...] = (
         tradeoff="Lowest fidelity here, and it bakes lighting into the texture.",
         license_name="Stability AI Community License (non-commercial under $1M revenue)",
         license_url="https://huggingface.co/stabilityai/stable-fast-3d",
-        install="scripts/bootstrap_macos.sh",
-        automated_setup=False,
+        install="scripts/bootstrap_sf3d.py",
+        runs_on=(APPLE, NVIDIA),
         setup_minutes=20,
         build_probes=(REPO / "vendor" / "stable-fast-3d" / "sf3d" / "system.py",),
+        caveat=(
+            "The SF3D weights are gated: accept Stability's licence on Hugging Face and "
+            "run `hf auth login` before setting it up."
+        ),
         weights=(
-            WeightSet("Stable Fast 3D", "stabilityai/stable-fast-3d", int(3.7 * GB),
+            WeightSet("Stable Fast 3D", "stabilityai/stable-fast-3d", int(3.75 * GB),
                       HF_HUB_DIR / "models--stabilityai--stable-fast-3d"),
+            WeightSet("DINOv2 image encoder", "facebook/dinov2-large", int(1.13 * GB),
+                      HF_HUB_DIR / "models--facebook--dinov2-large",
+                      note="SF3D reads the picture with it. Without this entry it was "
+                           "fetched unannounced on the first run."),
         ),
     ),
     Backend(

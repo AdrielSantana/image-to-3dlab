@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiles locally instead, and otherwise it says which driver to install. It names
   the route, the size and the licence and asks before downloading, which the shell
   script never did.
+- **Stable Fast 3D on NVIDIA Linux, and `scripts/bootstrap_sf3d.py`.** SF3D now runs on
+  CUDA when there is a card, and the new installer builds its texture baker with CUDA (or
+  Metal on a Mac). It also fetches DINOv2 (1.1 GB) up front, which SF3D used to download
+  unannounced on its first run, and explains the gated licence step if Hugging Face refuses.
+  Setup & Status can now install SF3D by itself.
 - **No silent CPU runs on NVIDIA.** If stable-diffusion.cpp cannot reach the GPU it quietly
   runs on the CPU instead, which takes many minutes per picture. The installer now checks
   for the GPU before downloading weights, and the viewer stops a CPU-only image job at
