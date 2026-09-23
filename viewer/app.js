@@ -18,7 +18,7 @@ const modes = {
   finish: byId('finish-view'),
   rig: byId('rig-view'),
   animate: byId('animate-view'),
-  credits: byId('credits-view'),
+  about: byId('about-view'),
 };
 
 function setMode(activeMode) {
@@ -29,7 +29,7 @@ function setMode(activeMode) {
   modes.finish.hidden = activeMode !== 'finish';
   modes.rig.hidden = activeMode !== 'rig';
   modes.animate.hidden = activeMode !== 'animate';
-  modes.credits.hidden = activeMode !== 'credits';
+  modes.about.hidden = activeMode !== 'about';
   for (const mode of Object.keys(modes)) {
     byId(`mode-${mode}`).classList.toggle('on', mode === activeMode);
   }
@@ -40,7 +40,8 @@ for (const mode of Object.keys(modes)) {
   byId(`mode-${mode}`).onclick = () => setMode(mode);
 }
 
-// The welcome card's "Get started" button asks for a screen by name.
+// The About page's "Get started" button, and its first-visit landing, ask for a screen
+// by name.
 document.addEventListener('viewer:navigate', (event) => {
   if (modes[event.detail?.mode]) setMode(event.detail.mode);
 });

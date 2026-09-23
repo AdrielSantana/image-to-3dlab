@@ -24,7 +24,7 @@
   <button id="mode-finish" class="mode" title="Retopologise, repaint and compress an existing asset">Finish</button>
   <button id="mode-rig" class="mode" title="Correct the rest skeleton">Rig Edit</button>
   <button id="mode-animate" class="mode" title="Pose and animate the bound skeleton">Pose</button>
-  <button id="mode-credits" class="mode">Credits &amp; Info</button>
+  <button id="mode-about" class="mode" title="Who we are, what runs on this machine, and what's new">About</button>
 </div>
 <section id="compare-view">
 <div id="bar">
@@ -605,8 +605,23 @@
   </div>
 </section>
 
-<section id="credits-view" hidden>
+<section id="about-view" hidden>
   <div class="credits-col">
+    <div class="welcome-card" id="welcome">
+      <p class="welcome-kicker" id="welcome-kicker"></p>
+      <h1 id="welcome-title">Welcome</h1>
+      <p class="welcome-tagline" id="welcome-tagline"></p>
+      <section class="welcome-machine" id="welcome-machine" aria-label="This machine"></section>
+      <section class="welcome-news" id="welcome-news" aria-label="What's new"></section>
+      <div class="welcome-foot">
+        <p class="welcome-thanks">
+          Built in the open. If something breaks, or you make something you like, tell us in
+          <a href="https://github.com/Bingeljell/image-to-3dlab/discussions" target="_blank"
+             rel="noopener">Discussions</a>.
+        </p>
+        <button id="welcome-go" class="on" hidden>Get started</button>
+      </div>
+    </div>
     <div class="generate-card">
       <h2>Credits</h2>
       <p>This repo wraps other people's models and ports. Attribution, by pipeline:</p>
@@ -700,24 +715,6 @@
   "three/addons/": "./vendor/"
 } }
 </script>
-<dialog id="welcome" aria-labelledby="welcome-title">
-  <form method="dialog" class="welcome-card">
-    <p class="welcome-kicker" id="welcome-kicker"></p>
-    <h1 id="welcome-title">Welcome</h1>
-    <p class="welcome-tagline" id="welcome-tagline"></p>
-    <section class="welcome-machine" id="welcome-machine" aria-label="This machine"></section>
-    <section class="welcome-news" id="welcome-news" aria-label="What's new"></section>
-    <p class="welcome-thanks">
-      Built in the open. If something breaks, or you make something you like, tell us in
-      <a href="https://github.com/Bingeljell/image-to-3dlab/discussions" target="_blank"
-         rel="noopener">Discussions</a>.
-    </p>
-    <div class="welcome-actions">
-      <button value="close" id="welcome-close">Close</button>
-      <button value="go" id="welcome-go" class="on">Get started</button>
-    </div>
-  </form>
-</dialog>
 <script type="module" src="./app.js"></script>
 </body>
 </html>

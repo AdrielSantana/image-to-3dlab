@@ -1,18 +1,15 @@
-/* The welcome card: first run, after an update, and whenever the brand is clicked. */
+/* The top of the About page: hello, this machine, and what's new. */
 #mode-switch .brand { background: transparent; border-color: transparent; padding: 3px 8px;
   color: #9bc8ff; font-weight: 700; letter-spacing: .01em; }
 #mode-switch .brand:hover { background: #1d2530; border-color: #39404b; }
 
-#welcome { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 64px);
-  padding: 0; border: 1px solid #2f3a48; border-radius: 12px; color: #d8dee9;
-  background: radial-gradient(circle at 85% 0%, #1f3550 0, transparent 45%), #15181e;
-  box-shadow: 0 24px 80px #000a; }
-#welcome::backdrop { background: #07090ccc; backdrop-filter: blur(3px); }
-.welcome-card { display: flex; flex-direction: column; gap: 14px; padding: 26px 28px 22px; }
+.welcome-card { display: flex; flex-direction: column; gap: 14px; padding: 24px 26px 20px;
+  border: 1px solid #2f3a48; border-radius: 12px;
+  background: radial-gradient(circle at 85% 0%, #1f3550 0, transparent 45%), #15181e; }
 .welcome-kicker { margin: 0; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
-  color: #7eb4ef; }
+  color: #7eb4ef; opacity: 1; }
 .welcome-card h1 { margin: 0; font-size: 22px; line-height: 1.25; color: #f0f5fc; }
-.welcome-tagline { margin: 0; opacity: .8; }
+.welcome-tagline { margin: 0; }
 .welcome-card h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .06em;
   text-transform: uppercase; color: #9bc8ff; }
 .welcome-machine, .welcome-news { padding: 12px 14px; border: 1px solid #262e39;
@@ -25,12 +22,11 @@
 .welcome-news .release + .release { margin-top: 12px; }
 .welcome-news .date { opacity: .55; font-weight: 400; }
 .welcome-news .more { margin: 6px 0 0; opacity: .7; }
-.welcome-card code { background: #0008; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
-.welcome-card a { color: #9bc8ff; }
+.welcome-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; }
 .welcome-thanks { margin: 0; font-size: 12px; opacity: .75; }
-.welcome-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.welcome-actions button { padding: 6px 16px; }
+.welcome-foot button { padding: 6px 16px; }
 @media (max-width: 520px) {
-  .welcome-card { padding: 20px 16px 16px; }
+  .welcome-card { padding: 18px 16px 16px; }
   .welcome-card h1 { font-size: 19px; }
 }

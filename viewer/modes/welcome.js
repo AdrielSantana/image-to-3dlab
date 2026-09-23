@@ -1,8 +1,8 @@
-// --- Welcome ------------------------------------------------------------------------------
-// The card shown on a first visit, once after each update, and whenever the brand in the
-// top bar is clicked. It is also how updates are announced: this browser remembers the
-// last version it showed, and the server sends the changelog headlines since then.
-// Nothing leaves the machine; the news is the CHANGELOG.md that shipped with the code.
+// --- About: welcome and what's new -------------------------------------------------------
+// The top of the About page. It says hello, names this machine and what runs on it, and
+// lists what changed. It is also how updates are announced: this browser remembers the
+// last version it showed, and on a first visit or after an update the viewer lands here
+// once. Nothing leaves the machine; the news is the CHANGELOG.md that shipped with the code.
 
 import {
   greeting, inlineCode, newsItems, primaryAction, shouldShow,
@@ -85,41 +85,48 @@ function render(payload, seen, reopened) {
   s('brand').textContent = payload.brand.short || payload.brand.name;
 }
 
-function open(payload, seen, reopened) {
-  render(payload, seen, reopened);
-  const dialog = s('welcome');
-  if (!dialog.open) dialog.showModal();
-  markSeen(payload.version);
+function navigate(mode) {
+  document.dispatchEvent(new CustomEvent('viewer:navigate', { detail: { mode } }));
 }
 
-// Straight from the click rather than the dialog's `close` event, which a background tab
-// can hold back; the form's method="dialog" still closes the card.
 s('welcome-go').addEventListener('click', () => {
   const mode = s('welcome-go').dataset.mode;
-  if (mode) document.dispatchEvent(new CustomEvent('viewer:navigate', { detail: { mode } }));
+  if (mode) navigate(mode);
 });
 
-s('brand').addEventListener('click', async () => {
+s('brand').addEventListener('click', () => navigate('about'));
+
+// Refresh on each visit: what is installed changes while the viewer is open. The page
+// keeps its "Welcome back" wording only for the arrival that announced an update.
+let announcing = false;
+document.addEventListener('viewer:modechange', async (event) => {
+  if (event.detail?.mode !== 'about') return;
+  if (announcing) {
+    announcing = false;
+    return;
+  }
   try {
-    // Reopened on purpose: show the current release's news, whatever was seen before.
-    open(await fetchWelcome(null), lastSeen(), true);
+    render(await fetchWelcome(null), lastSeen(), true);
   } catch (error) {
     console.warn(error);
   }
 });
 
-/** On arrival: show the card on a first visit or after an update, else stay quiet. */
+/** On arrival: land on About once for a first visit or an update, else stay quiet. */
 export async function welcomeOnArrival() {
   const seen = lastSeen();
   try {
     const payload = await fetchWelcome(seen);
-    if (shouldShow(seen, payload)) open(payload, seen, false);
-    else {
-      document.title = payload.brand.name;
-      s('brand').textContent = payload.brand.short || payload.brand.name;
+    if (shouldShow(seen, payload)) {
+      render(payload, seen, false);
+      markSeen(payload.version);
+      announcing = true;
+      navigate('about');
+    } else {
+      render(await fetchWelcome(null), seen, true);
     }
   } catch (error) {
-    // A static-only viewer has no API; the page works without the card.
+    // A static-only viewer has no API; the page works without this section.
     console.warn(error);
   }
 }
