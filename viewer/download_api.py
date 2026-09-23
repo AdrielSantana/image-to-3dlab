@@ -96,12 +96,27 @@ def rate_and_eta(
     return rate, (remaining / rate if remaining > 0 else 0.0)
 
 
+def is_stalled(present: int, idle_seconds: float) -> bool:
+    """No growth for the stall window, once weights have started to arrive.
+
+    Before the first byte, setup may be fetching or building something that is not a
+    weight (Pixal3D pulls a 674 MB build first), and on a slow line that alone outlasts
+    the window.
+    """
+    return present > 0 and idle_seconds > STALL_SECONDS
+
+
 def describe_progress(
     backend: Backend, present: int, rate: float | None, eta: float | None, stalled: bool,
+    step: str | None = None,
 ) -> dict[str, Any]:
+    """The progress line. `step` is setup's latest log line, shown until weights arrive,
+    because "0 B of 8.4 GB" during a build download reads as stuck."""
     expected = backend.bytes_expected
     percent = 0 if expected <= 0 else max(0, min(99, round(present / expected * 100)))
-    if stalled:
+    if present == 0 and step:
+        detail = step
+    elif stalled:
         detail = f"stalled — no new data for {int(STALL_SECONDS)}s ({human_bytes(present)} so far)"
     elif rate:
         eta_text = f" · ~{int(eta // 60)} min left" if eta and eta > 60 else (
@@ -325,7 +340,8 @@ def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
         remaining = max(0, run.backend.bytes_expected - present)
         rate, eta = rate_and_eta(samples, remaining)
         run.emit(describe_progress(
-            run.backend, present, rate, eta, stalled=now - last_growth > STALL_SECONDS,
+            run.backend, present, rate, eta, stalled=is_stalled(present, now - last_growth),
+            step=run.log[-1] if run.log else None,
         ))
 
 

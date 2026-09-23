@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup & Status said a finished download was a few bytes ("done · 120 B") with newer
   huggingface_hub, which stores the files outside each model's folder and links to them.
   Sizes now follow the links and count each file once.
+- Setup & Status showed "0 B of 8.4 GB" while Pixal3D fetched its 674 MB build, and on a
+  slow line would have called it stalled. Until weights arrive it now shows the current
+  step, and only claims a stall once they have started.
 
 ### Removed
 - `scripts/bootstrap_pixal3d_cpp.sh`, superseded by `scripts/bootstrap_pixal3d.py`.
