@@ -6,10 +6,12 @@ machine:
 
 - **Apple Silicon:** cloned and compiled from source, because Metal kernels need the
   local Xcode toolchain. That needs full Xcode, not just the Command Line Tools.
-- **Linux or Windows with an NVIDIA card:** upstream's prebuilt CUDA 12 build, runtime
-  included, when the driver is new enough for it (575+, i.e. CUDA 12.9). On Linux with an
-  older driver and the CUDA toolkit installed, it compiles locally with CUDA instead.
-  Otherwise it says which driver to install and stops.
+- **Linux with an NVIDIA card and the CUDA toolkit:** compiled locally for this card,
+  once, in a few minutes. On a 4090 that ran about twice as fast as the prebuilt.
+- **Otherwise, Linux or Windows with an NVIDIA card:** upstream's prebuilt CUDA 12 build,
+  runtime included, when the driver is new enough for it (575+, i.e. CUDA 12.9).
+  `--prebuilt` picks it even when a compiler is present. With neither, it says which
+  driver to install and stops.
 
 The **weights** are the single-view Q8_0 set plus the BiRefNet matting model, 8.4 GB.
 
@@ -76,32 +78,45 @@ LICENCE = (
 target = host.build_target
 driver_cuda = host.driver_cuda_version
 find_nvcc = host.find_nvcc
+nvcc_cuda = host.nvcc_cuda_version
 
 
-def build_kind(key: str | None, cuda: tuple[int, int] | None,
-               nvcc: str | None) -> str | None:
-    """`prebuilt`, `cuda-source`, `metal-source`, or None when nothing will run here."""
+def build_kind(key: str | None, cuda: tuple[int, int] | None, nvcc: str | None,
+               nvcc_cuda: tuple[int, int] | None = None,
+               prefer_prebuilt: bool = False) -> str | None:
+    """`prebuilt`, `cuda-source`, `metal-source`, or None when nothing will run here.
+
+    A local compile beats the prebuilt when it can run: the prebuilt took 390 s a model on
+    a 4090 where a compile for that card took about 190 s. It cannot run when the toolkit
+    is newer than the driver, and an unreadable toolkit version is tried, not refused.
+    """
     if key == "macos-arm64":
         return "metal-source"
-    if key in PREBUILTS and cuda is not None and cuda >= PREBUILT_MIN_CUDA:
+    prebuilt_runs = key in PREBUILTS and cuda is not None and cuda >= PREBUILT_MIN_CUDA
+    if prefer_prebuilt and prebuilt_runs:
         return "prebuilt"
     # A Windows source build is a Visual Studio project of its own; not offered.
-    if key == "linux-nvidia" and nvcc:
+    compile_runs = (key == "linux-nvidia" and bool(nvcc)
+                    and (nvcc_cuda is None or cuda is None or nvcc_cuda <= cuda))
+    if compile_runs:
         return "cuda-source"
-    return None
+    return "prebuilt" if prebuilt_runs else None
 
 
-def current_kind(key: str | None) -> str | None:
-    return build_kind(key, driver_cuda() if key in PREBUILTS else None, find_nvcc())
+def current_kind(key: str | None, prefer_prebuilt: bool = False) -> str | None:
+    nvcc = find_nvcc() if key == "linux-nvidia" else None
+    return build_kind(key, driver_cuda() if key in PREBUILTS else None, nvcc,
+                      nvcc_cuda(nvcc) if nvcc else None, prefer_prebuilt)
 
 
-def route_and_size(key: str | None) -> tuple[str, str] | None:
-    kind = current_kind(key)
+def route_and_size(key: str | None,
+                   prefer_prebuilt: bool = False) -> tuple[str, str] | None:
+    kind = current_kind(key, prefer_prebuilt)
     if kind == "metal-source":
         return "built from source with Metal", "compiled locally, needs full Xcode"
     if kind == "cuda-source":
-        return (f"compiled locally with CUDA (driver older than {PREBUILT_MIN_DRIVER})",
-                "a few minutes of compiling, needs the CUDA toolkit")
+        return ("compiled locally with CUDA for this card",
+                "a few minutes of compiling, once, with the CUDA toolkit")
     if kind == "prebuilt":
         name, size = PREBUILTS[key]
         return f"CUDA 12 prebuilt ({name}, {PREBUILT_RELEASE})", size
@@ -124,9 +139,10 @@ def no_route_message(key: str | None) -> str:
     return "\n".join(lines)
 
 
-def announcement(build: bool = True, weights: bool = True) -> str:
+def announcement(build: bool = True, weights: bool = True,
+                 prefer_prebuilt: bool = False) -> str:
     """Exactly what is about to be fetched, before anything is."""
-    found = route_and_size(target())
+    found = route_and_size(target(), prefer_prebuilt)
     route = found[0] if found else "none for this machine"
     lines = ["", "About to install:", "", "  backend: Pixal3D (raven38/pixal3d.cpp)",
              f"  route:   {route}"]
@@ -236,7 +252,7 @@ def fetch_source(ref: str) -> None:
 
 
 def build_from_source(kind: str) -> Path:
-    """Clone and compile: Metal on a Mac, CUDA on Linux with an older driver."""
+    """Clone and compile: Metal on a Mac, CUDA on Linux with the toolkit installed."""
     needed = ("cmake", "ninja", "git") if kind == "metal-source" else ("cmake", "git")
     for tool in needed:
         if shutil.which(tool) is None:
@@ -267,8 +283,7 @@ def build_from_source(kind: str) -> Path:
     return cli_path()
 
 
-def install_build(key: str) -> Path:
-    kind = current_kind(key)
+def install_build(key: str, kind: str) -> Path:
     return install_prebuilt(key) if kind == "prebuilt" else build_from_source(kind)
 
 
@@ -307,16 +322,20 @@ def main(argv: list[str] | None = None) -> int:
                         help="Install trellis-cli and stop, leaving the weights.")
     parser.add_argument("--weights-only", action="store_true",
                         help="Fetch the weights only, assuming trellis-cli is present.")
+    parser.add_argument("--prebuilt", action="store_true",
+                        help="Use upstream's prebuilt CUDA build even when nvcc could "
+                             "compile a faster one. For timing the two.")
     args = parser.parse_args(argv)
 
     key = target()
-    if current_kind(key) is None:
+    kind = current_kind(key, args.prebuilt)
+    if kind is None:
         print(no_route_message(key))
         return 1
 
     build = not args.weights_only
     weights = not args.build_only
-    print(announcement(build=build, weights=weights))
+    print(announcement(build=build, weights=weights, prefer_prebuilt=args.prebuilt))
 
     if not args.yes:
         # Non-interactive without --yes must not silently proceed, and must not hang
@@ -332,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         if build_present():
             print(f"\ntrellis-cli is already installed at {cli_path()}, leaving it alone.")
         else:
-            install_build(key)
+            install_build(key, kind)
     if weights:
         install_weights()
     print("\nDone. Generate with:\n"

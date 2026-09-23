@@ -116,3 +116,18 @@ def test_compute_capability_drops_the_dot():
 def test_find_nvcc_prefers_path(monkeypatch):
     monkeypatch.setattr(host.shutil, "which", lambda _: "/opt/cuda/bin/nvcc")
     assert host.find_nvcc() == "/opt/cuda/bin/nvcc"
+
+
+def test_nvcc_cuda_version_is_read_from_its_release_line():
+    out = ("nvcc: NVIDIA (R) Cuda compiler driver\n"
+           "Cuda compilation tools, release 12.8, V12.8.93\n")
+    assert host.nvcc_cuda_version("nvcc", run=_smi(0, out)) == (12, 8)
+    assert host.nvcc_cuda_version("nvcc", run=_smi(0, "garbage")) is None
+    assert host.nvcc_cuda_version("nvcc", run=_smi(1, out)) is None
+    assert host.nvcc_cuda_version(None) is None
+
+
+def test_nvcc_that_cannot_start_has_no_version():
+    def missing(*a, **k):
+        raise FileNotFoundError("nvcc")
+    assert host.nvcc_cuda_version("/nowhere/nvcc", run=missing) is None

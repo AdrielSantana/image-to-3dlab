@@ -163,20 +163,54 @@ def test_the_viewer_runs_this_script_with_yes():
 
 # Pixal3D's CUDA 12 prebuilt is compiled with CUDA 12.9. On the RunPod 4090 (driver 570,
 # CUDA 12.8) it died at its first kernel: "the provided PTX was compiled with an
-# unsupported toolchain". So the driver decides the route.
-@pytest.mark.parametrize("key,cuda,nvcc,expected", [
-    ("linux-nvidia", (12, 9), None, "prebuilt"),
-    ("linux-nvidia", (13, 0), "/usr/local/cuda/bin/nvcc", "prebuilt"),
-    ("linux-nvidia", (12, 8), "/usr/local/cuda/bin/nvcc", "cuda-source"),
-    ("linux-nvidia", (12, 8), None, None),
-    ("linux-nvidia", None, None, None),
-    ("windows-nvidia", (12, 9), None, "prebuilt"),
+# unsupported toolchain". On a newer driver it ran, but at about half the speed of a local
+# compile (390 s against ~190 s, RunPod 2026-09-23). So a compiler, when there is one and
+# the driver can run what it makes, wins; the prebuilt is the fallback.
+NVCC = "/usr/local/cuda/bin/nvcc"
+
+
+@pytest.mark.parametrize("key,cuda,nvcc,nvcc_cuda,expected", [
+    ("linux-nvidia", (12, 9), None, None, "prebuilt"),
+    ("linux-nvidia", (13, 0), NVCC, (12, 8), "cuda-source"),
+    ("linux-nvidia", (12, 8), NVCC, (12, 8), "cuda-source"),
+    # A version we could not read is tried rather than refused.
+    ("linux-nvidia", (13, 0), NVCC, None, "cuda-source"),
+    # A toolkit newer than the driver builds kernels the driver cannot run.
+    ("linux-nvidia", (13, 0), NVCC, (13, 1), "prebuilt"),
+    ("linux-nvidia", (12, 8), NVCC, (13, 0), None),
+    ("linux-nvidia", (12, 8), None, None, None),
+    ("linux-nvidia", None, None, None, None),
+    ("windows-nvidia", (12, 9), None, None, "prebuilt"),
     # A Windows source build is a Visual Studio project of its own; not offered.
-    ("windows-nvidia", (12, 8), "C:/cuda/nvcc.exe", None),
-    ("macos-arm64", None, None, "metal-source"),
+    ("windows-nvidia", (12, 8), "C:/cuda/nvcc.exe", (12, 8), None),
+    ("windows-nvidia", (13, 0), "C:/cuda/nvcc.exe", (12, 8), "prebuilt"),
+    ("macos-arm64", None, None, None, "metal-source"),
 ])
-def test_the_driver_picks_the_route(key, cuda, nvcc, expected):
-    assert boot.build_kind(key, cuda, nvcc) == expected
+def test_the_driver_and_compiler_pick_the_route(key, cuda, nvcc, nvcc_cuda, expected):
+    assert boot.build_kind(key, cuda, nvcc, nvcc_cuda) == expected
+
+
+def test_prebuilt_can_be_asked_for_when_it_would_run():
+    """For timing one against the other on the same machine."""
+    assert boot.build_kind("linux-nvidia", (13, 0), NVCC, (12, 8),
+                           prefer_prebuilt=True) == "prebuilt"
+    # Asking for it on a driver it cannot run on still compiles instead.
+    assert boot.build_kind("linux-nvidia", (12, 8), NVCC, (12, 8),
+                           prefer_prebuilt=True) == "cuda-source"
+
+
+def test_the_prebuilt_flag_reaches_the_route(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (13, 0))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: NVCC)
+    monkeypatch.setattr(boot, "nvcc_cuda", lambda _: (12, 8))
+    monkeypatch.setattr(boot, "build_present", lambda: False)
+    chosen = []
+    monkeypatch.setattr(boot, "install_build", lambda key, kind: chosen.append(kind))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: None)
+    assert boot.main(["--yes", "--prebuilt"]) == 0
+    assert boot.main(["--yes"]) == 0
+    assert chosen == ["prebuilt", "cuda-source"]
 
 
 def test_an_old_driver_without_a_compiler_is_told_what_to_update(monkeypatch, capsys):
@@ -194,7 +228,8 @@ def test_an_old_driver_without_a_compiler_is_told_what_to_update(monkeypatch, ca
 def test_an_old_driver_with_a_compiler_announces_a_local_cuda_build(monkeypatch):
     monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
     monkeypatch.setattr(boot, "driver_cuda", lambda: (12, 8))
-    monkeypatch.setattr(boot, "find_nvcc", lambda: "/usr/local/cuda/bin/nvcc")
+    monkeypatch.setattr(boot, "find_nvcc", lambda: NVCC)
+    monkeypatch.setattr(boot, "nvcc_cuda", lambda _: (12, 8))
     text = boot.announcement()
     assert "compiled locally with CUDA" in text and "prebuilt" not in text
 

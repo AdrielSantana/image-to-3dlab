@@ -88,8 +88,9 @@ status telling you exactly what's missing:
   weights: [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md).
 - **Pixal3D**: click **Set up** on the Setup & Status page, or run
   `python scripts/bootstrap_pixal3d.py`. It says what it will download and asks first. On a
-  Mac it compiles with Metal (needs full Xcode); on NVIDIA it fetches a ready-made CUDA
-  build (driver 575+, or it compiles locally if the CUDA toolkit is installed).
+  Mac it compiles with Metal (needs full Xcode). On NVIDIA Linux with the CUDA toolkit it
+  compiles for your card (a few minutes, once, and about twice as fast to run); otherwise
+  it fetches a ready-made CUDA build (driver 575+).
 - **Stable Fast 3D**: accept Stability's licence at
   [huggingface.co/stabilityai/stable-fast-3d](https://huggingface.co/stabilityai/stable-fast-3d),
   run `hf auth login`, then set it up from Setup & Status or run

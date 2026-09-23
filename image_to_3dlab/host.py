@@ -103,6 +103,25 @@ def find_nvcc() -> str | None:
     return str(default) if default.exists() else None
 
 
+def nvcc_cuda_version(nvcc: str | None,
+                      run: Callable = subprocess.run) -> tuple[int, int] | None:
+    """The CUDA version a toolkit compiles for, from `nvcc --version`'s release line.
+
+    Worth comparing with `driver_cuda_version`: kernels built by a newer toolkit than the
+    driver supports fail at their first launch.
+    """
+    if not nvcc:
+        return None
+    try:
+        result = run([nvcc, "--version"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    match = re.search(r"release\s+(\d+)\.(\d+)", result.stdout or "")
+    return (int(match[1]), int(match[2])) if match else None
+
+
 def executable(directory: Path, name: str, family: str | None = None) -> Path:
     """`directory/name`, spelled the way this OS spells a program."""
     suffix = ".exe" if (family or os_family()) == "windows" else ""

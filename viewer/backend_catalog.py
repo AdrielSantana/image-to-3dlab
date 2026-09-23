@@ -206,7 +206,8 @@ CATALOG: tuple[Backend, ...] = (
         best_for="Best results we have. One pass, ~6 min, no repaint needed.",
         tradeoff=(
             "On a Mac it compiles locally and needs full Xcode for the Metal compiler. "
-            "On NVIDIA it downloads a prebuilt CUDA build instead."
+            "On NVIDIA Linux with the CUDA toolkit it compiles for your card, which runs "
+            "about twice as fast; otherwise it downloads a prebuilt CUDA build."
         ),
         license_name="MIT (code + flow weights); DINOv3 License (bundled encoder)",
         license_url="https://huggingface.co/raven38/pixal3d-sv-q8_0-v1",
