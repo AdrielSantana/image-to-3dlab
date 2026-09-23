@@ -30,3 +30,9 @@
   .welcome-card { padding: 18px 16px 16px; }
   .welcome-card h1 { font-size: 19px; }
 }
+
+.about-table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 13px; }
+.about-table th, .about-table td { padding: 6px 10px; border-bottom: 1px solid #262e39;
+  text-align: left; }
+.about-table th { color: #9bc8ff; font-weight: 600; }
+.about-table td:not(:first-child), .about-table th:not(:first-child) { white-space: nowrap; }

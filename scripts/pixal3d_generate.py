@@ -10,8 +10,8 @@ with Metal kernels on a Mac and CUDA on NVIDIA. Install it with
 **Why this port and not the PyTorch one.** `pawel-mazurkiewicz/Pixal3D-mac` loads ~22 GB of
 bf16 weights before sampling and its low-VRAM mode moves models between CPU and GPU, which
 frees nothing on unified memory. This one runs the same model from 8 GB of Q8_0 weights,
-with real Metal flash-attention, and produced the moss fox in 5m50s where the PyTorch port
-could not finish on a 32 GB machine. See `docs/pixal3d-evaluation-2026-09-20.md`.
+with real Metal flash-attention, and finishes in about 6 minutes where the PyTorch port
+could not finish on a 32 GB machine at all.
 
 **Single-view needs a camera.** Pixal3D conditions on pixel-aligned features projected
 through an explicit camera, so `--sv-image` synthesizes a front gauge camera at `--fov`
@@ -47,10 +47,8 @@ MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 # The gauge camera the single-view path is designed around: 20 degrees, as radians.
 DEFAULT_FOV = 0.3490658503988659
 
-# Structure guidance strength. `trellis-cli` defaults to 7.5; at that setting the warrior
-# girl lost her sword blade entirely and 10 brought it back with tighter proportions, so
-# 10 is the default here. 13 is worse -- the blade detaches from the hand.
-# See docs/pixal3d-evaluation-2026-09-20.md.
+# Structure guidance strength. `trellis-cli` defaults to 7.5, which can drop thin parts
+# (a sword blade vanished entirely); 10 keeps them. 13 is worse: thin parts detach.
 DEFAULT_GSS = 10.0
 
 STAGES = ["stage", "views", "ss", "shape", "decode", "texture", "write"]

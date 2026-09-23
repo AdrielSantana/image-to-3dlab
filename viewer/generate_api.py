@@ -1433,11 +1433,8 @@ def _hunyuan_xiong_readiness() -> dict[str, Any]:
         "model_availability": model_availability,
         "ready": ready,
         "warning": (
-            "Benchmarked 2026-08-19 on Flicker, octree=512, quantize=8, 30 steps (shape "
-            "stage only): 2.0 ~167s (default, cleanest); 2.0-turbo ~60-105s (real "
-            "distillation-noise dents even at 30 steps); 2.1 ~450s with octree-decode "
-            "(~48min without — not Xiong's recommended pick, weaker DINOv2-large "
-            "conditioner). See docs/hunyuan-mlx-recipes.md."
+            "2.0 is the default and the cleanest. 2.0-turbo is about twice as fast but "
+            "can leave small dents. 2.1 is slower and not recommended."
         ),
     }
 
@@ -1544,9 +1541,7 @@ def _pixal3d_readiness() -> dict[str, Any]:
         "missing_weights": missing,
         "ready": ready,
         "warning": (
-            "Single-view only, and res 512 is unavailable in this weight family. The "
-            "moss fox ran at res 1024 in 5m50s and needed no repaint stage; see "
-            "docs/pixal3d-evaluation-2026-09-20.md."
+            "Single-view only, and these weights have no res 512 option."
         ),
     }
 

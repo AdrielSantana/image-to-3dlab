@@ -244,16 +244,15 @@
       <div class="backend-fields" data-backend="pixal3d" hidden>
         <div class="field"><label for="pixal3d-res">Resolution</label>
           <select id="pixal3d-res"><option selected>1024</option><option>1536</option></select>
-          <small>The single-view weight family has no res-512 texture flow. 1024 took 5m50s
-            on the moss fox.</small></div>
+          <small>These weights have no 512 option. 1536 is slower and needs more
+            memory.</small></div>
         <div class="field"><label for="pixal3d-seed">Seed</label><input id="pixal3d-seed" type="number" step="1" value="42"></div>
         <div class="field"><label for="pixal3d-fov">Gauge FOV (radians)</label>
           <input id="pixal3d-fov" type="number" step="0.0001" value="0.3491">
           <small>Pixal3D conditions on pixel-aligned features projected through a camera, so
             single-view input needs one. 0.3491 is 20&deg;, the rig it was designed around.</small></div>
-        <small>Pre-matted RGBA goes straight in; anything else is matted with BiRefNet first
-          (~13s), which changes the cutout. No repaint stage needed &mdash; see
-          <a href="/docs/pixal3d-evaluation-2026-09-20.md" target="_blank" rel="noopener">the evaluation</a>.</small>
+        <small>A picture with a transparent background goes straight in; anything else has
+          its background cut out first (a few seconds). No repaint stage needed.</small>
       </div>
 
       <div class="backend-fields" data-backend="sf3d" hidden>
@@ -290,7 +289,8 @@
             <option value="2.0-turbo">2.0-turbo (fast, ~60-105s, minor distillation dents)</option>
             <option value="2.1">2.1 (not Xiong's recommended pick — weaker conditioner)</option>
           </select>
-          <small>Benchmarked 2026-08-19 on Flicker, octree=512, quantize=8, 30 steps, shape stage only: 2.0 ~167s; 2.0-turbo ~60-105s; 2.1 ~450s with octree-decode (~48min without). See docs/hunyuan-mlx-recipes.md.</small></div>
+          <small>2.0 is the default and the cleanest. 2.0-turbo is about twice as fast but
+            can leave small dents. 2.1 is slower and not recommended.</small></div>
         <div class="field"><label for="xiong-octree">Octree resolution</label>
           <select id="xiong-octree"><option>256</option><option>384</option><option selected>512</option><option>1024</option></select></div>
         <div class="field"><label for="xiong-seed">Shape seed</label><input id="xiong-seed" type="number" step="1" value="42"></div>
@@ -370,8 +370,8 @@
       <input id="finish-roughness" type="number" step="0.001" min="0" max="1" value="0.65"></div>
     <div class="field"><label for="finish-ior">IOR</label>
       <input id="finish-ior" type="number" step="0.01" min="1" max="3" value="1.45">
-      <small>Only base colour is baked, so these stand in for the source's material and are
-        tuned per asset by eye. The Snag wanted 0.648 / 0.686 / 1.4.</small></div>
+      <small>Only base colour is baked, so these stand in for the source's material.
+        Tune them by eye for each asset.</small></div>
 
     <label class="check"><input id="finish-skip-paint" type="checkbox"><span>skip repaint</span>
       <small>keep the transferred texture &mdash; right for Pixal3D output</small></label>
@@ -624,86 +624,49 @@
     </div>
     <div class="generate-card">
       <h2>Credits</h2>
-      <p>This repo wraps other people's models and ports. Attribution, by pipeline:</p>
-      <h3>Qwen-Image 2.1 (Generate Image)</h3>
+      <p>This lab builds on other people's models and ports. Thank you.</p>
       <ul>
-        <li><strong>Which model, exactly:</strong>
-          <a href="https://huggingface.co/leejet/Qwen-Image-2.1-GGUF">leejet/Qwen-Image-2.1-GGUF</a>,
-          the <code>Q8_0</code> file. That is a straight quantisation of the official
-          <a href="https://huggingface.co/Qwen/Qwen-Image-2.1">Qwen/Qwen-Image-2.1</a>
-          &mdash; <strong>the stock model, not an uncensored finetune.</strong> The
-          <code>abenzerps</code> GGUF repo is also stock; its card says an uncensored
-          version is still in development. Running locally there is no safety checker
-          anywhere in the pipeline, which is why any of these can feel unfiltered: that is
-          a property of running it yourself, not of the weights. Swapping in a different
-          variant is one file, the <code>--diffusion-model</code> argument; the text
-          encoder and VAE stay as they are.</li>
-        <li>Text encoder:
-          <a href="https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF">Qwen3-VL-8B-Instruct</a>
-          (<code>Q4_K_M</code>). Qwen-Image reads prompts with a vision-language model,
-          which is why the encoder is so large.</li>
-        <li>VAE: <a href="https://huggingface.co/Comfy-Org/Qwen-Image-2.1">Comfy-Org/Qwen-Image-2.1</a>.</li>
-        <li>Runtime: <a href="https://github.com/leejet/stable-diffusion.cpp">leejet/stable-diffusion.cpp</a>
-          (MIT), a prebuilt Metal binary. No ComfyUI needed.</li>
-        <li><strong>Licence: Qwen Research License, non-commercial only</strong>, and it
-          asks that you say &ldquo;Built with Qwen&rdquo;. Anything generated from these
-          weights inherits that, including a mesh made from a generated picture, so runs
-          land in <code>output/images/research_only/</code>.</li>
+        <li><a href="https://github.com/raven38/pixal3d.cpp">raven38/pixal3d.cpp</a>: Pixal3D in C++/GGML (MIT; bundled DINOv3 encoder under the DINOv3 License).</li>
+        <li><a href="https://huggingface.co/microsoft/TRELLIS.2-4B">Microsoft TRELLIS.2</a> (MIT), running on <a href="https://github.com/pedronaugusto/trellis2-apple">pedronaugusto/trellis2-apple</a> and Pedro Naugusto's Metal kernels.</li>
+        <li><a href="https://github.com/ZimengXiong/Hunyuan3D-MLX">ZimengXiong/Hunyuan3D-MLX</a> (MIT) and <a href="https://github.com/dgrauet">dgrauet</a>'s Hunyuan3D shape port, for <a href="https://huggingface.co/tencent/Hunyuan3D-2.1">Tencent Hunyuan3D</a> (Tencent Hunyuan Community License).</li>
+        <li><a href="https://github.com/Stability-AI/stable-fast-3d">Stability AI's Stable Fast 3D</a> (Stability AI Community License).</li>
+        <li><a href="https://huggingface.co/Qwen/Qwen-Image-2.1">Qwen-Image 2.1</a> (Qwen Research License, non-commercial), run by <a href="https://github.com/leejet/stable-diffusion.cpp">leejet/stable-diffusion.cpp</a> (MIT). Built with Qwen.</li>
+        <li><a href="https://github.com/ml-explore/mlx">Apple MLX</a> (MIT), <a href="https://github.com/danielgatis/rembg">rembg</a> (MIT), <a href="https://huggingface.co/wkcn/TinyCLIP-ViT-8M-16-Text-3M-YFCC15M">TinyCLIP</a> (MIT) and <a href="https://threejs.org">three.js</a> (MIT).</li>
       </ul>
-      <h3>TRELLIS.2 (clean port)</h3>
-      <ul>
-        <li>Mac/Metal port foundation: <a href="https://github.com/pedronaugusto/trellis2-apple">pedronaugusto/trellis2-apple</a>, plus Pedro Naugusto's <code>mtlbvh</code>, <code>mtldiffrast</code>, and <code>mtlgemm</code> Metal kernel libraries.</li>
-        <li>Upstream model: Microsoft <a href="https://huggingface.co/microsoft/TRELLIS.2-4B">TRELLIS.2-4B</a> (MIT license; the DINOv3 image encoder has its own separate license).</li>
-        <li>Input advisor: <a href="https://huggingface.co/wkcn/TinyCLIP-ViT-8M-16-Text-3M-YFCC15M">TinyCLIP ViT-8M/16</a> (MIT, advisory only; it never blocks generation).</li>
-        <li>Fused attention on Apple Silicon: <a href="https://github.com/ml-explore/mlx">Apple MLX</a> (MIT). Optional, off by default — pick it under <em>Attention backend</em>. PyTorch's MPS backend has no fused attention kernel and the Metal kernel above supports head dimensions only through 64, while TRELLIS.2-4B uses 128, so the stock path falls back to unfused attention that dominates sampling. Routing it through MLX cut a 1024-cascade run from 34.3 to 14.3 minutes. See <code>docs/mlx-attention-2026-09-20.md</code>.</li>
-        <li>The original Mac port (<a href="https://github.com/shivampkumar/trellis-mac">shivampkumar/trellis-mac</a>) is retired internally — kept only as the historical source of two bugs documented in <code>CLAUDE.md</code>, not as a build foundation.</li>
-      </ul>
-      <h3>Stable Fast 3D</h3>
-      <ul>
-        <li><a href="https://github.com/Stability-AI/stable-fast-3d">Stability-AI/stable-fast-3d</a> (Stability AI Community License).</li>
-      </ul>
-      <h3>Hunyuan3D-MLX — two variants, two different shape stages</h3>
-      <ul>
-        <li><strong>dgrauet shape + Xiong paint</strong>: shape from <a href="https://github.com/dgrauet">dgrauet</a>'s MLX port (<code>dgrauet/hunyuan3d-2.1-mlx</code>, Tencent-licensed code, stays vendor-cloned), paint from <a href="https://github.com/ZimengXiong/Hunyuan3D-MLX">ZimengXiong/Hunyuan3D-MLX</a>'s paint module (MIT, tracked in this repo). Re-verified 2026-08-19 against Xiong's own 2.0 shape stage: dgrauet's shape is still the cleanest we've tested (no dents/dimples), which is why this path stays despite the extra manual setup.</li>
-        <li><strong>Xiong, full pipeline</strong>: both shape and paint from <a href="https://github.com/ZimengXiong/Hunyuan3D-MLX">ZimengXiong/Hunyuan3D-MLX</a> (MIT), tracked in-repo at <code>hunyuan_mlx/</code> — a clone of this repo alone has the code; only weights are downloaded separately. Model choice benchmarked 2026-08-19: defaults to 2.0 (cleanest, Xiong's own recommended pick); 2.0-turbo is faster but shows real distillation-noise dents; 2.1 is not recommended (weaker DINOv2-large conditioner). See Known shortcomings and <code>docs/hunyuan-mlx-recipes.md</code>.</li>
-        <li>Underlying models: Tencent Hunyuan3D-2 / 2.1 (same Tencent Hunyuan Community License family — not licensed for use in the EU, UK, or South Korea; verify exact terms per model before any redistribution-sensitive use).</li>
-      </ul>
-      <h3>Evaluated, not shipped</h3>
-      <ul>
-        <li><a href="https://github.com/RobertBeckebans/AI_trellis2cpp">RobertBeckebans/AI_trellis2cpp</a> (C++/ggml Metal port) — a real upstream <code>purego</code> ARM64 bug was found and reported while testing it.</li>
-      </ul>
+      <p><strong>Licences travel with the output.</strong> Anything made from a Qwen-Image picture is non-commercial. The Hunyuan weights are not licensed in the EU, the UK or South Korea. Every run writes a <code>.provenance.json</code> saying which licences apply.</p>
     </div>
 
     <div class="generate-card">
       <h2>Speed</h2>
-      <p>A 1024 run is dominated by attention, which was measured at <strong>93.2% of sampling time</strong>. The <em>Attention backend</em> control decides how that work is done:</p>
-      <ul>
-        <li><strong>sdpa</strong> — the stock PyTorch MPS path. No extra setup. Storm Ram at 1024 cascade: <strong>34.3 min</strong>.</li>
-        <li><strong>mlx fp32</strong> — MLX's fused Metal kernel, same precision as stock. <strong>22.4 min</strong> on the same input and seed.</li>
-        <li><strong>mlx fp16</strong> — the fused kernel at half precision. <strong>14.3 min</strong>, 2.39x faster than stock.</li>
-      </ul>
-      <p>Both MLX options need one-time setup; the Setup card says whether they are available and what is missing. Run time varies a lot with the input image, so treat these as one worked example rather than a promise. fp16 computes attention at half precision: both were judged acceptable by eye on the Storm Ram, but if you are chasing fine detail, compare against fp32 before trusting it.</p>
+      <p>Rough times for one run, as measured. Yours will differ with the machine and the picture.</p>
+      <table class="about-table">
+        <thead><tr><th>Step</th><th>M5 MacBook, 32 GB</th><th>RTX 4090</th></tr></thead>
+        <tbody>
+          <tr><td>Text to image (Qwen-Image)</td><td>~4.5 min</td><td>~20 s</td></tr>
+          <tr><td>Image to 3D (Pixal3D)</td><td>~6 min</td><td>~3 min</td></tr>
+          <tr><td>Image to 3D (Hunyuan3D-MLX)</td><td>~9 min</td><td>Mac only</td></tr>
+          <tr><td>Image to 3D (TRELLIS.2)</td><td>15&ndash;35 min</td><td>Mac only</td></tr>
+        </tbody>
+      </table>
+      <p>On a Mac, TRELLIS.2 runs about twice as fast with <em>Attention backend</em> set to <code>mlx</code>.</p>
+    </div>
 
-      <h2>Known shortcomings</h2>
-      <p>As of 2026-08-19.</p>
+    <div class="generate-card">
+      <h2>Known issues</h2>
       <ul>
-        <li><strong>Texture tear on concave geometry (inner thigh, armpit, ear folds) — fixed 2026-08-19.</strong> The paint stage filled texels no camera could see (self-occluded creases) by grabbing the nearest already-painted texel in flat 2D UV-atlas space — xatlas can and does pack unrelated 3D regions (an eye chart, a leg chart) next to each other on that flat sheet, so occluded creases were filled with the wrong, unrelated color. Fixed by filling from the nearest neighbor in actual 3D surface space instead. Applies to <em>both</em> Hunyuan variants — they share the same paint stage, and the shape-stage geometry fusion defect noted previously is a separate, still-open issue.</li>
-        <li>Hunyuan's paint stage has a hard face-count wall: the <code>xatlas</code> UV-unwrap step goes from ~3 min to 37+ min between 500k and 700k faces; 1M faces never completed. Keep <code>decimation_target</code> at or under 500,000. Applies to both Hunyuan variants — they share the same paint stage.</li>
-        <li>TRELLIS.2 material generation can drift severely on some flat/vector-style references. It is conditioned on DINOv3 image features and generated geometry, rather than copying source pixels onto the mesh. See <a href="/docs/trellis2-flat-illustration-colour-drift.md">the investigation and input guidance</a>.</li>
-        <li>dgrauet's shape stage (<code>vendor/hunyuan-mlx</code>) stays manually vendor-cloned — it's Tencent-licensed code, not just weights, so it isn't part of the clone-and-go simplification below. Xiong's shape+paint (<code>hunyuan_mlx/</code>) is MIT and tracked in-repo: <code>uv sync</code> in <code>hunyuan_mlx/shape</code> and <code>hunyuan_mlx/paint</code>, then <code>python hunyuan_mlx/download_weights.py</code>.</li>
-        <li><strong>Xiong, full pipeline — benchmarked 2026-08-19</strong> (Flicker, octree=512, quantize=8, 30 steps, shape stage only): 2.0 ~167s (default); 2.0-turbo ~60-105s (real distillation-noise dents even at 30 steps — its PCM schedule caps at 100 steps); 2.1 ~450s with <code>--octree-decode</code>, ~48min without, and not Xiong's own recommended model regardless (weaker DINOv2-large conditioner). Full writeup: <code>docs/hunyuan-mlx-recipes.md</code>.</li>
-        <li>The retired TRELLIS Mac port shipped two self-inflicted bugs for a long time before they were caught: a 200,000-face cap that crushed every decode with a crude decimator, and inconsistent mesh winding that left assets hollow under backface culling. Full story in <code>CLAUDE.md</code>.</li>
+        <li><strong>Hunyuan's paint stage stalls above ~500,000 faces.</strong> Keep <code>decimation_target</code> at or under 500,000.</li>
+        <li><strong>TRELLIS.2 can get colours badly wrong on flat or vector-style art.</strong> Photos and softly lit 3D-style pictures work best. <a href="/docs/trellis2-flat-illustration-colour-drift.md">Input guidance</a>.</li>
+        <li><strong>NVIDIA: Pixal3D's ready-made build needs driver 575 or newer.</strong> On an older driver, the installer compiles it instead if the CUDA toolkit is installed.</li>
+        <li><strong>NVIDIA on a headless Linux server:</strong> text to image needs <code>sudo apt install libegl1 libgl1</code> to reach the GPU. The installer checks for this.</li>
+        <li><strong>Windows is untested.</strong> If you try it, tell us how it went.</li>
       </ul>
     </div>
 
     <div class="generate-card">
       <h2>Power-user notes</h2>
-      <p>Peeking behind the curtain without the browser:</p>
       <ul>
-        <li>A submitted job's folder appears in <code>output/</code> the instant you hit Generate, before any compute starts — <code>ls -lat output/ | head</code> confirms a job was accepted.</li>
-        <li><code>tail -f output/&lt;folder&gt;/run.log</code> streams the exact same progress lines the browser's live view shows.</li>
-        <li><code>ps aux | grep -E "trellis_space_generate|hunyuan_mlx_generate|hunyuan_mlx_xiong_generate|pipeline.py"</code> confirms the generation subprocess is alive and shows its exact arguments.</li>
-        <li><code>debug</code> (off by default) keeps only the final <code>.glb</code>. Check it to keep the manifest, textures, and intermediate meshes a run produces along the way.</li>
+        <li><code>tail -f output/&lt;folder&gt;/run.log</code> shows the same progress as the browser.</li>
+        <li>Tick <code>debug</code> to keep a run's manifest, textures and in-between meshes, not just the final <code>.glb</code>.</li>
       </ul>
     </div>
   </div>
