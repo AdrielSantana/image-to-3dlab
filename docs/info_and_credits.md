@@ -38,6 +38,4 @@ Only the ones everyone can hit:
   [picking a picture](trellis2-flat-illustration-colour-drift.md).
 - **NVIDIA: Pixal3D's ready-made build needs driver 575 or newer.** On an older driver the
   installer compiles it instead, if the CUDA toolkit is installed.
-- **NVIDIA on a headless Linux server:** text to image needs
-  `sudo apt install libegl1 libgl1` to reach the GPU. The installer checks for this.
 - **Windows is untested.**
