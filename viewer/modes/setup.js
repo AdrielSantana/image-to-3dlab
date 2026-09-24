@@ -14,7 +14,18 @@
 const s = (id) => document.getElementById(id);
 const SKIP_KEY = 'i2l.setup.skip';
 
-const state = { catalog: null, source: null, running: null };
+// `panelFor` is the backend whose download the progress panel shows. It outlives the run
+// so the finished result stays under the card that started it.
+const state = { catalog: null, source: null, running: null, panelFor: null };
+
+/** Put the progress panel right under the card it belongs to. It used to sit below every
+ * card, so on a long list the bar was off-screen and a click on Set up looked like it had
+ * done nothing (issue #36). */
+function placeRunPanel() {
+  const card = state.panelFor
+    && s('setup-backends').querySelector(`[data-backend="${CSS.escape(state.panelFor)}"]`);
+  if (card) card.after(s('setup-run'));
+}
 
 /** Whether the user asked not to land here. Browser storage can throw; never block on it. */
 export function skipRequested() {
@@ -234,6 +245,9 @@ async function startDownload(backend, button) {
   s('setup-run-detail').textContent = 'starting…';
   s('setup-log').textContent = '';
   s('setup-run-bar').style.width = '0%';
+  state.panelFor = backend.id;
+  placeRunPanel();
+  s('setup-run').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   try {
     const response = await fetch(`/api/setup/${encodeURIComponent(backend.id)}/download`, {
       method: 'POST',
@@ -304,8 +318,10 @@ export async function load() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.catalog = await response.json();
     s('setup-summary').innerHTML = summarise(state.catalog);
+    host.after(s('setup-run')); // park it outside the cards before they are rebuilt
     host.innerHTML = '';
     for (const backend of state.catalog.backends) host.appendChild(backendCard(backend));
+    placeRunPanel();
     document.dispatchEvent(new CustomEvent('viewer:catalog', { detail: state.catalog }));
   } catch (error) {
     s('setup-summary').textContent = `Could not read machine status: ${error.message}`;

@@ -120,6 +120,7 @@
 .setup-card-licence, .setup-card-extra { opacity: .7; margin: 6px 0 0; }
 .setup-run { margin-top: 18px; padding: 12px 14px; border-radius: 10px; background: #15181e;
   border: 1px solid #262b36; }
+.setup-backends .setup-run { margin-top: 0; }
 .setup-run-head { display: flex; justify-content: space-between; align-items: center; }
 .setup-run-detail { font-size: 12px; opacity: .8; margin-top: 4px; }
 .setup-run pre { max-height: 220px; overflow: auto; font-size: 11px; opacity: .65;
