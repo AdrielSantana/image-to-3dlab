@@ -12,7 +12,6 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -32,6 +31,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 # Sibling import must also work when tests load this file directly via importlib.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import image_api
+from image_to_3dlab import processes
 from image_to_3dlab.host import executable  # image_api put the repo on sys.path
 from rig_api import (
     ARTIFACTS as RIG_ARTIFACTS,
@@ -876,21 +876,12 @@ def _remove_pid_file(directory: Path) -> None:
 
 
 def _killpg_if_alive(pid: int) -> None:
-    """Best-effort SIGTERM to a process group; a pid that's already gone is not an error."""
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+    """Best-effort stop of a process group; a pid that's already gone is not an error."""
+    processes.terminate_group(pid)
 
 
 def _process_group_alive(pid: int) -> bool:
-    try:
-        os.killpg(pid, 0)  # signal 0: existence check only, sends nothing
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # exists, just not ours to signal -- still alive for reporting purposes
+    return processes.group_alive(pid)
 
 
 def _terminate_active_job() -> None:
@@ -985,7 +976,7 @@ def _run_job(job: Job) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=0,
-            start_new_session=True,
+            **processes.group_popen_kwargs(),
         )
         _write_pid_file(job.directory, job.process.pid)
         reader = threading.Thread(target=_read_process, args=(job,), daemon=True)

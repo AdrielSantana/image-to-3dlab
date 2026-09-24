@@ -920,18 +920,13 @@ def test_reconcile_kills_and_annotates_a_live_orphan(tmp_path, monkeypatch):
     (job_dir / "pid").write_text("4242")
     (job_dir / "run.log").write_text("step 3/15\n")
     killed = []
-
-    def fake_killpg(pid, sig):
-        if sig == api.signal.SIGTERM:
-            killed.append((pid, sig))
-        # sig == 0 (the liveness probe) raises nothing -- simulates a live process group
-
-    monkeypatch.setattr(api.os, "killpg", fake_killpg)
+    monkeypatch.setattr(api, "_process_group_alive", lambda pid: True)
+    monkeypatch.setattr(api, "_killpg_if_alive", killed.append)
 
     touched = api._reconcile_orphaned_jobs(tmp_path)
 
     assert touched == ["live-job"]
-    assert killed == [(4242, api.signal.SIGTERM)]
+    assert killed == [4242]
     assert "orphaned generation" in (job_dir / "run.log").read_text()
     assert not (job_dir / "pid").exists()
 

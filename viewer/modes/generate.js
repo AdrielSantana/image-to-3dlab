@@ -1,6 +1,7 @@
 // --- Generate mode -------------------------------------------------------------------
 import { JobProgressPanel, formatDuration } from '../components/job-progress.js';
 import { presentTrellisAdvice } from '../components/trellis-input-advice.js';
+import { alphaBadge } from '../components/alpha-badge.js';
 
 // Backend metadata (stages, labels, requires_alpha) is server-owned truth (viewer/generate_api.py
 // BACKENDS registry) -- fetched once so the frontend never hardcodes a second copy that can drift.
@@ -54,6 +55,12 @@ async function inspectAlpha(file) {
     return file.type === 'image/png' || file.type === 'image/webp' ? min < 255 : false;
   } catch (_) { return false; }
 }
+function renderAlphaBadge() {
+  const badge = g('generate-alpha');
+  const { tone, text } = alphaBadge(gen.hasAlpha, backendRequiresAlpha());
+  badge.className = `alpha-badge ${tone}`;
+  badge.textContent = text;
+}
 function resetTrellisAdvice() {
   gen.adviceRequest += 1;
   const result = g('trellis-input-result');
@@ -95,8 +102,7 @@ function setGenerateFile(file) {
   inspectAlpha(file).then((hasAlpha) => {
     if (gen.file !== file) return;
     gen.hasAlpha = hasAlpha;
-    badge.className = `alpha-badge ${hasAlpha ? 'alpha-good' : 'alpha-bad'}`;
-    badge.textContent = hasAlpha ? 'transparent foreground ✓' : 'no alpha — enable rembg to continue';
+    renderAlphaBadge();
     updateGenerateButton();
   });
   inspectTrellisInput(file);
@@ -388,8 +394,8 @@ g('generate-backend').onchange = () => {
   }
   buildStageRows(backendId);
   jobProgress.reset();
-  gen.hasAlpha = false;
-  g('generate-alpha').hidden = true;
+  if (gen.file) renderAlphaBadge(); // the image is unchanged; only the wording depends on the backend
+  updateGenerateButton();
   g('trellis-input-guidance').hidden = backendId !== 'trellis';
   resetTrellisAdvice();
   if (backendId === 'trellis' && gen.file) inspectTrellisInput(gen.file);

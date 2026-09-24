@@ -787,3 +787,24 @@ def test_update_banner_stays_hidden_when_off_or_up_to_date():
     same = json.dumps({**CHECK, "newer": False})
     assert _run_banner(f"[b.bannerFor({off}, null), b.bannerFor({same}, null),"
                        " b.bannerFor(null, null)]") == [None, None, None]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_alpha_badge_only_asks_for_rembg_when_the_backend_needs_a_cutout():
+    """Issue #36: Pixal3D cuts out the background itself, yet the badge told a Windows
+    tester to 'enable rembg to continue', an option only TRELLIS has."""
+    module_url = (REPO / "viewer" / "components" / "alpha-badge.js").as_uri()
+    program = (
+        f"import {{ alphaBadge }} from {json.dumps(module_url)};"
+        "console.log(JSON.stringify(["
+        "alphaBadge(true, true), alphaBadge(false, true), alphaBadge(false, false)"
+        "]));"
+    )
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    has_cutout, trellis_without, pixal_without = json.loads(result.stdout)
+
+    assert has_cutout["tone"] == "alpha-good"
+    assert trellis_without["tone"] == "alpha-bad" and "rembg" in trellis_without["text"]
+    assert pixal_without["tone"] == "alpha-good"
+    assert "rembg" not in pixal_without["text"]
