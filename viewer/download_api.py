@@ -21,7 +21,6 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -32,7 +31,9 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "viewer"))
+sys.path.insert(0, str(REPO))
 
+from image_to_3dlab import processes  # noqa: E402
 from backend_catalog import (  # noqa: E402
     BY_ID,
     HF_HUB_DIR,
@@ -190,13 +191,7 @@ def cancel(backend_id: str) -> None:
         raise RuntimeError("no download is running for that backend")
     run.cancelled = True
     if run.process is not None and run.process.poll() is None:
-        try:
-            if os.name == "nt":
-                run.process.terminate()
-            else:
-                os.killpg(run.process.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
+        processes.terminate_group(run.process.pid)
 
 
 def remove(backend_id: str) -> dict[str, Any]:
@@ -287,9 +282,7 @@ def _run(run: DownloadRun) -> None:
                  "HF_HUB_DISABLE_PROGRESS_BARS": "1"},
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
             # Its own process group, so cancelling kills the downloader's children too.
-            # POSIX-only: Windows rejects the argument outright, and `cancel` falls back to
-            # terminating the process there.
-            **({"start_new_session": True} if os.name != "nt" else {}),
+            **processes.group_popen_kwargs(),
         )
         assert run.process.stdout is not None
         for raw in run.process.stdout:

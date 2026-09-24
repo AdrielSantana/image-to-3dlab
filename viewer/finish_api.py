@@ -17,7 +17,6 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -29,6 +28,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
+from image_to_3dlab import processes  # noqa: E402
 
 OUTPUT_ROOT = REPO / "output" / "finish"
 WORKER = REPO / "scripts" / "retopo_repaint.py"
@@ -391,7 +391,7 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
             build_command(job, job.settings, resume=job.resume), cwd=str(REPO),
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-            start_new_session=True,
+            **processes.group_popen_kwargs(),
         )
         job.directory.joinpath("pid").write_text(str(job.process.pid))
         assert job.process.stdout is not None
@@ -441,10 +441,7 @@ def cancel_job(job: FinishJob) -> None:
     job.cancel_requested = True
     job.status = "cancelling"
     if job.process is not None and job.process.poll() is None:
-        try:
-            os.killpg(job.process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        processes.terminate_group(job.process.pid)
 
 
 def status_payload(job: FinishJob) -> dict[str, Any]:

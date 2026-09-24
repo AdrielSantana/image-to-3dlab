@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -18,6 +17,7 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+from image_to_3dlab import processes  # noqa: E402
 from image_to_3dlab.rig_sidecar import load_sidecar, plan_corrections, verify_asset, verify_scene  # noqa: E402
 
 OUTPUT_ROOT = REPO / "output" / "rig-rebind"
@@ -149,7 +149,7 @@ def run_job(job: RigJob, manager: RigJobManager = RIG_JOBS) -> None:
         job.process = subprocess.Popen(
             build_command(job, blender), cwd=str(REPO), env={**os.environ, "PYTHONUNBUFFERED": "1"},
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-            start_new_session=True,
+            **processes.group_popen_kwargs(),
         )
         job.directory.joinpath("pid").write_text(str(job.process.pid))
         assert job.process.stdout is not None
@@ -200,10 +200,7 @@ def cancel_job(job: RigJob) -> None:
     job.cancel_requested = True
     job.status = "cancelling"
     if job.process is not None and job.process.poll() is None:
-        try:
-            os.killpg(job.process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        processes.terminate_group(job.process.pid)
 
 
 def status_payload(job: RigJob) -> dict[str, Any]:
