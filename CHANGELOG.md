@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-24
+
+**Now runs on NVIDIA Linux.** Text to image to 3D works on a Linux machine with an NVIDIA
+card, as well as on Apple Silicon: images via stable-diffusion.cpp's Vulkan build, 3D via
+Pixal3D and Stable Fast 3D on CUDA. Tested end to end on an RTX 4090 and an RTX 3090 Ti.
+One line installs it, and the same line updates it. Windows is wired up but untested.
+
+### Added
+- **Text to image to 3D on NVIDIA (Linux, and Windows untested).** The Generate Image
+  tab and the Pixal3D route now run on a Linux or Windows machine with an NVIDIA card as
+  well as on Apple Silicon. Nothing was ported: both upstreams publish NVIDIA builds, and
+  the installers now choose the right one for the machine. The CUDA runtime is bundled,
+  so there is no CUDA toolkit to install.
+- **`scripts/bootstrap_pixal3d.py`** replaces `bootstrap_pixal3d_cpp.sh`. Macs still build
+  from source with Metal. On Linux with the CUDA toolkit it compiles for the card, which
+  ran about twice as fast as upstream's prebuilt on a 4090 (unless the toolkit is newer
+  than the driver). Otherwise NVIDIA machines get the prebuilt CUDA 12 build when the
+  driver is 575 or newer, or it says which driver to install. `--prebuilt` picks the
+  prebuilt anyway, for comparing the two. It names
+  the route, the size and the licence and asks before downloading, which the shell
+  script never did.
+- **Stable Fast 3D on NVIDIA Linux, and `scripts/bootstrap_sf3d.py`.** SF3D now runs on
+  CUDA when there is a card. The new installer builds its texture baker with CUDA when
+  the CUDA toolkit matches PyTorch, with its CPU kernel when it does not, and with Metal
+  on a Mac. It also fetches DINOv2 (1.1 GB) up front, which SF3D used to download
+  unannounced on its first run, and explains the gated licence step if Hugging Face refuses.
+  Setup & Status can now install SF3D by itself.
+- **The viewer says when a new version is out.** While it runs, it asks GitHub at most once
+  a day for the newest release (nothing about you is sent) and shows a slim banner with the
+  exact line that updates this install. Offline, nothing happens. Dismiss it until the next
+  release, turn it off on the About page, or set `I3D_NO_UPDATE_CHECK=1`.
+- **A one-line installer, which is also the updater.** `install.sh` (Mac and Linux) and
+  `install.ps1` (Windows, untested) check the machine, install the code and Python 3.11,
+  and print how to start the viewer. Re-running moves to the newest release and refuses to
+  overwrite local edits. They download no model weights. `--yes` and `--dry-run` are
+  there for scripts and agents.
+- **An About page, which also announces updates.** `Credits & Info` is now `About`. Its top
+  says hello, names your machine and lists the routes that run on it, with what changed
+  in the latest release read from this changelog. The viewer lands there once on a first
+  visit and once after each update. The name in the top bar opens it too, and lives in
+  `viewer/brand.json`.
+- **No silent CPU runs on NVIDIA.** If stable-diffusion.cpp cannot reach the GPU it quietly
+  runs on the CPU instead, which takes many minutes per picture. The installer now checks
+  for the GPU before downloading weights, and the viewer stops a CPU-only image job at
+  once. Both say what fixes it (on a headless Linux box, `apt install libegl1 libgl1`).
+
+### Fixed
+- `image_to_3dlab.__version__` said 0.1.0 through the 0.2.0 release. A test now keeps
+  it in step with this changelog.
+- **SF3D models came out inside a grey slab** when the input came from Generate Image.
+  Those images have a transparency channel that is really just noise, and SF3D took
+  that as "already cut out", so the background became geometry. SF3D now checks
+  whether anything is actually transparent, and cuts the background out if not.
+- SF3D on NVIDIA Linux failed at the texture step when the CUDA toolkit did not match
+  PyTorch. The baker falls back to its CPU kernel there, but SF3D still handed it GPU
+  data. It now bakes on the CPU and hands the result back to the GPU.
+- Generate Image read sd-cli's output in 256-byte blocks, so short lines could sit unseen
+  until more arrived. It now reads whatever is there.
+- Setup & Status said a finished download was a few bytes ("done · 120 B") with newer
+  huggingface_hub, which stores the files outside each model's folder and links to them.
+  Sizes now follow the links and count each file once.
+- Setup & Status showed "0 B of 8.4 GB" while Pixal3D fetched its 674 MB build, and on a
+  slow line would have called it stalled. Until weights arrive it now shows the current
+  step, and only claims a stall once they have started.
+- Pixal3D's CUDA compile ran one job per CPU with no limit, and on a 96-CPU machine
+  with 31 GB of memory the compilers were killed for running out of it. It now caps the
+  job count by memory as well, and reads a container's real limits, not the host's.
+
+### Removed
+- `scripts/bootstrap_pixal3d_cpp.sh`, superseded by `scripts/bootstrap_pixal3d.py`.
+
 ## [0.2.0] - 2026-09-23
 
 ### Added

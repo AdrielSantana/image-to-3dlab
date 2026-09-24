@@ -1,5 +1,7 @@
 import './modes/compare.js';
 import { skipRequested } from './modes/setup.js';
+import { welcomeOnArrival } from './modes/welcome.js';
+import { checkForUpdates } from './modes/update.js';
 
 import './modes/generate-image.js';
 import './modes/generate.js';
@@ -17,7 +19,7 @@ const modes = {
   finish: byId('finish-view'),
   rig: byId('rig-view'),
   animate: byId('animate-view'),
-  credits: byId('credits-view'),
+  about: byId('about-view'),
 };
 
 function setMode(activeMode) {
@@ -28,7 +30,7 @@ function setMode(activeMode) {
   modes.finish.hidden = activeMode !== 'finish';
   modes.rig.hidden = activeMode !== 'rig';
   modes.animate.hidden = activeMode !== 'animate';
-  modes.credits.hidden = activeMode !== 'credits';
+  modes.about.hidden = activeMode !== 'about';
   for (const mode of Object.keys(modes)) {
     byId(`mode-${mode}`).classList.toggle('on', mode === activeMode);
   }
@@ -38,6 +40,12 @@ function setMode(activeMode) {
 for (const mode of Object.keys(modes)) {
   byId(`mode-${mode}`).onclick = () => setMode(mode);
 }
+
+// The About page's "Get started" button, and its first-visit landing, ask for a screen
+// by name.
+document.addEventListener('viewer:navigate', (event) => {
+  if (modes[event.detail?.mode]) setMode(event.detail.mode);
+});
 
 subscribeRigEditState(({ pendingCount }) => {
   const button = byId('mode-rig');
@@ -51,3 +59,5 @@ subscribeRigEditState(({ pendingCount }) => {
 // weights exist and the page is where that is explained. Once the user ticks "skip this
 // next time" it is never the landing page again -- it stays one click away in the menu.
 setMode(skipRequested() ? 'generate' : 'setup');
+welcomeOnArrival();
+checkForUpdates();

@@ -2,21 +2,22 @@
 
 ![Three source images above the textured 3D models generated from them: a photoreal warrior bust, a stylised garden gnome, and a multi-object shoe-house diorama](docs/images/one-image-in-textured-model-out.jpg)
 
-**Turn a single image into a textured 3D model, locally on Apple Silicon, with a
-license-provenance record for every result.**
+**Turn a single image into a textured 3D model on your own machine (an Apple Silicon
+Mac, or Linux with an NVIDIA card), with a license-provenance record for every result.**
 
 Apple Silicon deserves more love in the 3D and Imagen community. So this is an attempt at that. 
 
 
 Drop in a picture of a character or object; get back a `.glb` (with PBR texture) plus a
 `.provenance.json` sidecar recording exactly how it was made and under which licenses. This should make your game-dev or whatever else you're up to easier to manage.
-Everything runs on your Mac; nothing is uploaded to a cloud service.
+Everything runs on your machine; nothing is uploaded to a cloud service.
 
 **No picture to start from?** There is now a **Generate Image** tab that makes one. Type a
 prompt, get a source image, hand it to **Generate 3D**. It runs Qwen-Image 2.1 on your own
-machine, about four and a half minutes an image on an M-series Mac.
+machine: about four and a half minutes an image on an M-series Mac, about twenty seconds
+on an RTX 4090.
 
-![Three creatures generated from text prompts on a laptop: a low-poly fox in 4m22s, a storm ram in 4m32s, and a glitch hummingbird in 4m48s](docs/images/prompt-to-source-image.jpg)
+![Three creatures generated from text prompts on a laptop, about four and a half minutes each](docs/images/prompt-to-source-image.jpg)
 
 Built with Qwen. Those weights are **non-commercial**, and anything you build from a
 generated picture inherits that, so the pipeline sorts those runs into their own folder and
@@ -24,48 +25,51 @@ says so in the sidecar. Bring your own image and none of that applies.
 
 Five backends, one Generate 3D page. Sadly life is full of trade-offs, so pick the tradeoff you want (lol):
 
-| Backend | Best for | Setup | License |
-|---|---|---|---|
-| **Pixal3D (C++/GGML, Metal)** ⭐ | Best results we have; one pass, ~6 min, no repaint needed | One script: `scripts/bootstrap_pixal3d_cpp.sh` (needs Xcode's Metal compiler, 8.1 GB weights) | MIT (code + flow weights); DINOv3 License (bundled encoder) |
-| **Hunyuan3D-MLX (Xiong, full pipeline)** | Fast, clean results | Clone-and-go: code is tracked in this repo, weights download separately | MIT (code); Tencent Community License (weights) |
-| **Hunyuan3D-MLX (dgrauet shape + Xiong paint)** | The single cleanest shape we've tested, at the cost of manual setup | Vendor-cloned, manual | Tencent Community License (code + weights) |
-| **TRELLIS.2** | Highest fidelity, closest to the official demo | One-button bootstrap from the web UI (~1h) | MIT + DINOv3 License |
-| **Stable Fast 3D** | Fastest, lower fidelity | Vendor-cloned, manual | Stability AI Community License |
+| Backend | Best for | Runs on | Setup | License |
+|---|---|---|---|---|
+| **Pixal3D (C++/GGML)** ⭐ | Best results we have; one pass, no repaint needed | Mac, NVIDIA | Setup & Status, or `scripts/bootstrap_pixal3d.py` (8.4 GB weights) | MIT (code + flow weights); DINOv3 License (bundled encoder) |
+| **Hunyuan3D-MLX (Xiong, full pipeline)** | Fast, clean results | Mac | Code is in this repo; weights download separately | MIT (code); Tencent Community License (weights) |
+| **Hunyuan3D-MLX (dgrauet shape + Xiong paint)** | The cleanest shapes, at the cost of manual setup | Mac | Cloned separately, manual | Tencent Community License (code + weights) |
+| **TRELLIS.2** | Highest fidelity, closest to the official demo | Mac | Setup & Status (~1h) | MIT + DINOv3 License |
+| **Stable Fast 3D** | Fastest, lower fidelity | Mac, NVIDIA (Linux) | Setup & Status, or `scripts/bootstrap_sf3d.py` (gated weights) | Stability AI Community License |
 
-⭐ Start with **Pixal3D**. It is TRELLIS.2's backbone with pixel-aligned, camera-aware
-conditioning, and on the assets tested here it produced correct saturated colour in a single
-pass where TRELLIS.2 bleached flat illustrations badly enough to need a separate repaint
-stage, in 5m50s against 14 min. Raise `--gss` to 10; at the 7.5 default a thin sword blade
-went missing entirely. Numbers, caveats and the Mac-port comparison:
-[`docs/pixal3d-evaluation-2026-09-20.md`](docs/pixal3d-evaluation-2026-09-20.md).
+⭐ Start with **Pixal3D**. It keeps flat, saturated colours in a single pass, where
+TRELLIS.2 often needs a separate repaint.
 
 <p align="center">
   <img src="docs/images/turntable-pixal3d-warrior.webp" width="360"
        alt="A full 360-degree turn of the generated warrior bust, showing textured geometry from every side">
   <br>
   <sub>The warrior above, turned through 360°. Pixal3D, one pass, no repaint stage.<br>
-  Every model on this page came from a single image on an M-series Mac.</sub>
+  Every model on this page came from a single image.</sub>
 </p>
 
 Hunyuan3D-MLX (Xiong, full pipeline) remains the quickest to get running from a fresh clone
 (~9 min shape+paint end to end at its default model).
 Reach for TRELLIS.2 when fidelity matters more than speed. Its material model can produce
 severe colour drift on flat/vector-style illustrations; prefer photographs or softly lit
-3D-style references. This is an input-dependent upstream model behaviour, not a Metal-port
-artifact. See the [investigation and input guidance](docs/trellis2-flat-illustration-colour-drift.md).
+3D-style references. See [picking a picture for TRELLIS.2](docs/trellis2-flat-illustration-colour-drift.md).
 
 ---
 
 ## Quick start: web UI (recommended)
 
+**Mac or Linux:**
 ```bash
-git clone https://github.com/Bingeljell/image-to-3dlab.git && cd image-to-3dlab
-python3 -m venv .venv && .venv/bin/pip install Pillow
-.venv/bin/python viewer/serve.py
-# opens http://127.0.0.1:8777/viewer/index.html
+curl -fsSL https://raw.githubusercontent.com/Bingeljell/image-to-3dlab/main/install.sh | bash
 ```
 
-That's it. No other deps needed until you pick a backend below.
+**Windows** (untested, tell us how it goes):
+```powershell
+irm https://raw.githubusercontent.com/Bingeljell/image-to-3dlab/main/install.ps1 | iex
+```
+
+It checks your machine, installs the code and Python 3.11, and prints how to start the
+viewer. It downloads **no model weights**: you choose those in **Setup & Status**, which
+states each size and licence and asks first. To update, run the same line again.
+
+For scripts and agents: `curl -fsSL …/install.sh | bash -s -- --yes --dir ~/lab`
+(`--dry-run` shows what it would do).
 
 Go to **Generate**, pick a backend from the dropdown. Each one has its own **Setup**
 status telling you exactly what's missing:
@@ -82,25 +86,23 @@ status telling you exactly what's missing:
   different one; `--all` fetches every shape model, which is about 24 GB and more than
   the default route uses. Full detail, including the one extra manual step for RealESRGAN super-res
   weights: [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md).
-- **Pixal3D**: one script, no venv of its own:
-  ```bash
-  scripts/bootstrap_pixal3d_cpp.sh
-  ```
-  Builds [`raven38/pixal3d.cpp`](https://github.com/raven38/pixal3d.cpp) with Metal (the
-  backend is automatic on Apple builds) and fetches the 8.1 GB Q8_0 single-view weight set.
-  Needs Xcode's Metal compiler, not just the command-line tools; the script prints the two
-  commands that fix that if it is missing. No Hugging Face token: the matting and image
-  encoders are ungated mirrors, and BRIA RMBG-2.0 is never used.
+- **Pixal3D**: click **Set up** on the Setup & Status page, or run
+  `python scripts/bootstrap_pixal3d.py`. It says what it will download and asks first. On a
+  Mac it compiles with Metal (needs full Xcode). On NVIDIA Linux with the CUDA toolkit it
+  compiles for your card (a few minutes, once, and about twice as fast to run); otherwise
+  it fetches a ready-made CUDA build (driver 575+).
+- **Stable Fast 3D**: accept Stability's licence at
+  [huggingface.co/stabilityai/stable-fast-3d](https://huggingface.co/stabilityai/stable-fast-3d),
+  run `hf auth login`, then set it up from Setup & Status or run
+  `python scripts/bootstrap_sf3d.py`.
 - **TRELLIS.2**: click **Run setup** (bootstraps the Metal port, ~1h, needs `uv`,
   Python 3.11 and Xcode command-line tools), or run it manually:
   `python scripts/bootstrap_trellis_space_macos.py`. First run downloads the ~14 GB
   TRELLIS.2-4B weights automatically. Selecting an image also runs an optional local
   TinyCLIP style advisory; its small checkpoint downloads on first use and never blocks
   generation.
-- **Hunyuan3D-MLX (dgrauet shape + Xiong paint)** and **Stable Fast 3D**: no automated
-  setup or documented setup guide yet; background and licensing in
-  [`docs/info_and_credits.md`](docs/info_and_credits.md), but expect to read the source
-  (`scripts/hunyuan_mlx_generate.py`, `viewer/generate_api.py`) to set these up by hand.
+- **Hunyuan3D-MLX (dgrauet shape + Xiong paint)**: no automated setup yet; expect to read
+  `scripts/hunyuan_mlx_generate.py` to set it up by hand.
 
 Then drop a **pre-masked PNG** (transparent background), pick your settings, hit
 **Generate**. Progress streams live; the GLB lands in `output/`. You can also **Compare**
@@ -177,13 +179,6 @@ Three stages, each skippable:
 Every run writes a JSON record of the settings used, so a batch of finished assets is
 comparable rather than each one being tuned by hand.
 
-## Where this is going
-
-[`docs/browser-workshop.md`](docs/browser-workshop.md) is the product and architecture
-boundary for the browser workshop: upload a creature image, generate a 3D asset, make it
-deformable with a known rig, paint it, author an animation, export a GLB. Read it before
-adding to `viewer/`.
-
 ## Blender animation recipes
 
 The reusable Blender tooling lives in `scripts/blender_*.py`: import, inspect,
@@ -195,50 +190,41 @@ that reads each script's own docstring.
 Per-creature rigs and animations are **not** shipped. They lived here once and
 were model-specific references rather than drop-in tools, so they now sit in a
 git-ignored `characters/<name>/` folder alongside their tests. The techniques are
-documented in `docs/`; the creature-specific scripts are ours, not yours.
-
-The [reusable quadruped gait plan](docs/reusable-gait-quadruped-trot.md) records
-the accepted trot, the implementation handoff and the validation needed before
-claiming support across Rigify basic-quadruped characters.
+documented in `docs/`; the creature-specific scripts are ours, not yours. The
+[quadruped pipeline](docs/quadruped-pipeline.md) walks through rigging a four-legged
+character with them.
 
 ## Requirements
 
 | Thing | Why |
 |---|---|
-| Apple Silicon Mac (M-series) | Metal kernels / MLX; 32 GB unified memory recommended |
-| macOS + Xcode command-line tools | compiles the Metal shaders during TRELLIS setup |
+| Apple Silicon Mac (M-series), 32 GB recommended | Every route |
+| **or** Linux with an NVIDIA card (24 GB VRAM tested) | Pixal3D, Stable Fast 3D, Generate Image |
+| macOS: full Xcode | compiles the Metal kernels for Pixal3D and TRELLIS |
 | `uv` | builds the reproducible Python environments |
 | Python 3.11 (TRELLIS) / 3.12 (Hunyuan3D-MLX) | pinned by each backend's own setup |
 | ~13 GB disk | Hunyuan3D-MLX 2.0 shape + paint weights (auto-downloaded once) |
 | ~14 GB disk | TRELLIS.2-4B weights (auto-downloaded once, if using TRELLIS) |
 | ~94 MB download | TinyCLIP flat-input advisor (local and non-blocking) |
 
-## How the runs behave
+## How long a run takes
 
-- **Pixal3D:** ~6 min end to end at res 1024, including model load, on a 32 GB M-series Mac.
-  Stage split on a real run: sparse structure 77s, shape SLAT 512 then the 1024 cascade 136s,
-  decode 13s, texture 63s, postprocess 25s. Peak memory is modest; the Q8_0 weight set is
-  8.1 GB against 24 for the PyTorch port, which does not fit 32 GB at all.
-- **Hunyuan3D-MLX (Xiong, 2.0, default settings):** ~9 min end to end (shape + paint) on
-  a real benchmark run. 2.0-turbo trades some fine-detail cleanliness for ~2-3 min shape.
-  See [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md) for the full model
-  comparison.
-- **TRELLIS.2:** sampling is attention-bound and scales with the subject's sparse
-  structure; a simple subject (~8k tokens) takes ~14 min end-to-end; a complex one
-  (~22k tokens, e.g. a fluffy creature) ~78 min on my m5 w/ 32 gigs of unified memory. This is infinitely faster on CUDA / Nvidia.
-  Setting **Attention backend** to `mlx` routes attention through MLX's fused Metal kernel
-  and cut a 1024 run from 34.3 to 14.3 min; output at a fixed seed is unchanged. Only worth
-  it at 1024 and above. See [`docs/mlx-attention-2026-09-20.md`](docs/mlx-attention-2026-09-20.md). 
-  Decode + bake adds a few minutes; with Debug enabled the decode is cached, so re-bakes
-  are ~1 min of setup. Known gaps vs the HF demo: slight
-  texture drift, severe colour failures on some flat/vector inputs, and mostly-pinhole
-  holes. See the [TRELLIS.2 input guidance](docs/trellis2-flat-illustration-colour-drift.md).
+Rough times for one run, as measured. Yours will differ with the machine and the picture.
+
+| Step | M5 MacBook, 32 GB | RTX 4090 |
+|---|---|---|
+| Text to image (Qwen-Image) | ~4.5 min | ~20 s |
+| Image to 3D (Pixal3D) | ~6 min | ~3 min |
+| Image to 3D (Hunyuan3D-MLX) | ~9 min | Mac only |
+| Image to 3D (TRELLIS.2) | 15–35 min | Mac only |
+
+On a Mac, TRELLIS.2 runs about twice as fast with **Attention backend** set to `mlx`.
 
 ## Licensing & provenance (non-negotiable)
 
 - **Pixal3D** code and flow weights: MIT. The Q8_0 bundle also carries the **DINOv3** image
   encoder under its own licence, so treat its output the same as TRELLIS's. Background
-  removal uses ungated `ZhengPeng7/BiRefNet`, never BRIA RMBG-2.0.
+  removal uses `rembg` (u2net), never BRIA RMBG-2.0.
 - **TRELLIS.2** code and weights: MIT. **DINOv3** image encoder: separate DINOv3 License,
   so TRELLIS output is classified `commercial-conditional`.
 - **TinyCLIP ViT-8M/16** input advisor: MIT. It only warns about risky input style and is
@@ -264,14 +250,11 @@ Full credits and per-backend detail: [`docs/info_and_credits.md`](docs/info_and_
 
 ```bash
 python -m pip install -r requirements-dev.txt
-PYTHONPATH=. pytest -q        # 551 tests; backends that load real models stay manual
+PYTHONPATH=. pytest -q        # backends that load real models stay manual
 ruff check .
 ```
 
-Conventions: Conventional Commits, Keep a Changelog (`CHANGELOG.md`), test-first. Judge assets
-**backface-culled, by eye**. glTF is double-sided by default, so a hollow mesh looks fine
-in preview and fails only in a game engine. Measure holes with a **position-only** vertex
-merge (`merge_vertices(merge_tex=True, merge_norm=True)`).
+Conventions: Conventional Commits, Keep a Changelog (`CHANGELOG.md`), test-first.
 
 ## Credits
 

@@ -6,6 +6,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from image_to_3dlab.matte import is_matted
+
 
 @dataclass(frozen=True)
 class SF3DOptions:
@@ -25,6 +27,17 @@ def _is_mps_oom(exc: RuntimeError) -> bool:
     )
 
 
+def cut_out(image, remove_background, session):
+    """Run rembg unless the image is already really cut out.
+
+    Upstream `remove_background` skips rembg on any RGBA with an alpha below 255, so a
+    Qwen image with noise alpha went in un-cut and came out encased in a slab.
+    """
+    if is_matted(image):
+        return image
+    return remove_background(image, session, force=True)
+
+
 def _load_sf3d(repo: Path):
     repo = repo.expanduser().resolve()
     if not (repo / "sf3d" / "system.py").is_file():
@@ -39,7 +52,7 @@ def _load_sf3d(repo: Path):
         from sf3d.utils import remove_background, resize_foreground
     except ImportError as exc:
         raise RuntimeError(
-            "SF3D or a compiled extension could not be imported. Run scripts/bootstrap_macos.sh. "
+            "SF3D or a compiled extension could not be imported. Run scripts/bootstrap_sf3d.py. "
             f"Original error: {exc}"
         ) from exc
     return SF3D, remove_background, resize_foreground
@@ -59,7 +72,7 @@ def _run(
     model.eval()
 
     image = Image.open(image_path).convert("RGBA")
-    image = remove_background(image, rembg.new_session())
+    image = cut_out(image, remove_background, rembg.new_session())
     image = resize_foreground(image, options.foreground_ratio)
     prepared = output_path.with_name(f"{output_path.stem}_input.png")
     image.save(prepared)
@@ -81,12 +94,22 @@ def _run(
     return output_path
 
 
+def pick_device(forced_cpu: bool, cuda: bool, mps: bool) -> str:
+    """CUDA on an NVIDIA card, MPS on a Mac, else CPU; `SF3D_USE_CPU=1` forces CPU."""
+    if forced_cpu:
+        return "cpu"
+    if cuda:
+        return "cuda"
+    return "mps" if mps else "cpu"
+
+
 def generate_sf3d(image: Path, output_dir: Path, options: SF3DOptions) -> Path:
     import torch
 
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     forced_cpu = os.environ.get("SF3D_USE_CPU") == "1"
-    device = "cpu" if forced_cpu or not torch.backends.mps.is_available() else "mps"
+    device = pick_device(forced_cpu, torch.cuda.is_available(),
+                         torch.backends.mps.is_available())
     output_path = output_dir.resolve() / f"{image.stem}_sf3d.glb"
     try:
         return _run(image, output_path, options, device)

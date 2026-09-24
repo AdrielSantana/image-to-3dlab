@@ -52,7 +52,8 @@ def test_total_matches_the_catalogue_figure():
     assert boot.total_gb() == pytest.approx(13.4, abs=0.05)
 
 
-def test_build_only_does_not_promise_weights():
+def test_build_only_does_not_promise_weights(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "macos-arm64")
     text = boot.announcement(weights=False)
     assert "weights:" not in text
     assert "build:" in text
@@ -106,19 +107,123 @@ def test_an_existing_binary_is_not_redownloaded(monkeypatch, capsys):
     assert "already installed" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("name,expected", [
-    ("sd-master-74988b2-bin-Darwin-macOS-26.6.2-arm64.zip", True),
-    ("sd-master-74988b2-bin-Darwin-macOS-15.0-arm64.zip", True),
-    ("sd-master-74988b2-bin-win-avx2-x64.zip", False),
-    ("sd-master-74988b2-bin-Darwin-macOS-13-x64.zip", False),
-    ("source.tar.gz", False),
+# The asset list of stable-diffusion.cpp release master-899-28b454b, 2026-09-23.
+RELEASE = [{"name": n} for n in (
+    "cudart-sd-bin-win-cu12-x64.zip",
+    "sd-master-28b454b-bin-Darwin-macOS-26.6.2-arm64.zip",
+    "sd-master-28b454b-bin-Linux-Ubuntu-24.04-x86_64-rocm-7.14.0.zip",
+    "sd-master-28b454b-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+    "sd-master-28b454b-bin-Linux-Ubuntu-24.04-x86_64.zip",
+    "sd-master-28b454b-bin-win-cpu-x64.zip",
+    "sd-master-28b454b-bin-win-cuda12-x64.zip",
+    "sd-master-28b454b-bin-win-rocm-7.14.0-x64.zip",
+    "sd-master-28b454b-bin-win-vulkan-x64.zip",
+)]
+
+
+@pytest.mark.parametrize("key,expected", [
+    ("macos-arm64", ["sd-master-28b454b-bin-Darwin-macOS-26.6.2-arm64.zip"]),
+    ("windows-nvidia", ["sd-master-28b454b-bin-win-cuda12-x64.zip",
+                        "cudart-sd-bin-win-cu12-x64.zip"]),
+    ("linux-nvidia", ["sd-master-28b454b-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip"]),
 ])
-def test_release_asset_is_matched_by_substring_not_exact_name(name, expected):
+def test_each_machine_gets_its_own_build_from_a_real_release(key, expected):
+    picked = boot.pick_assets(RELEASE, boot.BUILDS[key])
+    assert [a["name"] for a in picked] == expected
+
+
+def test_asset_matching_survives_upstream_renaming_its_build_machine():
     """The asset name carries upstream's build-machine OS version, which changes without
     warning. Matching it exactly would break the installer on their next CI upgrade."""
-    picked = boot.pick_asset([{"name": name}])
-    assert (picked is not None) is expected
+    renamed = [{"name": "sd-master-1234567-bin-Darwin-macOS-15.0-arm64.zip"}]
+    assert boot.pick_assets(renamed, boot.BUILDS["macos-arm64"]) == renamed
 
 
 def test_asset_matching_prefers_nothing_over_the_wrong_architecture():
-    assert boot.pick_asset([{"name": "sd-bin-Darwin-macOS-14-x64.zip"}]) is None
+    intel = [{"name": "sd-bin-Darwin-macOS-14-x64.zip"}]
+    assert boot.pick_assets(intel, boot.BUILDS["macos-arm64"]) == []
+
+
+def test_windows_without_the_cuda_runtime_is_no_install_at_all():
+    """Half an install -- sd-cli.exe without its CUDA DLLs -- fails to start with no
+    useful message, so a release missing either archive counts as missing both."""
+    no_runtime = [a for a in RELEASE if not a["name"].startswith("cudart")]
+    assert boot.pick_assets(no_runtime, boot.BUILDS["windows-nvidia"]) == []
+
+
+def test_announcement_states_this_machines_download_size(monkeypatch):
+    """AGENTS.md: a download names its size. Windows pulls ~850 MB for the binary, not
+    the 35 MB a Mac does, so the announcement has to know which machine it is on."""
+    monkeypatch.setattr(boot, "target", lambda: "windows-nvidia")
+    text = boot.announcement(weights=False)
+    assert "CUDA 12 on Windows" in text and "~850 MB" in text
+
+
+def test_announcement_on_an_unsupported_machine_offers_no_build(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: None)
+    text = boot.announcement(weights=False)
+    assert "no prebuilt build" in text and "build:" not in text
+
+
+def test_install_refuses_an_unsupported_machine_before_touching_the_network(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: None)
+    monkeypatch.setattr(boot.urllib.request, "urlopen",
+                        lambda *a, **k: pytest.fail("went to the network"))
+    with pytest.raises(SystemExit, match="no prebuilt"):
+        boot.install_binary()
+
+
+def test_finish_install_flattens_and_marks_executable(tmp_path, monkeypatch):
+    monkeypatch.setattr(boot.host, "os_family", lambda *a: "linux")
+    nested = tmp_path / "build" / "bin"
+    nested.mkdir(parents=True)
+    (nested / "sd-cli").write_text("")
+    (nested / "libstable-diffusion.so").write_text("")
+    binary = boot.finish_install(tmp_path)
+    assert binary == tmp_path / "sd-cli"
+    assert (tmp_path / "libstable-diffusion.so").exists()
+    assert binary.stat().st_mode & 0o111
+
+
+def _nvidia_linux(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "binary_present", lambda: True)
+
+
+def test_nvidia_install_stops_before_the_weights_if_the_gpu_is_unreachable(
+        monkeypatch, capsys):
+    """Verify the environment before the expensive step: 13 GB of weights are no use to a
+    binary that will run on the CPU."""
+    _nvidia_linux(monkeypatch)
+    monkeypatch.setattr(boot, "probe_gpu", lambda *a: "load_backend: loaded CPU backend")
+    monkeypatch.setattr(boot, "install_weights", lambda: pytest.fail("downloaded"))
+    assert boot.main(["--yes"]) == 1
+    assert "libegl1 libgl1" in capsys.readouterr().out
+
+
+def test_nvidia_install_continues_when_the_gpu_answers(monkeypatch):
+    _nvidia_linux(monkeypatch)
+    monkeypatch.setattr(boot, "probe_gpu", lambda *a: "ggml_vulkan: Found 1 Vulkan devices:")
+    fetched = []
+    monkeypatch.setattr(boot, "install_weights", lambda: fetched.append(1))
+    assert boot.main(["--yes"]) == 0
+    assert fetched == [1]
+
+
+def test_a_mac_is_not_probed(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "macos-arm64")
+    monkeypatch.setattr(boot, "binary_present", lambda: True)
+    monkeypatch.setattr(boot, "probe_gpu", lambda *a: pytest.fail("probed a Mac"))
+    monkeypatch.setattr(boot, "install_weights", lambda: None)
+    assert boot.main(["--yes"]) == 0
+
+
+def test_probe_gpu_runs_the_binary_and_returns_its_chatter(tmp_path):
+    fake = tmp_path / "sd-cli"
+    fake.write_text("#!/bin/sh\necho 'ggml_vulkan: Found 1 Vulkan devices:'\nexit 1\n")
+    fake.chmod(0o755)
+    assert "Found 1" in boot.probe_gpu(fake)
+
+
+def test_probe_gpu_survives_a_binary_that_will_not_start(tmp_path):
+    assert boot.probe_gpu(tmp_path / "missing") == ""

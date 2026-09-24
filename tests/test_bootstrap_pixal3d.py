@@ -1,0 +1,257 @@
+"""The Pixal3D installer: one script for a Mac build and an NVIDIA prebuilt, never a
+download without an explicit yes."""
+
+from __future__ import annotations
+
+import io
+import tarfile
+import zipfile
+from pathlib import Path
+
+import backend_catalog
+import bootstrap_pixal3d as boot
+import pytest
+
+
+def test_weight_size_matches_the_catalogue():
+    """The Setup page and this script must not quote different numbers for one download."""
+    pixal = next(b for b in backend_catalog.CATALOG if b.id == "pixal3d")
+    assert sum(w.bytes_expected for w in pixal.weights) == pytest.approx(
+        boot.WEIGHTS_GB * backend_catalog.GB, rel=0.01)
+
+
+@pytest.fixture
+def new_driver(monkeypatch):
+    """A driver new enough for upstream's CUDA 12.9 prebuilt, and no compiler."""
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (12, 9))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: None)
+
+
+@pytest.mark.parametrize("key,route,size", [
+    ("macos-arm64", "built from source with Metal", "Xcode"),
+    ("linux-nvidia", "CUDA 12 prebuilt", "~640 MB"),
+    ("windows-nvidia", "CUDA 12 prebuilt", "~610 MB"),
+])
+def test_announcement_names_backend_route_size_and_licence(monkeypatch, new_driver,
+                                                           key, route, size):
+    monkeypatch.setattr(boot, "target", lambda: key)
+    text = boot.announcement()
+    for needle in ("Pixal3D", route, size, "8.4 GB", "MIT", "DINOv3"):
+        assert needle in text
+
+
+def test_unsupported_machine_is_refused_before_anything_is_fetched(monkeypatch, capsys):
+    monkeypatch.setattr(boot, "target", lambda: None)
+    monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("built"))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: pytest.fail("downloaded"))
+    assert boot.main(["--yes"]) == 1
+    assert "Apple Silicon Mac, or Linux/Windows with an NVIDIA card" in capsys.readouterr().out
+
+
+def test_no_yes_and_no_terminal_means_no_download(monkeypatch, new_driver):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot.sys, "stdin", io.StringIO(""))
+    monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("built"))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: pytest.fail("downloaded"))
+    assert boot.main([]) == 1
+
+
+def test_rerun_on_an_installed_tree_does_not_rebuild(monkeypatch, capsys, new_driver):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "build_present", lambda: True)
+    monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("rebuilt"))
+    fetched = []
+    monkeypatch.setattr(boot, "install_weights", lambda *a: fetched.append(1))
+    assert boot.main(["--yes"]) == 0
+    assert "already installed" in capsys.readouterr().out
+    assert fetched == [1]  # the weight fetch resumes, it does not restart
+
+
+def test_build_only_and_weights_only_do_one_half_each(monkeypatch, new_driver):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "build_present", lambda: False)
+    called = []
+    monkeypatch.setattr(boot, "install_build", lambda *a: called.append("build"))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: called.append("weights"))
+    assert boot.main(["--yes", "--build-only"]) == 0
+    assert boot.main(["--yes", "--weights-only"]) == 0
+    assert called == ["build", "weights"]
+
+
+# The CUDA asset names on pixal3d.cpp's v0.10.1-desktop-alpha release, 2026-09-23.
+RELEASE = [{"name": n, "browser_download_url": f"https://x/{n}"} for n in (
+    "trellis-cuda-linux-x64.tar.gz", "trellis-cuda-windows-x64.zip",
+    "trellis-cuda12-linux-x64.tar.gz", "trellis-cuda12-windows-x64.zip",
+    "trellis-vulkan-linux-x64.tar.gz", "trellis-metal-macos-arm64.tar.gz",
+)]
+
+
+@pytest.mark.parametrize("key,expected", [
+    ("linux-nvidia", "trellis-cuda12-linux-x64.tar.gz"),
+    ("windows-nvidia", "trellis-cuda12-windows-x64.zip"),
+])
+def test_prebuilt_is_the_cuda12_build_for_this_os(key, expected):
+    """CUDA 12, not the unversioned (newer) CUDA build: it runs on older drivers."""
+    assert boot.pick_prebuilt(RELEASE, key)["name"] == expected
+
+
+def test_missing_prebuilt_is_none():
+    assert boot.pick_prebuilt(RELEASE[4:], "linux-nvidia") is None
+
+
+def _tarball(path: Path, members: dict[str, bytes], links: dict[str, str]) -> None:
+    with tarfile.open(path, "w:gz") as tar:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = 0o644
+            tar.addfile(info, io.BytesIO(data))
+        for name, target in links.items():
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.SYMTYPE
+            info.linkname = target
+            tar.addfile(info)
+
+
+def test_unpacking_a_linux_prebuilt_keeps_library_symlinks_and_runs(tmp_path, monkeypatch):
+    """The CUDA tarball carries `libcudart.so.12 -> libcudart.so.12.9.79` style links; a
+    flattened copy that loses them fails to load at run time, not at install time."""
+    monkeypatch.setattr(boot.host, "os_family", lambda *a: "linux")
+    archive = tmp_path / "t.tar.gz"
+    _tarball(archive, {"./trellis-cli": b"x", "./libcudart.so.12.9.79": b"x"},
+             {"libcudart.so.12": "libcudart.so.12.9.79"})
+    build = tmp_path / "build"
+    cli = boot.unpack_prebuilt(archive, build)
+    assert cli == build / "trellis-cli"
+    assert cli.stat().st_mode & 0o111
+    assert (build / "libcudart.so.12").is_symlink()
+
+
+def test_unpacking_a_windows_prebuilt_finds_the_exe(tmp_path, monkeypatch):
+    monkeypatch.setattr(boot.host, "os_family", lambda *a: "windows")
+    archive = tmp_path / "t.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("trellis-cli.exe", "x")
+        z.writestr("cudart64_12.dll", "x")
+    assert boot.unpack_prebuilt(archive, tmp_path / "build").name == "trellis-cli.exe"
+
+
+def test_an_archive_without_the_cli_is_an_error_not_a_silent_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(boot.host, "os_family", lambda *a: "linux")
+    archive = tmp_path / "t.tar.gz"
+    _tarball(archive, {"./README": b"x"}, {})
+    with pytest.raises(SystemExit, match="no trellis-cli"):
+        boot.unpack_prebuilt(archive, tmp_path / "build")
+
+
+def test_matting_model_is_moved_flat_where_trellis_cli_looks(tmp_path):
+    (tmp_path / "q8").mkdir()
+    (tmp_path / "q8" / "birefnet.gguf").write_text("x")
+    boot.flatten_matte(tmp_path)
+    assert (tmp_path / "birefnet.gguf").exists()
+    assert not (tmp_path / "q8").exists()
+    boot.flatten_matte(tmp_path)  # idempotent
+
+
+def test_the_viewer_runs_this_script_with_yes():
+    """The browser dialog is the confirmation; asking again on a detached stdin hangs."""
+    import download_api
+
+    command = download_api.COMMANDS["pixal3d"]
+    assert command[1].endswith("bootstrap_pixal3d.py") and "--yes" in command
+
+
+# Pixal3D's CUDA 12 prebuilt is compiled with CUDA 12.9. On the RunPod 4090 (driver 570,
+# CUDA 12.8) it died at its first kernel: "the provided PTX was compiled with an
+# unsupported toolchain". On a newer driver it ran, but at about half the speed of a local
+# compile (390 s against ~190 s, RunPod 2026-09-23). So a compiler, when there is one and
+# the driver can run what it makes, wins; the prebuilt is the fallback.
+NVCC = "/usr/local/cuda/bin/nvcc"
+
+
+@pytest.mark.parametrize("key,cuda,nvcc,nvcc_cuda,expected", [
+    ("linux-nvidia", (12, 9), None, None, "prebuilt"),
+    ("linux-nvidia", (13, 0), NVCC, (12, 8), "cuda-source"),
+    ("linux-nvidia", (12, 8), NVCC, (12, 8), "cuda-source"),
+    # A version we could not read is tried rather than refused.
+    ("linux-nvidia", (13, 0), NVCC, None, "cuda-source"),
+    # A toolkit newer than the driver builds kernels the driver cannot run.
+    ("linux-nvidia", (13, 0), NVCC, (13, 1), "prebuilt"),
+    ("linux-nvidia", (12, 8), NVCC, (13, 0), None),
+    ("linux-nvidia", (12, 8), None, None, None),
+    ("linux-nvidia", None, None, None, None),
+    ("windows-nvidia", (12, 9), None, None, "prebuilt"),
+    # A Windows source build is a Visual Studio project of its own; not offered.
+    ("windows-nvidia", (12, 8), "C:/cuda/nvcc.exe", (12, 8), None),
+    ("windows-nvidia", (13, 0), "C:/cuda/nvcc.exe", (12, 8), "prebuilt"),
+    ("macos-arm64", None, None, None, "metal-source"),
+])
+def test_the_driver_and_compiler_pick_the_route(key, cuda, nvcc, nvcc_cuda, expected):
+    assert boot.build_kind(key, cuda, nvcc, nvcc_cuda) == expected
+
+
+def test_prebuilt_can_be_asked_for_when_it_would_run():
+    """For timing one against the other on the same machine."""
+    assert boot.build_kind("linux-nvidia", (13, 0), NVCC, (12, 8),
+                           prefer_prebuilt=True) == "prebuilt"
+    # Asking for it on a driver it cannot run on still compiles instead.
+    assert boot.build_kind("linux-nvidia", (12, 8), NVCC, (12, 8),
+                           prefer_prebuilt=True) == "cuda-source"
+
+
+def test_the_prebuilt_flag_reaches_the_route(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (13, 0))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: NVCC)
+    monkeypatch.setattr(boot, "nvcc_cuda", lambda _: (12, 8))
+    monkeypatch.setattr(boot, "build_present", lambda: False)
+    chosen = []
+    monkeypatch.setattr(boot, "install_build", lambda key, kind: chosen.append(kind))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: None)
+    assert boot.main(["--yes", "--prebuilt"]) == 0
+    assert boot.main(["--yes"]) == 0
+    assert chosen == ["prebuilt", "cuda-source"]
+
+
+def test_an_old_driver_without_a_compiler_is_told_what_to_update(monkeypatch, capsys):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (12, 8))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: None)
+    monkeypatch.setattr(boot, "build_present", lambda: False)
+    monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("built"))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: pytest.fail("downloaded"))
+    assert boot.main(["--yes"]) == 1
+    out = capsys.readouterr().out
+    assert "575" in out and "12.8" in out
+
+
+def test_an_old_driver_with_a_compiler_announces_a_local_cuda_build(monkeypatch):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "driver_cuda", lambda: (12, 8))
+    monkeypatch.setattr(boot, "find_nvcc", lambda: NVCC)
+    monkeypatch.setattr(boot, "nvcc_cuda", lambda _: (12, 8))
+    text = boot.announcement()
+    assert "compiled locally with CUDA" in text and "prebuilt" not in text
+
+
+def test_cuda_source_build_targets_this_card(monkeypatch):
+    flags = boot.cmake_flags("cuda-source", nvcc="/usr/local/cuda/bin/nvcc", arch="89")
+    assert "-DGGML_CUDA=ON" in flags
+    assert "-DCMAKE_CUDA_ARCHITECTURES=89" in flags
+    assert "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc" in flags
+
+
+def test_cuda_source_build_without_a_known_card_lets_cmake_ask():
+    flags = boot.cmake_flags("cuda-source", nvcc="nvcc", arch=None)
+    assert "-DCMAKE_CUDA_ARCHITECTURES=native" in flags
+
+
+def test_metal_build_passes_no_cuda_flags():
+    assert not any("CUDA" in f for f in boot.cmake_flags("metal-source"))
+
+
+def test_the_build_command_names_a_job_count():
+    """A bare `-j` is unbounded: dozens of nvcc jobs on a 96-CPU, 31 GB pod got OOM-killed."""
+    command = boot.build_command(jobs=10)
+    assert command[-2:] == ["-j", "10"]
+    assert "trellis-cli" in command

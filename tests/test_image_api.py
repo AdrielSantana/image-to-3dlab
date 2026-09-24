@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -190,3 +191,45 @@ def test_sidecar_names_each_weight_file_readably():
         assert set(weights[key]) == {"cache_dir", "file"}
         assert weights[key]["file"].endswith((".gguf", ".safetensors"))
         assert "(" not in weights[key]["cache_dir"]
+
+
+def _fake_sd_cli(tmp_path: Path, lines: list[str], then_sleep: float) -> list[str]:
+    script = tmp_path / "fake_sd_cli.py"
+    script.write_text(
+        "import sys, time\n"
+        f"for line in {lines!r}:\n"
+        "    print(line, flush=True)\n"
+        f"time.sleep({then_sleep})\n"
+    )
+    return [sys.executable, str(script)]
+
+
+def test_a_cpu_only_run_on_an_nvidia_machine_is_stopped_with_the_fix(tmp_path, monkeypatch):
+    """On the RunPod 4090 a CPU-only run sat at 1,700% CPU for minutes with no word why.
+    The viewer must stop it the moment the CPU backend loads with no GPU before it."""
+    monkeypatch.setattr(api, "host_platform", lambda: api.NVIDIA)
+    command = _fake_sd_cli(tmp_path, [
+        "load_backend: loaded CPU backend from /x/libggml-cpu-haswell.so",
+    ], then_sleep=60)
+    monkeypatch.setattr(api, "build_command", lambda *a, **k: command)
+    manager = api.ImageJobManager(output_root=tmp_path)
+    job = manager.create("a fox", api.clean_settings({}))
+    started = time.monotonic()
+    api.run_job(job, manager, weights=WEIGHTS)
+    assert time.monotonic() - started < 10, "the CPU run was left to finish"
+    assert job.status == "error"
+    assert "libegl1 libgl1" in job.error
+
+
+def test_a_gpu_run_is_left_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "host_platform", lambda: api.NVIDIA)
+    command = _fake_sd_cli(tmp_path, [
+        "ggml_vulkan: Found 1 Vulkan devices:",
+        "load_backend: loaded CPU backend from /x/libggml-cpu-haswell.so",
+    ], then_sleep=0)
+    monkeypatch.setattr(api, "build_command", lambda *a, **k: command)
+    manager = api.ImageJobManager(output_root=tmp_path)
+    job = manager.create("a fox", api.clean_settings({}))
+    api.run_job(job, manager, weights=WEIGHTS)
+    # The fake writes no PNG, so the run ends in the ordinary "no output" error, not ours.
+    assert "libegl1" not in (job.error or "")

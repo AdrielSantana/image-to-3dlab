@@ -69,6 +69,30 @@ def test_symlinked_files_are_counted_once(tmp_path):
     assert total == 1000, "the symlink was followed and counted a second time"
 
 
+def test_links_to_a_shared_blob_store_outside_the_folder_are_counted(tmp_path):
+    """Newer huggingface_hub keeps the bytes in a store shared across repos and only
+    links to them from `models--*`. Skipping links then reported 13.4 GB as 120 B."""
+    store = tmp_path / "hub" / "blobs" / "ab"
+    store.mkdir(parents=True)
+    (store / "hash1").write_bytes(b"x" * 1000)
+    repo = tmp_path / "hub" / "models--org--name"
+    snaps = repo / "snapshots" / "rev"
+    snaps.mkdir(parents=True)
+    (snaps / "weight.bin").symlink_to(store / "hash1")
+    (snaps / "same_again.bin").symlink_to(store / "hash1")
+    (repo / "refs").mkdir()
+    (repo / "refs" / "main").write_bytes(b"r" * 40)
+
+    present, total = bc._dir_state(repo)
+    assert present is True
+    assert total == 1040, "the linked blob was skipped, or counted once per link"
+
+
+def test_a_dangling_link_is_skipped(tmp_path):
+    (tmp_path / "gone.bin").symlink_to(tmp_path / "nowhere")
+    assert bc._dir_state(tmp_path) == (False, 0)
+
+
 def test_a_missing_directory_is_missing_not_an_error(tmp_path):
     assert bc._dir_state(tmp_path / "absent") == (False, 0)
 

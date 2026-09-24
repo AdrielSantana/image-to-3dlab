@@ -68,6 +68,27 @@ def test_progress_states_both_numbers_not_just_a_percentage():
     assert "2.0 GB of" in event["detail"]
 
 
+def test_before_any_weights_arrive_the_step_is_shown_not_zero_bytes():
+    # Pixal3D fetches a 674 MB build before its weights; "0 B of 8.4 GB" read as stuck.
+    event = dl.describe_progress(_backend(), present=0, rate=None, eta=None, stalled=False,
+                                 step="Downloading trellis-cuda12-linux-x64.tar.gz (674 MB)...")
+    assert event["detail"] == "Downloading trellis-cuda12-linux-x64.tar.gz (674 MB)..."
+    assert "0 B" not in event["detail"]
+
+
+def test_once_weights_arrive_bytes_win_over_the_step():
+    event = dl.describe_progress(_backend(), present=2 * 1024 ** 3, rate=None, eta=None,
+                                 stalled=False, step="Fetching weights")
+    assert "2.0 GB of" in event["detail"]
+
+
+def test_no_stall_is_claimed_before_the_first_weight_byte():
+    # A slow connection spends more than the stall window on the build download alone.
+    assert dl.is_stalled(present=0, idle_seconds=10 * dl.STALL_SECONDS) is False
+    assert dl.is_stalled(present=1, idle_seconds=dl.STALL_SECONDS + 1) is True
+    assert dl.is_stalled(present=1, idle_seconds=dl.STALL_SECONDS - 1) is False
+
+
 def test_a_gated_repo_is_explained_as_a_login_problem():
     message = dl._explain(1, ["Traceback", "401 Client Error: Unauthorized for url"])
     assert "login" in message and "retry" in message

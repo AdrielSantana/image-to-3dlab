@@ -692,3 +692,98 @@ def test_a_stage_reporting_no_sub_progress_says_running_not_estimating():
     """)
     assert rows["bare"] == ["stage-row active", "running"]
     assert rows["measured"] == ["stage-row active", "6/15 · ~4 min"]
+
+
+def _run_welcome(expr: str):
+    module_url = (REPO / "viewer" / "components" / "welcome-content.js").as_uri()
+    program = f"import * as w from {json.dumps(module_url)}; console.log(JSON.stringify({expr}));"
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
+WELCOME = {
+    "brand": {"name": "Bingeljell's Image-to-3D Lab"},
+    "version": "0.3.0",
+    "routes": [{"id": "pixal3d", "state": "missing"}, {"id": "qwen-image", "state": "ready"}],
+    "news": [{"version": "0.3.0", "sections": {
+        "Fixed": ["f1"], "Added": ["a1", "a2", "a3"], "Changed": ["c1"]}}],
+}
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_welcome_shows_on_first_run_and_after_an_update_only():
+    payload = json.dumps(WELCOME)
+    quiet = json.dumps({**WELCOME, "news": []})
+    assert _run_welcome(
+        f"[w.shouldShow(null, {payload}), w.shouldShow('0.2.0', {payload}),"
+        f" w.shouldShow('0.3.0', {quiet})]"
+    ) == [True, True, False]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_welcome_greets_first_visits_updates_and_reopens_differently():
+    payload = json.dumps(WELCOME)
+    first, update, reopen = _run_welcome(
+        f"[w.greeting(null, {payload}), w.greeting('0.2.0', {payload}),"
+        f" w.greeting('0.3.0', {payload}, true)]")
+    assert first["title"] == "Welcome to Bingeljell's Image-to-3D Lab"
+    assert update["title"].startswith("Welcome back") and "0.3.0" in update["kicker"]
+    assert "0.3.0" in reopen["kicker"] and reopen["title"].startswith("Welcome to")
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_welcome_news_lists_added_first_and_counts_the_rest():
+    release = json.dumps(WELCOME["news"][0])
+    assert _run_welcome(f"w.newsItems({release}, 3)") == {
+        "items": ["a1", "a2", "a3"], "more": 2}
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_welcome_escapes_html_and_renders_backticks_as_code():
+    assert _run_welcome("w.inlineCode('run `a<b>` & go')") == (
+        "run <code>a&lt;b&gt;</code> &amp; go")
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_welcome_points_at_setup_until_something_is_installed():
+    nothing = json.dumps({**WELCOME, "routes": [{"id": "pixal3d", "state": "missing"}]})
+    image_ready = json.dumps(WELCOME)
+    unsupported = json.dumps({**WELCOME, "routes": []})
+    assert _run_welcome(
+        f"[w.primaryAction({nothing}), w.primaryAction({image_ready}),"
+        f" w.primaryAction({unsupported})]"
+    ) == [{"label": "Set up a route", "mode": "setup"},
+          {"label": "Make something", "mode": "generate-image"},
+          None]
+
+
+def _run_banner(expr: str):
+    module_url = (REPO / "viewer" / "components" / "update-banner.js").as_uri()
+    program = f"import * as b from {json.dumps(module_url)}; console.log(JSON.stringify({expr}));"
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
+CHECK = {"enabled": True, "newer": True, "current": "0.2.0", "latest": "0.3.0",
+         "url": "https://github.com/x/releases/tag/v0.3.0", "command": "curl … | bash"}
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_update_banner_shows_for_a_newer_release_until_dismissed():
+    check = json.dumps(CHECK)
+    shown, dismissed, next_one = _run_banner(
+        f"[b.bannerFor({check}, null), b.bannerFor({check}, '0.3.0'),"
+        f" b.bannerFor({check}, '0.2.9')]")
+    assert "0.3.0 is out" in shown["text"] and shown["command"] == "curl … | bash"
+    assert dismissed is None
+    assert next_one is not None  # dismissing an older release does not hide a newer one
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_update_banner_stays_hidden_when_off_or_up_to_date():
+    off = json.dumps({**CHECK, "enabled": False})
+    same = json.dumps({**CHECK, "newer": False})
+    assert _run_banner(f"[b.bannerFor({off}, null), b.bannerFor({same}, null),"
+                       " b.bannerFor(null, null)]") == [None, None, None]

@@ -1,8 +1,7 @@
 # Fitted quadruped → weights → reference pose → locomotion
 
 Use `scripts/blender_quadruped_pipeline.py` for a staged, inspectable Rigify workflow.
-It packages the process developed during the moss-fox session, **not that asset's
-hard-coded proportions or pose**. A person fits the metarig; a person or LLM tunes
+It packages a repeatable process, not any one creature's proportions or pose. A person fits the metarig; a person or LLM tunes
 the character profile and reviews deformation. The tool handles repeatable mechanics.
 
 Supported starting contract: a fitted Rigify **Basic Quadruped** metarig, then its

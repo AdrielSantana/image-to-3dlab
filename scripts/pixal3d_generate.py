@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""End-to-end Pixal3D generation on Apple Silicon: image -> textured GLB.
+"""End-to-end Pixal3D generation: image -> textured GLB, on a Mac or an NVIDIA card.
 
     python scripts/pixal3d_generate.py input.png output.glb [--res 1024] [--seed 42]
 
 Wraps `trellis-cli` from `vendor/pixal3d-cpp` (raven38/pixal3d.cpp), a C++/GGML runtime
-with Metal kernels. Build it with `scripts/bootstrap_pixal3d_cpp.sh`.
+with Metal kernels on a Mac and CUDA on NVIDIA. Install it with
+`scripts/bootstrap_pixal3d.py`.
 
 **Why this port and not the PyTorch one.** `pawel-mazurkiewicz/Pixal3D-mac` loads ~22 GB of
 bf16 weights before sampling and its low-VRAM mode moves models between CPU and GPU, which
 frees nothing on unified memory. This one runs the same model from 8 GB of Q8_0 weights,
-with real Metal flash-attention, and produced the moss fox in 5m50s where the PyTorch port
-could not finish on a 32 GB machine. See `docs/pixal3d-evaluation-2026-09-20.md`.
+with real Metal flash-attention, and finishes in about 6 minutes where the PyTorch port
+could not finish on a 32 GB machine at all.
 
 **Single-view needs a camera.** Pixal3D conditions on pixel-aligned features projected
 through an explicit camera, so `--sv-image` synthesizes a front gauge camera at `--fov`
@@ -30,21 +31,25 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from image_to_3dlab.host import executable
+from image_to_3dlab.matte import is_matted
+
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
-CLI = PIXAL3D_ROOT / "build" / "trellis-cli"
+CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 
 # The gauge camera the single-view path is designed around: 20 degrees, as radians.
 DEFAULT_FOV = 0.3490658503988659
 
-# Structure guidance strength. `trellis-cli` defaults to 7.5; at that setting the warrior
-# girl lost her sword blade entirely and 10 brought it back with tighter proportions, so
-# 10 is the default here. 13 is worse -- the blade detaches from the hand.
-# See docs/pixal3d-evaluation-2026-09-20.md.
+# Structure guidance strength. `trellis-cli` defaults to 7.5, which can drop thin parts
+# (a sword blade vanished entirely); 10 keeps them. 13 is worse: thin parts detach.
 DEFAULT_GSS = 10.0
 
 STAGES = ["stage", "views", "ss", "shape", "decode", "texture", "write"]
@@ -60,12 +65,8 @@ STAGE_LABELS = {
 BANNER_STAGES = {1: "views", 2: "ss", 3: "shape", 4: "decode", 5: "texture", 6: "write"}
 
 
-# A real cutout leaves a lot of the frame empty -- a centred subject is typically 30-60%
-# transparent. This floor only has to separate that from an alpha channel that cuts nothing.
 # u2net, as `trellis_backend.py` uses. Never BRIA RMBG -- a licence guardrail.
 MATTE_MODEL = "u2net"
-MATTE_MIN_TRANSPARENT = 0.02
-MATTE_TRANSPARENT_BELOW = 16
 
 
 def has_alpha(image: Path) -> bool:
@@ -86,13 +87,7 @@ def has_alpha(image: Path) -> bool:
     from PIL import Image
 
     with Image.open(image) as opened:
-        if opened.mode not in ("RGBA", "LA") and "transparency" not in opened.info:
-            return False
-        alpha = opened.convert("RGBA").getchannel("A")
-
-    histogram = alpha.histogram()
-    transparent = sum(histogram[:MATTE_TRANSPARENT_BELOW])
-    return transparent / (alpha.width * alpha.height) >= MATTE_MIN_TRANSPARENT
+        return is_matted(opened)
 
 
 def _rembg_remove(image, session=None):
@@ -229,7 +224,7 @@ def main() -> int:
     state = readiness(args.cli, args.models)
     if not state["ready"]:
         raise SystemExit(
-            f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d_cpp.sh"
+            f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d.py"
         )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

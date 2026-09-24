@@ -19,13 +19,18 @@
 <pre id="log"></pre>
 <script>
 const q = new URLSearchParams(location.search);
-const requested = q.get('file') || 'output/bvh_stack_fix/fox_remesh_live.log';
+// Pass the log to follow, e.g. live-log.html?file=output/<folder>/run.log
+const requested = q.get('file') || '';
 const url = /^(https?:|\/)/.test(requested) ? requested : '/' + requested;
 const log = document.getElementById('log');
 const state = document.getElementById('state');
 document.getElementById('name').textContent = requested;
 let last = '';
 async function refresh() {
+  if (!requested) {
+    state.textContent = 'add ?file=output/<folder>/run.log to the address';
+    return;
+  }
   try {
     const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);

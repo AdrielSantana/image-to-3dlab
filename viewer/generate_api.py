@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 # Sibling import must also work when tests load this file directly via importlib.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import image_api
+from image_to_3dlab.host import executable  # image_api put the repo on sys.path
 from rig_api import (
     ARTIFACTS as RIG_ARTIFACTS,
     RIG_JOBS,
@@ -39,7 +40,9 @@ from rig_api import (
     run_job as run_rig_job,
     status_payload as rig_status_payload,
 )
-from backend_catalog import catalog_status, readiness as catalog_readiness
+from backend_catalog import _dir_state, catalog_status, readiness as catalog_readiness
+from welcome_api import payload as welcome_payload
+from update_api import check as update_check
 from download_api import (
     DOWNLOADS,
     cancel as cancel_download,
@@ -76,7 +79,7 @@ TINYCLIP_TIMEOUT_SECONDS = 300
 HUNYUAN_WRAPPER = REPO / "scripts" / "hunyuan_mlx_generate.py"
 HUNYUAN_PYTHON = REPO / "vendor" / "hunyuan-mlx" / ".venv" / "bin" / "python"
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
-PIXAL3D_CLI = PIXAL3D_ROOT / "build" / "trellis-cli"
+PIXAL3D_CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 PIXAL3D_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 PIXAL3D_WRAPPER = REPO / "scripts" / "pixal3d_generate.py"
 
@@ -170,7 +173,7 @@ def weights_on_disk(cache_dir: Path | None = None) -> dict[str, dict[str, Any]]:
     for repo, label in WEIGHT_REPOS:
         path = hub / repo
         if path.is_dir():
-            size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+            size = _dir_state(path)[1]
             out[repo] = {"label": label, "present": True, "bytes": size,
                          "human": _human_bytes(size)}
         else:
@@ -1377,7 +1380,7 @@ def _hunyuan_xiong_shape_weights_status() -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for name, path in HUNYUAN_XIONG_SHAPE_MODELS.items():
         present = path.is_dir()
-        size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if present else 0
+        size = _dir_state(path)[1]
         out[name] = {"label": f"Hunyuan3D-MLX shape weights ({name})", "present": present,
                      "bytes": size, "human": _human_bytes(size)}
     return out
@@ -1431,11 +1434,8 @@ def _hunyuan_xiong_readiness() -> dict[str, Any]:
         "model_availability": model_availability,
         "ready": ready,
         "warning": (
-            "Benchmarked 2026-08-19 on Flicker, octree=512, quantize=8, 30 steps (shape "
-            "stage only): 2.0 ~167s (default, cleanest); 2.0-turbo ~60-105s (real "
-            "distillation-noise dents even at 30 steps); 2.1 ~450s with octree-decode "
-            "(~48min without — not Xiong's recommended pick, weaker DINOv2-large "
-            "conditioner). See docs/hunyuan-mlx-recipes.md."
+            "2.0 is the default and the cleanest. 2.0-turbo is about twice as fast but "
+            "can leave small dents. 2.1 is slower and not recommended."
         ),
     }
 
@@ -1528,8 +1528,8 @@ def _pixal3d_readiness() -> dict[str, Any]:
             "present": ready,
             "hint": None if ready else (
                 "Pixal3D is not set up — missing: " + "; ".join(missing)
-                + ". Run scripts/bootstrap_pixal3d_cpp.sh (needs Xcode's Metal compiler; "
-                "8.1 GB of weights)."
+                + ". Set it up from Setup & Status, or run "
+                "python scripts/bootstrap_pixal3d.py (8.4 GB of weights)."
             ),
         },
         "weights": {
@@ -1542,9 +1542,7 @@ def _pixal3d_readiness() -> dict[str, Any]:
         "missing_weights": missing,
         "ready": ready,
         "warning": (
-            "Single-view only, and res 512 is unavailable in this weight family. The "
-            "moss fox ran at res 1024 in 5m50s and needed no repaint stage; see "
-            "docs/pixal3d-evaluation-2026-09-20.md."
+            "Single-view only, and these weights have no res 512 option."
         ),
     }
 
@@ -1584,7 +1582,7 @@ BACKENDS.update({
         parse_line=_hunyuan_parse_line, readiness=_hunyuan_xiong_readiness,
     ),
     "pixal3d": BackendSpec(
-        id="pixal3d", label="Pixal3D (C++/GGML, Metal)",
+        id="pixal3d", label="Pixal3D (C++/GGML)",
         interpreter=Path(sys.executable), wrapper=PIXAL3D_WRAPPER,
         default_settings=PIXAL3D_DEFAULT_SETTINGS, stages=PIXAL3D_STAGES,
         stage_labels=PIXAL3D_STAGE_LABELS, requires_alpha=False,
@@ -1795,6 +1793,13 @@ class Handler(SimpleHTTPRequestHandler):
         parts = self._path_parts()
         if parts == ["api", "catalog"]:
             self._send_json(200, catalog_status())
+            return
+        if parts == ["api", "update-check"]:
+            self._send_json(200, update_check())
+            return
+        if parts == ["api", "welcome"]:
+            since = parse_qs(urlparse(self.path).query).get("since", [None])[0]
+            self._send_json(200, welcome_payload(since))
             return
         if parts == ["api", "setup"]:
             query = parse_qs(urlparse(self.path).query)

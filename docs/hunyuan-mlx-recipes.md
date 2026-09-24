@@ -1,8 +1,7 @@
 # Hunyuan3D-MLX shape models — quick reference
 
-Repo: `hunyuan_mlx/shape` + `hunyuan_mlx/paint` (ZimengXiong's own port, MIT, tracked
-in-repo since 2026-08-19 — a clone of this repo alone has the code; weights are
-downloaded separately).
+Repo: `hunyuan_mlx/shape` + `hunyuan_mlx/paint` (ZimengXiong's port, MIT, tracked in this
+repo; the weights download separately).
 
 Setup from a fresh clone:
 ```
@@ -32,8 +31,6 @@ input.png output.glb --model 2.0 [flags]`
 ~9 min shape+paint end to end.
 
 **Paint stage** (`hunyuan_mlx/paint/scripts/run_paint_pbr.py`) is shared by every shape
-model above, including dgrauet's (still vendored at `vendor/hunyuan-mlx` — Tencent-licensed
-code, kept because its shape output is still the cleanest we've tested, see
-`docs/info_and_credits.md`). The texture-tear-on-concave-geometry bug (inner
-thigh/armpit/ear folds) that affected all of them is fixed as of 2026-08-19 — occluded
-texels now fill from their nearest neighbor in 3D surface space, not 2D atlas-pixel space.
+model above, including dgrauet's, which stays cloned separately in `vendor/hunyuan-mlx`
+because its code is Tencent-licensed. Keep `decimation_target` at or under 500,000: the
+paint stage's UV unwrap stalls above that.

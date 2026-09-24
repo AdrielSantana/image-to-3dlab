@@ -25,6 +25,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -35,8 +36,14 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from image_to_3dlab.host import NVIDIA, executable, host_platform
+from image_to_3dlab.sdcpp import NO_GPU_HELP, BackendWatch
+
 HF_HUB = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
-BINARY = REPO / "vendor" / "sdcpp" / "sd-cli"
+BINARY = executable(REPO / "vendor" / "sdcpp", "sd-cli")
 # Research-only output goes in its own folder, matching how provenance.py classifies the
 # model. Nobody should have to open a sidecar to find out which pictures are restricted.
 OUTPUT_ROOT = REPO / "output" / "images" / "research_only"
@@ -358,9 +365,15 @@ def run_job(job: ImageJob, manager: ImageJobManager,
             cwd=str(REPO),
         )
         assert job.process.stdout is not None
+        # Only where a GPU is expected from a runtime-loaded backend. The Mac build is
+        # Metal and says nothing of the sort.
+        watch = BackendWatch() if host_platform() == NVIDIA else None
+        no_gpu = False
         buffer = b""
         while True:
-            chunk = job.process.stdout.read(256)
+            # read1, not read: read(256) waits for 256 bytes, so a short line sat unseen
+            # until more output came, which is useless for stopping a CPU-only run.
+            chunk = job.process.stdout.read1(256)
             if not chunk:
                 break
             buffer += chunk
@@ -373,6 +386,9 @@ def run_job(job: ImageJob, manager: ImageJobManager,
                 if not line:
                     continue
                 job.log_lines.append(line)
+                if watch is not None and not no_gpu and watch.feed(line):
+                    no_gpu = True
+                    job.process.terminate()
                 event = parse_progress(line)
                 if event:
                     job.emit(event)
@@ -380,6 +396,10 @@ def run_job(job: ImageJob, manager: ImageJobManager,
         elapsed = time.monotonic() - started
         if job.cancel_requested:
             job.set_status("cancelled")
+        elif no_gpu:
+            job.error = NO_GPU_HELP
+            job.set_status("error", error=job.error,
+                           log="\n".join(list(job.log_lines)[-12:]))
         elif code != 0 or not job.output_path.exists():
             job.error = f"sd-cli exited with code {code}"
             job.set_status("error", error=job.error,
