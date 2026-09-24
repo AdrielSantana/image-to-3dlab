@@ -56,6 +56,10 @@ One line installs it, and the same line updates it. Windows is wired up but unte
 ### Fixed
 - `image_to_3dlab.__version__` said 0.1.0 through the 0.2.0 release. A test now keeps
   it in step with this changelog.
+- **SF3D models came out inside a grey slab** when the input came from Generate Image.
+  Those images have a transparency channel that is really just noise, and SF3D took
+  that as "already cut out", so the background became geometry. SF3D now checks
+  whether anything is actually transparent, and cuts the background out if not.
 - SF3D on NVIDIA Linux failed at the texture step when the CUDA toolkit did not match
   PyTorch. The baker falls back to its CPU kernel there, but SF3D still handed it GPU
   data. It now bakes on the CPU and hands the result back to the GPU.

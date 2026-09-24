@@ -39,6 +39,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from image_to_3dlab.host import executable
+from image_to_3dlab.matte import is_matted
 
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
 CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
@@ -64,12 +65,8 @@ STAGE_LABELS = {
 BANNER_STAGES = {1: "views", 2: "ss", 3: "shape", 4: "decode", 5: "texture", 6: "write"}
 
 
-# A real cutout leaves a lot of the frame empty -- a centred subject is typically 30-60%
-# transparent. This floor only has to separate that from an alpha channel that cuts nothing.
 # u2net, as `trellis_backend.py` uses. Never BRIA RMBG -- a licence guardrail.
 MATTE_MODEL = "u2net"
-MATTE_MIN_TRANSPARENT = 0.02
-MATTE_TRANSPARENT_BELOW = 16
 
 
 def has_alpha(image: Path) -> bool:
@@ -90,13 +87,7 @@ def has_alpha(image: Path) -> bool:
     from PIL import Image
 
     with Image.open(image) as opened:
-        if opened.mode not in ("RGBA", "LA") and "transparency" not in opened.info:
-            return False
-        alpha = opened.convert("RGBA").getchannel("A")
-
-    histogram = alpha.histogram()
-    transparent = sum(histogram[:MATTE_TRANSPARENT_BELOW])
-    return transparent / (alpha.width * alpha.height) >= MATTE_MIN_TRANSPARENT
+        return is_matted(opened)
 
 
 def _rembg_remove(image, session=None):

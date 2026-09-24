@@ -6,6 +6,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from image_to_3dlab.matte import is_matted
+
 
 @dataclass(frozen=True)
 class SF3DOptions:
@@ -23,6 +25,17 @@ def _is_mps_oom(exc: RuntimeError) -> bool:
     return "mps" in message and any(
         word in message for word in ("out of memory", "oom", "allocation")
     )
+
+
+def cut_out(image, remove_background, session):
+    """Run rembg unless the image is already really cut out.
+
+    Upstream `remove_background` skips rembg on any RGBA with an alpha below 255, so a
+    Qwen image with noise alpha went in un-cut and came out encased in a slab.
+    """
+    if is_matted(image):
+        return image
+    return remove_background(image, session, force=True)
 
 
 def _load_sf3d(repo: Path):
@@ -59,7 +72,7 @@ def _run(
     model.eval()
 
     image = Image.open(image_path).convert("RGBA")
-    image = remove_background(image, rembg.new_session())
+    image = cut_out(image, remove_background, rembg.new_session())
     image = resize_foreground(image, options.foreground_ratio)
     prepared = output_path.with_name(f"{output_path.stem}_input.png")
     image.save(prepared)
