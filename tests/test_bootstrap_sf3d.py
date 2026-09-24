@@ -133,8 +133,9 @@ def test_build_tools_go_in_before_the_extensions(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(boot.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
     boot.install_code("linux-nvidia")
-    assert calls[0] == ["pip", "install", "setuptools", "wheel"]
-    assert calls[1][-2:] == ["-r", "requirements.txt"]
+    assert calls[0][1].endswith("patch_sf3d_cpu_baker.py")  # before the baker is built
+    assert calls[1] == ["pip", "install", "setuptools", "wheel"]
+    assert calls[2][-2:] == ["-r", "requirements.txt"]
 
 
 # On the second NVIDIA pod, PyTorch from PyPI was built for CUDA 13.0 and the pod's nvcc

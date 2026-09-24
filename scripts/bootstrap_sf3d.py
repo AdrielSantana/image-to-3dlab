@@ -174,6 +174,11 @@ def install_code(key: str) -> None:
         print(f"Cloning {UPSTREAM}", flush=True)
         VENDOR.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "clone", "--depth", "1", UPSTREAM, str(VENDOR)], check=True)
+    # The CPU baker must accept the GPU tensors SF3D hands it; patch before building,
+    # since the baker is installed as a copy, not in place.
+    subprocess.run([sys.executable, str(REPO / "scripts" / "patch_sf3d_cpu_baker.py"),
+                    str(VENDOR / "texture_baker" / "texture_baker" / "baker.py")],
+                   check=True)
     print("Installing SF3D's packages and building its extensions...", flush=True)
     # --no-build-isolation so the extensions compile against the torch already installed
     # here, not a fresh one pip would fetch into a throwaway build environment.

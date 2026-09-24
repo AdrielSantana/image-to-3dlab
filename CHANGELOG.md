@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `image_to_3dlab.__version__` said 0.1.0 through the 0.2.0 release. A test now keeps
   it in step with this changelog.
+- SF3D on NVIDIA Linux failed at the texture step when the CUDA toolkit did not match
+  PyTorch. The baker falls back to its CPU kernel there, but SF3D still handed it GPU
+  data. It now bakes on the CPU and hands the result back to the GPU.
 - Generate Image read sd-cli's output in 256-byte blocks, so short lines could sit unseen
   until more arrived. It now reads whatever is there.
 - Setup & Status said a finished download was a few bytes ("done · 120 B") with newer
