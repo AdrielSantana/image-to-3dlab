@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-24
+
+**Now runs on NVIDIA Linux.** Text to image to 3D works on a Linux machine with an NVIDIA
+card, as well as on Apple Silicon: images via stable-diffusion.cpp's Vulkan build, 3D via
+Pixal3D and Stable Fast 3D on CUDA. Tested end to end on an RTX 4090 and an RTX 3090 Ti.
+One line installs it, and the same line updates it. Windows is wired up but untested.
+
 ### Added
 - **Text to image to 3D on NVIDIA (Linux, and Windows untested).** The Generate Image
   tab and the Pixal3D route now run on a Linux or Windows machine with an NVIDIA card as
@@ -22,8 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the route, the size and the licence and asks before downloading, which the shell
   script never did.
 - **Stable Fast 3D on NVIDIA Linux, and `scripts/bootstrap_sf3d.py`.** SF3D now runs on
-  CUDA when there is a card, and the new installer builds its texture baker with CUDA (or
-  Metal on a Mac). It also fetches DINOv2 (1.1 GB) up front, which SF3D used to download
+  CUDA when there is a card. The new installer builds its texture baker with CUDA when
+  the CUDA toolkit matches PyTorch, with its CPU kernel when it does not, and with Metal
+  on a Mac. It also fetches DINOv2 (1.1 GB) up front, which SF3D used to download
   unannounced on its first run, and explains the gated licence step if Hugging Face refuses.
   Setup & Status can now install SF3D by itself.
 - **The viewer says when a new version is out.** While it runs, it asks GitHub at most once
