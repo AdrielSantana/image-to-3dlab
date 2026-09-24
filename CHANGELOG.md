@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-24
+
+### Fixed
+- Windows: the viewer no longer crashes on start after an interrupted job, and stopping
+  a job now works there too (it used a Mac/Linux-only call).
+- Pixal3D no longer tells you to "enable rembg" for images without a cut-out. It removes
+  the background itself, and the badge now says so.
+- Setup: the download progress bar now appears under the model you clicked, not at the
+  bottom of the page.
+
 ## [0.3.0] - 2026-09-24
 
 **Now runs on NVIDIA Linux.** Text to image to 3D works on a Linux machine with an NVIDIA
