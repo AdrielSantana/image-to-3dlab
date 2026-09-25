@@ -229,7 +229,23 @@ def test_each_prop_row_counts_its_lods_and_ticks_when_done():
     assert (events[0]["step"], events[0]["total"]) == (0, 2)
     assert (events[2]["step"], events[2]["total"]) == (1, 2)
     assert events[4]["stage_pct"] == 100
-    assert events[4]["overall_pct"] == pytest.approx(props.SPLIT_WEIGHT + (100 - props.SPLIT_WEIGHT) / 2)
+    split = 100 * props.split_share(2)
+    assert events[4]["overall_pct"] == pytest.approx(split + (100 - split) / 2, abs=0.1)
+
+
+def test_the_split_takes_more_of_the_bar_when_there_is_less_to_bake():
+    assert props.split_share(1) > 0.3        # a turn: the split is a third of it
+    assert props.split_share(9) < 0.1        # a full sheet: the bakes are the run
+
+
+def test_a_one_prop_turn_does_not_claim_minutes_left_after_its_split():
+    """The reported "~2 min left" for a 20-second turn."""
+    clock = Clock()
+    progress = props.PropsProgress(clock=clock)
+    progress.begin_split()
+    clock.now = 8
+    event = progress.begin_props(["barrel"], lods=3)
+    assert event["total_eta_seconds"] < 30
 
 
 def test_gltfpack_and_stray_lines_are_not_counted_as_bakes():
@@ -325,26 +341,54 @@ def test_bad_settings_leave_no_directory_behind(tmp_path):
     assert not any(tmp_path.iterdir())
 
 
-def test_turning_twice_adds_up_and_is_recorded(tmp_path):
+def _finish_turn(job, monkeypatch, *, succeed=True):
+    """Run a turn job with both scripts replaced by a stand-in that succeeds or fails."""
+    monkeypatch.setattr(props, "blender_executable", lambda: Path("/bin/blender"))
+    monkeypatch.setattr(props, "find_gltfpack", lambda: None)
+    monkeypatch.setattr(props, "_run_step",
+                        lambda job, label, command, feed: succeed or _fail(job))
+    props.run_job(job, props.PropsJobManager(job.directory.parent))
+    return job
+
+
+def _fail(job):
+    job.status = "cancelled"
+    return False
+
+
+def test_turning_twice_adds_up_once_each_turn_is_baked(tmp_path, monkeypatch):
     directory = _write_run(tmp_path)
     manager = props.PropsJobManager(tmp_path)
     first = manager.turn(directory.name, "chest", 90)
     assert first.only == "chest"
     assert first.settings["turns"] == {"chest": 90.0}
-    first.status = "done"
+    _finish_turn(first, monkeypatch)
+    assert first.status == "done"
     second = manager.turn(directory.name, "chest", 90)
     assert second.settings["turns"] == {"chest": 180.0}
+    _finish_turn(second, monkeypatch)
     saved = json.loads((directory / "settings.json").read_text())
     assert saved["turns"] == {"chest": 180.0}
 
 
-def test_four_quarter_turns_forget_the_turn(tmp_path):
+def test_a_cancelled_turn_leaves_no_turn_behind(tmp_path, monkeypatch):
+    """The barrel that came out backwards: a cancelled turn, then one more click."""
+    directory = _write_run(tmp_path)
+    manager = props.PropsJobManager(tmp_path)
+    _finish_turn(manager.turn(directory.name, "barrel", 90), monkeypatch, succeed=False)
+    assert json.loads((directory / "settings.json").read_text())["turns"] == {}
+    again = manager.turn(directory.name, "barrel", 90)
+    assert again.settings["turns"] == {"barrel": 90.0}
+
+
+def test_four_quarter_turns_forget_the_turn(tmp_path, monkeypatch):
     directory = _write_run(tmp_path)
     manager = props.PropsJobManager(tmp_path)
     for _ in range(4):
         job = manager.turn(directory.name, "chest", 90)
-        job.status = "done"
+        _finish_turn(job, monkeypatch)
     assert job.settings["turns"] == {}
+    assert json.loads((directory / "settings.json").read_text())["turns"] == {}
 
 
 @pytest.mark.parametrize(("prop", "degrees", "error"), [

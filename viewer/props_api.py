@@ -66,9 +66,17 @@ SETTING_BOUNDS: dict[str, tuple[float, float]] = {
 ATLAS_SIZES = (1024, 2048, 4096)
 FACE_RANGE = (1000, 200000)
 
-# How the bar divides. A measured nine-prop run on 2026-09-25 split in about 8 seconds
-# and baked 27 LODs in 133, so the split gets a thin slice and the props share the rest.
-SPLIT_WEIGHT = 6.0
+# How the bar divides, from a measured nine-prop run on 2026-09-25: the split took about
+# 8 seconds and each prop's three LODs about 14. A fixed slice for the split was right for
+# nine props and wrong for one: turning a single prop showed "~2 min left" for a 20-second
+# job, because the split is 40% of that one.
+SPLIT_SECONDS = 8.0
+PROP_SECONDS = 14.0
+
+
+def split_share(props: int) -> float:
+    """The fraction of the bar the split takes, for a run baking this many props."""
+    return SPLIT_SECONDS / (SPLIT_SECONDS + PROP_SECONDS * max(props, 1))
 
 # Top-level directories under output/ that hold something other than generated models.
 NOT_GENERATED = {"finish", "props", "images", "rig-rebind"}
@@ -277,7 +285,7 @@ class PropsProgress:
         self.done = {name: 0 for name in self.names}
         first = self.names[0] if self.names else "split"
         event = self._event(f"prop:{first}" if self.names else "split",
-                            f"{len(self.names)} props to bake", SPLIT_WEIGHT / 100.0)
+                            f"{len(self.names)} props to bake", self.fraction())
         event.update(stage_meta(self.names))
         return event
 
@@ -298,9 +306,10 @@ class PropsProgress:
 
     def fraction(self) -> float:
         if not self.names:
-            return SPLIT_WEIGHT / 100.0
+            return 0.0
+        split = split_share(len(self.names))
         baked = sum(self.done.values()) / (len(self.names) * self.lods)
-        return (SPLIT_WEIGHT + (100.0 - SPLIT_WEIGHT) * baked) / 100.0
+        return split + (1.0 - split) * baked
 
     def _prop_event(self, name: str, message: str) -> dict[str, Any]:
         step = self.done[name]
@@ -392,7 +401,8 @@ class PropsJobManager:
         """A job that turns one prop of an existing run and re-bakes only that prop.
 
         The turn is added to the run's recorded turns, so turning the chest twice by 90
-        faces it backwards, as clicking the button twice should.
+        faces it backwards, as clicking the button twice should. It is recorded when the
+        job finishes, so one that is cancelled or fails leaves no turn behind.
         """
         with self.lock:
             self._refuse_if_busy()
@@ -413,7 +423,9 @@ class PropsJobManager:
             settings["turns"] = turns
             job.settings = settings
             job.only = prop
-            job.settings_path.write_text(json.dumps(settings, indent=2))
+            # Recorded by run_job once the prop is re-baked, not here: a cancelled turn
+            # that stayed recorded made the next click turn the prop twice (seen
+            # 2026-09-25, a barrel that came out facing backwards).
             self.jobs[job.id] = job
             self.active = job.id
             return job
@@ -461,6 +473,8 @@ def run_job(job: PropsJob, manager: PropsJobManager = PROPS_JOBS) -> None:
                          progress.finish_line):
             return
 
+        if job.only:
+            job.settings_path.write_text(json.dumps(job.settings, indent=2))
         run = describe_run(job.directory)
         job.status = "done"
         job.emit({
