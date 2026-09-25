@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Prop sheets: many props from one image, in one run.** Generate a grid of props,
+  turn the whole sheet into 3D with one Pixal3D run, then split it into separate,
+  upright, named props (`scripts/blender_split_props.py`) and give each prop
+  compressed LODs with Finish's normal and metallic-roughness bake
+  (`scripts/finish_props.py`). The walkthrough and what was measured are in
+  `docs/prop-sheets.md`.
+
 ### Fixed
 - `blender_bake_normals.py` no longer knocks normal-map values from 1 to 63 down a
   step when it fixes the map's sign. It truncated where it should have rounded. The

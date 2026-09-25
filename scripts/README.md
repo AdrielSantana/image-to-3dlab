@@ -21,6 +21,9 @@ standing transition** workflow, start with [the quadruped pipeline guide](../doc
 It includes commands, parameter definitions, failure checks, and an LLM-assisted
 tuning checklist. Manual fitting and visual weight/deformation review remain required.
 
+For **prop sheets** (many props from one image in one run, then split and finished into
+game-ready LODs), start with [the prop sheet guide](../docs/prop-sheets.md).
+
 | Script | What it does |
 |---|---|
 | `blender_quadruped_pipeline.py` | Bind, capture and animate fitted Rigify quadrupeds with tunable profiles and audit reports. |
