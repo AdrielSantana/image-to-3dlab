@@ -217,6 +217,22 @@ def test_compare_uses_shared_asset_file_specs():
     assert "export function specsFromFiles" in asset_files.read_text()
 
 
+def test_an_embedded_preview_drops_the_menu_bar():
+    """Generate 3D and Props embed Compare with ?restricted=1; the menu wrapped above it."""
+    compare = (REPO / "viewer" / "modes" / "compare.js").read_text()
+    css = (REPO / "viewer" / "styles" / "compare.css").read_text()
+    assert "if (RESTRICTED) document.body.classList.add('embedded');" in compare
+    assert "body.embedded #mode-switch" in css
+    assert "body.embedded #bar { top: 0;" in css
+
+
+def test_the_menu_bar_stays_one_row():
+    """Every view sits 42px down; a menu whose buttons wrap is taller than that."""
+    css = (REPO / "viewer" / "styles" / "base.css").read_text()
+    assert "#mode-switch > * { flex: none; white-space: nowrap; }" in css
+    assert "#mode-switch { overflow-x: auto;" in css
+
+
 def test_app_shell_owns_mode_navigation():
     app = (REPO / "viewer" / "app.js").read_text()
     generate = (REPO / "viewer" / "modes" / "generate.js").read_text()

@@ -25,6 +25,9 @@ const MAX = 3;
 // pane too small to see anything. Full multi-model comparison belongs in the dedicated
 // Compare tab (the whole screen), not this embedded view, so hide the add-pane affordances.
 const RESTRICTED = new URLSearchParams(location.search).get('restricted') === '1';
+// The page is then a preview inside another tab, so it also drops the menu bar: in a
+// panel that narrow, every tab's button wrapped onto two lines above the model.
+if (RESTRICTED) document.body.classList.add('embedded');
 const slots = [null, null, null];
 let views = [];
 const rebuildViews = () => { views = slots.filter((s) => s && s.kind === 'model'); updateChrome(); };

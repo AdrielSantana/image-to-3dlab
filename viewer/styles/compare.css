@@ -53,3 +53,10 @@ body.dragging #drop .zone { border-color: #4d84c0; background: #3b6ea522; }
 #drop button { padding: 8px 16px; font-size: 14px; }
 #compare-view.hidden { display: none; }
 
+/* ?restricted=1: this page is a preview embedded in another tab. No menu, and the
+   toolbar stays one row that scrolls sideways, so the model starts right under it. */
+body.embedded #mode-switch, body.embedded #update-banner { display: none; }
+body.embedded #bar { top: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+body.embedded #bar > * { flex: none; }
+body.embedded #add + .sep { display: none; }
+body.embedded #panes, body.embedded #drop { top: 45px; }

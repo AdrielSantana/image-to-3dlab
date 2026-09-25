@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The Generate 3D tab's built-in 3D preview shows the model again. Since Setup & Status
   became the landing page, the preview landed there instead.
+- That preview no longer carries the whole menu bar inside it, and the menu bar stays on
+  one row in a narrower window instead of wrapping its buttons over the page.
 
 ## [0.3.1] - 2026-09-24
 
