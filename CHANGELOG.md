@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   walkthrough and what was measured are in `docs/prop-sheets.md`.
 - `blender_retopo_bake.py --normal-map` bakes the original's surface detail into a normal
   map as well as its colour, and ships the tangents it was baked against.
+- **Props tab in the viewer.** Split a prop sheet and bake every prop's LODs from the
+  browser, with a 3D view and downloads per prop, a warning when gltfpack is missing, and
+  a **Turn 90°** button that re-bakes just the prop that came out facing sideways.
 
 ### Fixed
 - The Generate 3D tab's built-in 3D preview shows the model again. Since Setup & Status

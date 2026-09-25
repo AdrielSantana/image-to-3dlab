@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="./styles/base.css">
 <link rel="stylesheet" href="./styles/compare.css">
 <link rel="stylesheet" href="./styles/generate.css">
+<link rel="stylesheet" href="./styles/props.css">
 <link rel="stylesheet" href="./styles/generate-image.css">
 <link rel="stylesheet" href="./styles/animate.css">
 <link rel="stylesheet" href="./styles/rig.css">
@@ -22,6 +23,7 @@
   <button id="mode-generate-image" class="mode" title="No source image? Write a prompt and make one">Generate Image</button>
   <button id="mode-generate" class="mode" title="Turn an image into a 3D mesh">Generate 3D</button>
   <button id="mode-finish" class="mode" title="Retopologise, repaint and compress an existing asset">Finish</button>
+  <button id="mode-props" class="mode" title="Split a prop sheet into separate props, each with LODs">Props</button>
   <button id="mode-rig" class="mode" title="Correct the rest skeleton">Rig Edit</button>
   <button id="mode-animate" class="mode" title="Pose and animate the bound skeleton">Pose</button>
   <button id="mode-about" class="mode" title="Who we are, what runs on this machine, and what's new">About</button>
@@ -417,6 +419,79 @@
         six-minute run, so resuming skips nearly all of it.
       </p>
       <div id="finish-runs"></div>
+    </div>
+  </div>
+</section>
+
+<section id="props-view" hidden>
+  <div class="generate-card props-card">
+    <h2 style="margin-top:0">Split a prop sheet</h2>
+    <p>
+      A <em>prop sheet</em> is one image holding a grid of separate props, turned into 3D in
+      one Pixal3D run. This takes that GLB apart, stands each prop up, names it, and bakes
+      its levels of detail (LODs): lighter copies a game swaps in further away. Nine props
+      take about two and a half minutes, all of it Blender on the CPU.
+      The walkthrough is in <code>docs/prop-sheets.md</code>.
+    </p>
+    <div id="props-tools" class="props-tools" role="status"></div>
+
+    <div class="field"><label for="props-generated">Generated model</label>
+      <select id="props-generated"><option value="">none (upload one)</option></select>
+      <small>Anything the Generate 3D tab wrote. An upload below wins over this.</small></div>
+    <div class="field"><label for="props-asset">Or upload (.glb)</label>
+      <input id="props-asset" type="file" accept=".glb,model/gltf-binary">
+      <small id="props-asset-name">no file chosen</small></div>
+
+    <div class="field props-names"><label for="props-names">Names</label>
+      <textarea id="props-names" rows="5" spellcheck="false"
+                placeholder="barrel&#10;crate&#10;chest"></textarea>
+      <small>One per line, in the order you would read the image: top row first, left to
+        right. Leave it empty and they are numbered prop_01, prop_02&hellip;</small></div>
+
+    <div class="field"><label for="props-lods">LOD face counts</label>
+      <input id="props-lods" type="text" value="5000,2500,1000" spellcheck="false">
+      <small>Triangles per LOD, most detailed first. Each LOD is baked from the original
+        with its own normal map, not simplified from the one before.</small></div>
+    <div class="field"><label for="props-atlas">Texture size</label>
+      <select id="props-atlas"><option selected>1024</option><option>2048</option><option>4096</option></select></div>
+    <div class="field"><label for="props-metallic">Metallic</label>
+      <input id="props-metallic" type="number" step="0.01" min="0" max="1" value="0.25"></div>
+    <div class="field"><label for="props-roughness">Roughness</label>
+      <input id="props-roughness" type="number" step="0.01" min="0" max="1" value="0.65"></div>
+    <div class="field"><label for="props-ior">IOR</label>
+      <input id="props-ior" type="number" step="0.01" min="1" max="3" value="1.45"></div>
+    <label class="check"><input id="props-compress" type="checkbox" checked><span>compress with gltfpack</span>
+      <small>adds a <code>.web.glb</code> per LOD, about a seventh of the size</small></label>
+
+    <button id="props-submit" disabled>Split &amp; finish</button>
+    <button id="props-cancel" hidden>Cancel</button>
+
+    <div id="props-progress-box" class="generate-card" hidden>
+      <div id="generate-progress-head"><span id="props-overall-label">Waiting</span><span id="props-overall-eta"></span></div>
+      <div class="progress-track"><div id="props-overall-bar"></div></div>
+      <div id="props-stages"></div>
+      <div id="props-status" aria-live="polite" style="font-size:12px; margin-top:6px"></div>
+    </div>
+
+    <div id="props-result" hidden>
+      <div class="props-result-head">
+        <strong id="props-result-title"></strong>
+        <a id="props-blend" download hidden>props.blend</a>
+      </div>
+      <div id="props-list"></div>
+      <div id="props-viewer" hidden><iframe id="props-frame" title="prop viewer"></iframe></div>
+      <small class="props-note">The 3D view shows the plain LOD0. The <code>.web.glb</code>
+        files need <code>EXT_meshopt_compression</code> and <code>EXT_texture_webp</code>;
+        three.js reads both, but check your engine before shipping them.</small>
+    </div>
+
+    <div id="props-runs-box" class="generate-card" style="margin-top:16px">
+      <div id="generate-progress-head">
+        <span>Runs on disk</span>
+        <button id="props-runs-refresh" class="ghost">Refresh</button>
+      </div>
+      <p style="margin:4px 0 8px">Every run stays in <code>output/props/</code>.</p>
+      <div id="props-runs"></div>
     </div>
   </div>
 </section>

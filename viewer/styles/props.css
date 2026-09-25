@@ -1,0 +1,27 @@
+/* --- Props: split a prop sheet ----------------------------------------------------- */
+.props-card { max-width: 760px; margin: 16px auto; }
+.props-tools { font-size: 12px; }
+.props-tools .warn { color: #f5d742; }
+.props-tools .bad { color: #ffb8ae; }
+.props-tools:empty { display: none; }
+.props-names { grid-template-columns: 1fr; }
+.props-names textarea { width: 100%; background: #12151a; color: #d8dee9; border: 1px solid #39404b;
+                        border-radius: 4px; padding: 6px; font: 12px/1.5 ui-monospace, monospace; resize: vertical; }
+#props-submit, #props-cancel { margin-top: 16px; width: 100%; padding: 9px; }
+#props-submit { background: #2f5233; border-color: #3f6d45; }
+#props-submit:hover:not(:disabled) { background: #396b40; }
+#props-stages { display: grid; gap: 6px; }
+#props-result { margin-top: 16px; }
+.props-result-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.props-result-head a, .prop-row a { color: #9bc8ff; }
+#props-list { display: grid; gap: 6px; }
+.prop-row { display: grid; grid-template-columns: minmax(110px, 1fr) auto; gap: 4px 10px; padding: 8px 10px;
+            border-radius: 6px; background: #14161a; font-size: 12px; }
+.prop-row.showing { outline: 1px solid #4d84c0; }
+.prop-row .prop-meta { opacity: .65; font-size: 11px; }
+.prop-row .prop-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.prop-row .prop-lods { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; }
+.prop-row .prop-tie { grid-column: 1 / -1; color: #f5dda0; font-size: 11px; }
+#props-viewer { margin-top: 10px; }
+#props-viewer iframe { width: 100%; height: 380px; border: 1px solid #303744; border-radius: 8px; background: #14161a; }
+.props-note { display: block; margin-top: 8px; opacity: .55; font-size: 10px; }

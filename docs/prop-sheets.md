@@ -112,6 +112,22 @@ warnings.
 | chest | 282 KB | 270 KB | 262 KB |
 | anvil | 139 KB | 133 KB | 123 KB |
 
+## From the viewer
+
+The **Props** tab runs steps 3 and 4 in one go. Pick the sheet's GLB from what
+Generate 3D made, or upload one; type the names one per line, in reading order; press
+**Split & finish**. The panel shows the split, then one row per prop counting its LODs.
+
+Each finished prop gets a **View** button (a 3D view of its LOD0), download links for
+every LOD and its `.web.glb`, and a **Turn 90°** button. A prop flagged as a tie says
+so under its name. Turn 90° re-splits the sheet with that turn and re-bakes only that
+prop, in the same run folder, so the chest fix above is one click. Clicking twice turns
+it twice.
+
+Runs live in `output/props/<sheet>__props__<time>/` and stay listed under the form.
+The tab says so when Blender or gltfpack is missing: without gltfpack the LODs are
+written uncompressed. It looks for gltfpack on PATH, then at `vendor/gltfpack/gltfpack`.
+
 ## Limits
 
 - **Some bend stays.** After standing up and squaring, what is left is 2 to 5 degrees,
