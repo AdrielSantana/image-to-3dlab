@@ -190,6 +190,19 @@ def find_gltfpack() -> Path | None:
     return finisher_module().find_gltfpack()
 
 
+def bake_order(split_dir: Path, names: list[str]) -> list[str]:
+    """The props in the order `finish_props.py` will bake them, which is its own file
+    order rather than reading order.
+
+    The panel ticks every row above the running one, so rows in reading order would
+    show the barrel and the crate as done while the anvil, alphabetically first, was
+    still baking (seen on the first real run, 2026-09-25).
+    """
+    wanted = set(names)
+    found = [p.stem for p in finisher_module().collect_props(split_dir) if p.stem in wanted]
+    return found + [name for name in names if name not in found]
+
+
 def split_command(job: PropsJob, blender: Path) -> list[str]:
     command = [
         str(blender), "-b", "--factory-startup", "-P", str(SPLITTER), "--",
@@ -440,7 +453,7 @@ def run_job(job: PropsJob, manager: PropsJobManager = PROPS_JOBS) -> None:
             shutil.rmtree(job.finished_dir / job.only, ignore_errors=True)
 
         gltfpack = find_gltfpack() if job.settings["compress"] else None
-        event = progress.begin_props(names, len(job.settings["lods"]))
+        event = progress.begin_props(bake_order(job.split_dir, names), len(job.settings["lods"]))
         if job.settings["compress"] and gltfpack is None:
             event["message"] += "; gltfpack not found, so no .web.glb files"
         job.emit(event)

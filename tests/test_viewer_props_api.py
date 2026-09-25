@@ -166,6 +166,22 @@ def test_without_gltfpack_or_when_asked_the_lods_stay_uncompressed(tmp_path):
         assert "--gltfpack" not in command
 
 
+def test_rows_follow_the_order_the_finisher_bakes_in(tmp_path):
+    """Not reading order and not a plain sort: `a-b.glb` sorts before `a.glb`."""
+    for name in ("tree_stump", "anvil", "a", "a-b"):
+        (tmp_path / f"{name}.glb").write_bytes(b"x")
+    (tmp_path / "props.json").write_text("{}")
+    order = props.bake_order(tmp_path, ["tree_stump", "anvil", "a", "a-b"])
+    assert order == [p.stem for p in props.finisher_module().collect_props(tmp_path)]
+    assert order == ["a-b", "a", "anvil", "tree_stump"]
+
+
+def test_a_turn_bakes_its_one_prop_whatever_else_is_there(tmp_path):
+    for name in ("anvil", "chest"):
+        (tmp_path / f"{name}.glb").write_bytes(b"x")
+    assert props.bake_order(tmp_path, ["chest"]) == ["chest"]
+
+
 def test_prop_rows_cannot_collide_with_the_panels_own_phases():
     meta = props.stage_meta(["done", "split"])
     assert meta["stages"] == ["split", "prop:done", "prop:split"]
