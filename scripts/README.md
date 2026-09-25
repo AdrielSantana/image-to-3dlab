@@ -86,6 +86,7 @@ The asset's surface, as opposed to its shape.
 | `fix_glb_opaque_material.py` | Make an existing TRELLIS GLB opaque and single-sided without rebaking it. |
 | `compress_glb_textures.py` | Re-encode a GLB's textures, without touching its geometry. |
 | `retopo_repaint.py` | Finish a generated asset: retopologise, repaint, compress. |
+| `finish_props.py` | Finish every prop from a prop sheet: re-baked LODs with normal maps, then compressed. |
 | `living_organic_material.py` | Apply a reproducible living-organic material recipe to an existing GLB. |
 | `project_labels.py` | Project a 2D image onto a generated mesh as per-vertex colours. |
 | `project_markings.py` | Paint the source image's markings back onto a generated mesh's texture. |
