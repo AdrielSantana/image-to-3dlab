@@ -144,6 +144,7 @@ Heavier edits that need Blender's own operators rather than trimesh.
 | `blender_shrinkwrap.py` | Pull a clean remeshed surface back onto the original decode. |
 | `blender_visibility_cull.py` | Delete every face never seen from outside the mesh, headless. |
 | `blender_retopo_bake.py` | Quad-retopologise a generated mesh and transfer its texture onto the clean topology. |
+| `blender_split_props.py` | Split a multi-prop GLB into one upright, named object per prop, headless. |
 | `blender_reunwrap_bake.py` | Re-unwrap a generated mesh into coherent UV islands and re-bake its texture, headless. |
 | `blender_split_regions.py` | Split a generated mesh into per-region material slots, each with its own texture. |
 | `blender_bake_ao.py` | Bake an ambient-occlusion map from an asset's own geometry, headless. |
