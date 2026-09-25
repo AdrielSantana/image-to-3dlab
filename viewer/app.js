@@ -58,6 +58,13 @@ subscribeRigEditState(({ pendingCount }) => {
 // First run lands on Setup & Status, because a fresh clone can generate nothing until
 // weights exist and the page is where that is explained. Once the user ticks "skip this
 // next time" it is never the landing page again -- it stays one click away in the menu.
-setMode(skipRequested() ? 'generate' : 'setup');
-welcomeOnArrival();
+//
+// A link that names a model (?a=, as `serve.py --open` and the Generate tab's embedded
+// preview build it) asks for Compare, so it lands there, and the About page's
+// first-visit announcement waits for a visit that was not a link. Without this the
+// embedded preview landed on Setup or Generate, not on the model it was showing.
+const linked = new URLSearchParams(location.search).has('a');
+if (linked) setMode('compare');
+else setMode(skipRequested() ? 'generate' : 'setup');
+if (!linked) welcomeOnArrival();
 checkForUpdates();

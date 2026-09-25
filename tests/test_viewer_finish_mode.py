@@ -116,6 +116,13 @@ def test_the_setup_mode_is_registered_and_lands_first():
     assert "setMode(skipRequested() ? 'generate' : 'setup');" in APP
 
 
+def test_a_link_to_a_model_lands_on_compare():
+    """The embedded previews load this page with ?a=; landing on Setup hid the model."""
+    assert "const linked = new URLSearchParams(location.search).has('a');" in APP
+    assert "if (linked) setMode('compare');" in APP
+    assert "if (!linked) welcomeOnArrival();" in APP
+
+
 def test_generate_no_longer_carries_the_full_setup_card():
     # The checks moved to Setup & Status; Generate keeps one health line pointing at it.
     ids = _element_ids(INDEX)
