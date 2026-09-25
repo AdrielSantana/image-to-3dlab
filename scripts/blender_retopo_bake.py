@@ -3,6 +3,8 @@
 Run with:
     blender --background --python scripts/blender_retopo_bake.py -- IN.glb OUT.glb [faces] [size]
 
+Add ``--normal-map`` to bake the original's surface detail into a normal map as well.
+
 **Why.** Painting markings into a TRELLIS atlas cannot produce a crisp edge, and the cause
 is not the unwrapper. Measured on Flicker (50k faces, 2048 atlas):
 
@@ -34,6 +36,7 @@ from __future__ import annotations
 
 import math
 import sys
+from pathlib import Path
 
 
 def quadriflow_reduced(before: int, after: int, target_faces: int) -> bool:
@@ -49,17 +52,35 @@ def quadriflow_reduced(before: int, after: int, target_faces: int) -> bool:
     return after <= max(target_faces * 3, 1)
 
 
+FLAGS = ("--normal-map",)
+
+
+def wants_normal_map(argv: list[str]) -> bool:
+    """Whether ``--normal-map`` came after Blender's ``--`` separator.
+
+    The positional order is fixed and `retopo_repaint.py` depends on it, so the one
+    option is a flag that may sit anywhere after ``--``. It bakes the original's surface
+    detail into a tangent-space normal map as well as its colour, which is what lets a
+    1,000-triangle prop keep its rivets and planks.
+    """
+    return "--" in argv and "--normal-map" in argv[argv.index("--") + 1 :]
+
+
 def parse_args(argv: list[str]) -> tuple[str, str, int, int, float, float, float, float, float]:
     """Arguments after Blender's ``--`` separator. Kept free of ``bpy`` so it is testable."""
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
     else:
         argv = []
+    unknown = [a for a in argv if a.startswith("--") and a not in FLAGS]
+    if unknown:
+        raise SystemExit(f"unknown option {unknown[0]}; the only one is --normal-map")
+    argv = [a for a in argv if a not in FLAGS]
     if len(argv) < 2:
         raise SystemExit(
             "usage: blender --background --python scripts/blender_retopo_bake.py "
             "-- IN.glb OUT.glb [target_faces] [atlas_size] [angle_degrees] "
-            "[voxel_fraction] [metallic] [roughness] [ior]"
+            "[voxel_fraction] [metallic] [roughness] [ior] [--normal-map]"
         )
     target_faces = int(argv[2]) if len(argv) > 2 else 20000
     size = int(argv[3]) if len(argv) > 3 else 2048
@@ -142,11 +163,119 @@ def ray_distance(dimensions, fraction: float = 0.02) -> float:
     return max(dimensions) * fraction
 
 
+GLB_JSON, GLB_BIN, FLOAT = 0x4E4F534A, 0x004E4942, 5126
+
+
+def repair_zero_tangents(glb: bytes) -> tuple[bytes, int]:
+    """Give every zero-length tangent in a GLB a unit direction across its normal.
+
+    Blender's exporter leaves a few tangents at zero length: on the test prop sheet, one
+    or two vertices in 3 files of 27, each on a lone triangle that is a UV island of its
+    own. Why it gives up there is not known. The glTF validator counts each one as an
+    error, and gltfpack already repairs them in the files it writes, so this does the
+    same for the uncompressed ones: any unit direction perpendicular to the normal, with
+    the handedness positive. One triangle's shading is all it can affect. Kept free of
+    ``bpy`` so it is testable.
+    """
+    import json
+    import struct
+
+    import numpy as np
+
+    magic, _version, _length = struct.unpack_from("<4sII", glb, 0)
+    json_length, json_type = struct.unpack_from("<II", glb, 12)
+    if magic != b"glTF" or json_type != GLB_JSON:
+        raise ValueError("not a GLB")
+    document = json.loads(glb[20 : 20 + json_length])
+    bin_start = 20 + json_length
+    bin_length, bin_type = struct.unpack_from("<II", glb, bin_start)
+    if bin_type != GLB_BIN:
+        return glb, 0
+    binary = bytearray(glb[bin_start + 8 : bin_start + 8 + bin_length])
+
+    def view(index: int, width: int) -> np.ndarray:
+        accessor = document["accessors"][index]
+        if accessor["componentType"] != FLOAT:
+            raise ValueError("expected float normals and tangents")
+        buffer_view = document["bufferViews"][accessor["bufferView"]]
+        offset = buffer_view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
+        stride = buffer_view.get("byteStride", 4 * width)
+        return np.ndarray((accessor["count"], width), dtype="<f4", buffer=binary,
+                          offset=offset, strides=(stride, 4))
+
+    repaired = 0
+    for mesh in document.get("meshes", []):
+        for primitive in mesh["primitives"]:
+            attributes = primitive["attributes"]
+            if "TANGENT" not in attributes or "NORMAL" not in attributes:
+                continue
+            tangents = view(attributes["TANGENT"], 4)
+            normals = view(attributes["NORMAL"], 3)
+            zero = np.linalg.norm(tangents[:, :3], axis=1) < 1e-6
+            for i in np.flatnonzero(zero):
+                normal = normals[i].astype(np.float64)
+                helper = np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+                tangent = np.cross(normal, helper)
+                tangent /= np.linalg.norm(tangent)
+                tangents[i] = (*tangent, 1.0)
+            repaired += int(zero.sum())
+    if not repaired:
+        return glb, 0
+    return glb[: bin_start + 8] + bytes(binary) + glb[bin_start + 8 + bin_length :], repaired
+
+
+def bake_normal_map(bpy, retopo, material, principled, size: int) -> None:
+    """Bake the original's surface detail into a normal map on the retopo, and wire it in.
+
+    Runs straight after the colour bake, reusing its selection and ray settings: the
+    original is still selected as the source and the retopo is the active target. The
+    retopo is shaded smooth first, or its own facets bake in as detail.
+
+    A texel pointing into the surface can only come from a source face wound the wrong
+    way, so it is negated, as `blender_bake_normals.py` does; the share negated is
+    printed, and near zero means the source was consistently wound.
+    """
+    import numpy as np
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from blender_bake_normals import resolve_tangent_sign
+
+    for polygon in retopo.data.polygons:
+        polygon.use_smooth = True
+    image = bpy.data.images.new("retopo_normal", width=size, height=size, alpha=False)
+    image.colorspace_settings.name = "Non-Color"
+    nodes, links = material.node_tree.nodes, material.node_tree.links
+    texture = nodes.new("ShaderNodeTexImage")
+    texture.image = image
+    for node in nodes:
+        node.select = False
+    texture.select = True
+    nodes.active = texture
+
+    bpy.context.scene.render.bake.normal_space = "TANGENT"
+    print("RETOPO:: baking normal map ...")
+    bpy.ops.object.bake(type="NORMAL")
+
+    pixels = np.empty(size * size * 4, dtype=np.float32)
+    image.pixels.foreach_get(pixels)
+    pixels = pixels.reshape(size, size, 4)
+    rgb = np.clip(np.round(pixels[..., :3] * 255.0), 0, 255).astype(np.uint8)
+    resolved, flipped = resolve_tangent_sign(rgb)
+    pixels[..., :3] = resolved.astype(np.float32) / 255.0
+    image.pixels.foreach_set(pixels.ravel())
+    print(f"RETOPO:: normal map sign resolved: negated {flipped * 100:.1f}% of texels")
+
+    normal = nodes.new("ShaderNodeNormalMap")
+    links.new(texture.outputs["Color"], normal.inputs["Color"])
+    links.new(normal.outputs["Normal"], principled.inputs["Normal"])
+
+
 def main() -> int:
     import bpy
 
     (source, destination, target_faces, size, angle_limit, voxel_fraction,
      metallic, roughness, ior) = parse_args(list(sys.argv))
+    normal_map = wants_normal_map(list(sys.argv))
 
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -339,10 +468,22 @@ def main() -> int:
     if "IOR" in principled.inputs:
         principled.inputs["IOR"].default_value = ior
 
+    if normal_map:
+        bake_normal_map(bpy, retopo, dst, principled, size)
+
     bpy.data.objects.remove(original, do_unlink=True)
     bpy.ops.object.select_all(action="DESELECT")
     retopo.select_set(True)
-    bpy.ops.export_scene.gltf(filepath=destination, export_format="GLB", use_selection=True)
+    # With a normal map, ship the tangents it was baked against. Left out, every engine
+    # generates its own, and the glTF validator warns that those may not match.
+    bpy.ops.export_scene.gltf(filepath=destination, export_format="GLB", use_selection=True,
+                              export_tangents=normal_map)
+    if normal_map:
+        glb = Path(destination)
+        repaired, count = repair_zero_tangents(glb.read_bytes())
+        if count:
+            glb.write_bytes(repaired)
+            print(f"RETOPO:: gave {count} zero-length tangents a direction")
     print(f"RETOPO:: wrote {destination}")
     return 0
 

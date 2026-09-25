@@ -183,3 +183,88 @@ def test_the_ratio_never_exceeds_one():
 
 def test_a_degenerate_mesh_does_not_divide_by_zero():
     assert retopo.decimate_ratio(40000, 0) == 1.0
+
+
+def test_normal_map_is_off_unless_asked_for():
+    assert retopo.wants_normal_map(["blender", "--", "a.glb", "b.glb"]) is False
+    assert retopo.wants_normal_map(["blender", "--", "a.glb", "b.glb", "--normal-map"]) is True
+    # Before the separator it is Blender's argument, not ours.
+    assert retopo.wants_normal_map(["blender", "--normal-map", "--", "a.glb", "b.glb"]) is False
+
+
+def test_normal_map_flag_leaves_the_positional_order_alone():
+    parsed = retopo.parse_args(["--", "a.glb", "b.glb", "5000", "--normal-map", "1024"])
+    source, dest, faces, size, *_ = parsed
+    assert (source, dest, faces, size) == ("a.glb", "b.glb", 5000, 1024)
+    assert len(parsed) == 9
+
+
+def test_an_unknown_option_is_refused_rather_than_read_as_a_path():
+    with pytest.raises(SystemExit):
+        retopo.parse_args(["--", "a.glb", "b.glb", "--normals"])
+
+
+def _glb(normals, tangents):
+    """The smallest GLB carrying one primitive's normals and tangents."""
+    import json
+    import struct
+
+    import numpy as np
+
+    normals = np.asarray(normals, dtype="<f4")
+    tangents = np.asarray(tangents, dtype="<f4")
+    binary = normals.tobytes() + tangents.tobytes()
+    document = {
+        "asset": {"version": "2.0"},
+        "buffers": [{"byteLength": len(binary)}],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": normals.nbytes},
+            {"buffer": 0, "byteOffset": normals.nbytes, "byteLength": tangents.nbytes},
+        ],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": len(normals), "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5126, "count": len(tangents), "type": "VEC4"},
+        ],
+        "meshes": [{"primitives": [{"attributes": {"NORMAL": 0, "TANGENT": 1}}]}],
+    }
+    text = json.dumps(document).encode()
+    text += b" " * (-len(text) % 4)
+    body = struct.pack("<II", len(text), retopo.GLB_JSON) + text
+    body += struct.pack("<II", len(binary), retopo.GLB_BIN) + binary
+    return struct.pack("<4sII", b"glTF", 2, 12 + len(body)) + body, 20 + len(text) + 8
+
+
+def _tangents(glb, bin_start, count):
+    import numpy as np
+
+    return np.frombuffer(glb, dtype="<f4", count=count * 4,
+                         offset=bin_start + count * 12).reshape(count, 4)
+
+
+def test_a_zero_tangent_gets_a_unit_direction_across_its_normal():
+    import numpy as np
+
+    normals = [[0, 0, 1], [0.6, 0, 0.8], [1, 0, 0]]
+    tangents = [[1, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 0]]
+    glb, bin_start = _glb(normals, tangents)
+    repaired, count = retopo.repair_zero_tangents(glb)
+    assert count == 2
+    assert len(repaired) == len(glb)
+    fixed = _tangents(repaired, bin_start, 3)
+    assert fixed[0].tolist() == [1, 0, 0, 1]          # a good tangent is left alone
+    for i in (1, 2):
+        assert np.linalg.norm(fixed[i, :3]) == pytest.approx(1.0, abs=1e-6)
+        assert np.dot(fixed[i, :3], normals[i]) == pytest.approx(0.0, abs=1e-6)
+        assert fixed[i, 3] == 1.0
+
+
+def test_a_glb_without_zero_tangents_comes_back_untouched():
+    glb, _ = _glb([[0, 0, 1]], [[1, 0, 0, 1]])
+    repaired, count = retopo.repair_zero_tangents(glb)
+    assert count == 0
+    assert repaired is glb
+
+
+def test_something_that_is_not_a_glb_is_refused():
+    with pytest.raises(ValueError):
+        retopo.repair_zero_tangents(b"PK\x03\x04" + bytes(40))

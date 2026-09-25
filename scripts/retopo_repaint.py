@@ -76,20 +76,24 @@ def stage_plan(skip_paint: bool, skip_compress: bool) -> list[str]:
 def retopo_command(
     source: Path, output: Path, faces: int, atlas: int, angle: float,
     voxel: float, metallic: float, roughness: float, ior: float,
-    blender: Path = BLENDER,
+    blender: Path = BLENDER, normal_map: bool = False,
 ) -> list[str]:
     """The headless Blender invocation, as a list.
 
     `blender_retopo_bake.py` takes positional arguments after `--`, in a fixed order, and
     getting that order wrong silently produces a differently-tuned asset rather than an
-    error. Built here so it can be asserted in a test.
+    error. Built here so it can be asserted in a test. `finish_props.py` builds its
+    commands here too, with `normal_map` on.
     """
-    return [
+    command = [
         str(blender), "--background", "--python",
         str(SCRIPTS / "blender_retopo_bake.py"), "--",
         str(source), str(output), str(faces), str(atlas), str(angle),
         str(voxel), str(metallic), str(roughness), str(ior),
     ]
+    if normal_map:
+        command.append("--normal-map")
+    return command
 
 
 def reuse(path: Path, resume: bool) -> bool:

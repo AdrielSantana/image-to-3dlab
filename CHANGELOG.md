@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `blender_retopo_bake.py --normal-map` bakes the original's surface detail into a normal
+  map as well as its colour, and ships the tangents it was baked against.
+
 ## [0.3.1] - 2026-09-24
 
 ### Fixed

@@ -101,3 +101,12 @@ def test_resume_is_opt_in_on_the_real_parser():
     assert rr.build_parser().parse_args(
         ["a.glb", "a.png", "out.glb", "--resume"]
     ).resume is True
+
+
+def test_the_normal_map_flag_is_appended_only_when_asked():
+    plain = rr.retopo_command(Path("in.glb"), Path("out.glb"), 5000, 1024, 89.0, 0.004,
+                              0.25, 0.65, 1.45)
+    baked = rr.retopo_command(Path("in.glb"), Path("out.glb"), 5000, 1024, 89.0, 0.004,
+                              0.25, 0.65, 1.45, normal_map=True)
+    assert "--normal-map" not in plain
+    assert baked == [*plain, "--normal-map"]
