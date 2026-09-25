@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Prop sheets: many props from one image, in one run.** Generate a grid of props,
+  turn the whole sheet into 3D with one Pixal3D run (nine props in 14 minutes on an M5),
+  then split it into separate, upright, named props (`scripts/blender_split_props.py`)
+  and give each prop compressed LODs with normal maps (`scripts/finish_props.py`). The
+  walkthrough and what was measured are in `docs/prop-sheets.md`.
 - `blender_retopo_bake.py --normal-map` bakes the original's surface detail into a normal
   map as well as its colour, and ships the tangents it was baked against.
 
