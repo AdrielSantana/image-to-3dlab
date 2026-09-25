@@ -76,3 +76,14 @@ def test_a_generation_and_a_prop_bake_refuse_to_share_the_machine():
     assert "def _props_busy(self)" in SERVER
     assert "a generation is running; wait for it to finish" in SERVER
     assert '"a prop sheet is baking; wait for it to finish"' in SERVER
+
+
+def test_the_tab_sits_under_the_menu_bar_like_generate():
+    """It was a plain section, so its heading scrolled under the fixed 42px menu."""
+    css = (VIEWER / "styles" / "props.css").read_text()
+    assert "#props-view { position: fixed; inset: 42px 0 0 0; overflow: auto;" in css
+
+
+def test_every_prop_gets_a_chip_and_one_detail_panel():
+    assert "chip.onclick = () => showProp(run, prop);" in PROPS
+    assert {"props-list", "props-detail", "props-frame", "props-turn", "props-lods-body"} <= _element_ids(INDEX)

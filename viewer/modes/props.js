@@ -31,7 +31,7 @@ function setRunning(running) {
   state.running = running;
   f('props-cancel').hidden = !running;
   f('props-runs-refresh').disabled = running;
-  for (const button of document.querySelectorAll('.prop-turn')) button.disabled = running;
+  f('props-turn').disabled = running;
   updateSubmit();
 }
 
@@ -88,84 +88,78 @@ function begin(message) {
   setRunning(true);
   progress.configure(SPLIT_ONLY);
   progress.reset();
+  f('props-empty').hidden = true;
   f('props-progress-box').hidden = false;
   f('props-status').textContent = message;
 }
 
 // --- Results ---------------------------------------------------------------------------
+// A chip per prop over one detail panel: the 3D view, the turn and the downloads sit next
+// to what was clicked, instead of under a list of every prop.
 
-function preview(prop, row) {
+function preview(prop) {
   if (!prop.preview_url) return;
-  f('props-viewer').hidden = false;
-  // The Compare page, one model and no add-pane, as the Generate tab embeds it.
+  // The Compare page, one model and no menu, as the Generate tab embeds it.
   const src = `${prop.preview_url}?t=${Date.now()}`;
   f('props-frame').src =
     `/viewer/index.html?a=${encodeURIComponent(src)}&la=${encodeURIComponent(prop.name)}&restricted=1`;
-  for (const other of document.querySelectorAll('.prop-row')) other.classList.remove('showing');
-  row.classList.add('showing');
-  state.shown = prop.name;
 }
 
-function propRow(run, prop) {
-  const row = document.createElement('div');
-  row.className = 'prop-row';
+function downloadLink(url, bytes) {
+  if (!url) return '—';
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = '';
+  link.textContent = `⬇ ${kb(bytes)}`;
+  return link;
+}
+
+function showProp(run, prop) {
+  state.shown = prop.name;
+  for (const chip of f('props-list').children) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.name === prop.name));
+  }
+  f('props-detail-name').textContent = prop.name;
   const size = prop.size ? prop.size.map((s) => s.toFixed(2)).join(' × ') : '';
-  const turn = prop.extra_turn_degrees ? ` · turned ${prop.extra_turn_degrees}°` : '';
-  row.innerHTML =
-    `<div><strong></strong><div class="prop-meta">${(prop.faces || 0).toLocaleString()} faces` +
-    `${size ? ` · ${size}` : ''}${turn}</div></div>` +
-    '<div class="prop-actions"></div><div class="prop-lods"></div>';
-  row.querySelector('strong').textContent = prop.name;
-
-  const actions = row.querySelector('.prop-actions');
-  if (prop.preview_url) {
-    const view = document.createElement('button');
-    view.className = 'ghost';
-    view.textContent = 'View';
-    view.onclick = () => preview(prop, row);
-    actions.appendChild(view);
-  }
-  const turnButton = document.createElement('button');
-  turnButton.className = 'ghost prop-turn';
-  turnButton.textContent = 'Turn 90°';
-  turnButton.title = 'Turn this prop a quarter turn about the vertical and re-bake only it';
-  turnButton.disabled = state.running;
-  turnButton.onclick = () => turnProp(run.directory, prop.name);
-  actions.appendChild(turnButton);
-
-  const lods = row.querySelector('.prop-lods');
-  if (!prop.lods.length) lods.textContent = 'no LODs yet';
-  for (const lod of prop.lods) {
-    const span = document.createElement('span');
-    const plain = document.createElement('a');
-    plain.href = lod.url;
-    plain.download = '';
-    plain.textContent = `LOD${lod.index} ${kb(lod.bytes)}`;
-    span.appendChild(plain);
-    if (lod.web_url) {
-      const web = document.createElement('a');
-      web.href = lod.web_url;
-      web.download = '';
-      web.textContent = `web ${kb(lod.web_bytes)}`;
-      span.append(' · ', web);
-    }
-    lods.appendChild(span);
-  }
+  const turned = prop.extra_turn_degrees ? ` · turned ${prop.extra_turn_degrees}° by hand` : '';
+  f('props-detail-meta').textContent =
+    `${(prop.faces || 0).toLocaleString()} faces from the sheet` +
+    `${size ? ` · ${size}` : ''}${turned}`;
 
   // A turn this close to 45° is a coin toss between the front and the side: the test
   // sheet's chest came back with its lock facing sideways.
-  if (prop.yaw_tie && !prop.extra_turn_degrees) {
-    const tie = document.createElement('div');
-    tie.className = 'prop-tie';
-    tie.textContent =
-      `Turned ${prop.yaw_degrees}° to square it up, close to 45°: it may face sideways. ` +
-      'View it, and Turn 90° if so.';
-    row.appendChild(tie);
+  const tie = prop.yaw_tie && !prop.extra_turn_degrees;
+  f('props-tie').hidden = !tie;
+  f('props-tie').textContent = tie
+    ? `Squared up by ${prop.yaw_degrees}°, close to 45°, so it may face sideways. ` +
+      'Check the view, and use Turn 90° if its front is on the side.'
+    : '';
+  f('props-turn').classList.toggle('suggested', tie);
+  f('props-turn').disabled = state.running;
+  f('props-turn').onclick = () => turnProp(run.directory, prop.name);
+
+  const body = f('props-lods-body');
+  body.innerHTML = '';
+  const targets = (run.settings && run.settings.lods) || [];
+  for (const lod of prop.lods) {
+    const row = document.createElement('tr');
+    const cells = [`LOD${lod.index}`, targets[lod.index] ? targets[lod.index].toLocaleString() : '',
+      downloadLink(lod.url, lod.bytes), downloadLink(lod.web_url, lod.web_bytes)];
+    for (const value of cells) {
+      const cell = document.createElement('td');
+      cell.append(value);
+      row.appendChild(cell);
+    }
+    body.appendChild(row);
   }
-  return row;
+  if (!prop.lods.length) {
+    body.innerHTML = '<tr><td colspan="4">No LODs yet.</td></tr>';
+  }
+  preview(prop);
 }
 
 function showRun(run) {
+  f('props-empty').hidden = true;
   f('props-result').hidden = false;
   f('props-result-title').textContent =
     `${run.props.length} props · output/props/${run.directory}/`;
@@ -174,12 +168,22 @@ function showRun(run) {
   const list = f('props-list');
   list.innerHTML = '';
   for (const prop of run.props) {
-    const row = propRow(run, prop);
-    list.appendChild(row);
-    if (prop.name === state.shown) preview(prop, row);
+    const chip = document.createElement('button');
+    chip.textContent = prop.name;
+    chip.dataset.name = prop.name;
+    chip.setAttribute('aria-pressed', 'false');
+    if (prop.yaw_tie && !prop.extra_turn_degrees) {
+      chip.classList.add('tie');
+      chip.title = 'Close to 45°: check which way it faces';
+    }
+    chip.onclick = () => showProp(run, prop);
+    list.appendChild(chip);
   }
-  if (!state.shown && run.props.length) {
-    preview(run.props[0], list.firstElementChild);
+  const chosen = run.props.find((prop) => prop.name === state.shown) || run.props[0];
+  if (chosen) showProp(run, chosen);
+  // Stacked on a narrow screen, the results are below the form; bring them into view.
+  if (matchMedia('(max-width: 900px)').matches) {
+    f('props-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
@@ -241,20 +245,16 @@ function showGenerated(models) {
 
 function runRow(run) {
   const row = document.createElement('div');
-  row.className = 'stage-row';
-  if (run.finished) row.classList.add('done');
-  row.innerHTML =
-    `<span class="stage-dot">${run.finished ? '✓' : '·'}</span>` +
-    '<span><code style="font-size:11px"></code>' +
-    `<br><small style="opacity:.7">${run.props.length} props</small></span>` +
-    '<span class="stage-detail"></span>';
+  row.className = run.finished ? 'props-run done' : 'props-run';
+  row.innerHTML = `<span><code></code><small>${run.props.length} props` +
+    `${run.finished ? '' : ', not finished'}</small></span>`;
   row.querySelector('code').textContent = run.directory;
+  row.querySelector('code').title = run.directory;
   if (run.props.length) {
     const open = document.createElement('button');
-    open.className = 'ghost';
     open.textContent = 'Open';
     open.onclick = () => { state.shown = null; showRun(run); };
-    row.querySelector('.stage-detail').appendChild(open);
+    row.appendChild(open);
   }
   return row;
 }
@@ -281,7 +281,8 @@ async function loadRuns() {
 
 f('props-asset').onchange = (event) => {
   state.asset = event.target.files[0] || null;
-  f('props-asset-name').textContent = state.asset ? state.asset.name : 'no file chosen';
+  f('props-asset-name').textContent = state.asset
+    ? `${state.asset.name} (${kb(state.asset.size)})` : 'An upload wins over the generated model.';
   updateSubmit();
 };
 f('props-generated').onchange = updateSubmit;
@@ -291,7 +292,6 @@ f('props-submit').onclick = async () => {
   if (state.running) return;
   begin('Uploading…');
   f('props-result').hidden = true;
-  f('props-viewer').hidden = true;
   state.shown = null;
 
   const settings = {
