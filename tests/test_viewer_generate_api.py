@@ -909,6 +909,21 @@ def test_a_prop_bake_waits_for_a_running_rig_rebind(tmp_path, monkeypatch):
     assert api.Handler._props_busy(None) is None
 
 
+def test_terminate_active_job_also_kills_a_running_finish(tmp_path, monkeypatch):
+    """Its repaint runs in a process group of its own, so the server's exit alone
+    leaves it running until the next start's reconciliation finds its pid file."""
+    finish_jobs = api.FINISH_JOBS.__class__(tmp_path)
+    job = finish_jobs.create("asset.glb", b"glb", b"png", {})
+    job.process = _FakeProcess(7272)
+    killed = []
+    monkeypatch.setattr(api, "FINISH_JOBS", finish_jobs)
+    monkeypatch.setattr(api, "_killpg_if_alive", killed.append)
+
+    api._terminate_active_job()
+
+    assert killed == [7272]
+
+
 def test_handler_exposes_typed_rig_rebind_routes():
     source = MODULE_PATH.read_text()
 

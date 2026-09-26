@@ -930,6 +930,9 @@ def _terminate_active_job() -> None:
     props_job = PROPS_JOBS.get(PROPS_JOBS.active) if PROPS_JOBS.active else None
     if props_job is not None and props_job.process is not None and props_job.process.poll() is None:
         _killpg_if_alive(props_job.process.pid)
+    finish_job = FINISH_JOBS.get(FINISH_JOBS.active) if FINISH_JOBS.active else None
+    if finish_job is not None and finish_job.process is not None and finish_job.process.poll() is None:
+        _killpg_if_alive(finish_job.process.pid)
 
 
 def _props_baking() -> bool:
