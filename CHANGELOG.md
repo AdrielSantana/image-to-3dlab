@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   engine to make up its own, and gives the odd zero-length one a direction.
 - Stopping the viewer (Ctrl-C) now stops a running Finish job too, instead of leaving its
   Blender stages running in the background until the next start.
+- The viewer starts even when a folder inside `output/` is called `pid`. Its cleanup after
+  a crash tried to delete that folder as a stale process file, and gave up with an error.
 
 ## [0.3.6] - 2026-10-01
 

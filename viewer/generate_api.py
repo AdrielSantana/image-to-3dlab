@@ -958,6 +958,8 @@ def _reconcile_orphaned_jobs(output_root: Path) -> list[str]:
     Returns the touched job-folder names, for a one-line startup banner."""
     touched = []
     for pid_file in sorted(output_root.rglob("pid")):
+        if not pid_file.is_file():
+            continue    # a folder that happens to be called pid (a prop, say), not a job's
         directory = pid_file.parent
         try:
             pid, owner = processes.parse_pid_record(pid_file.read_text())

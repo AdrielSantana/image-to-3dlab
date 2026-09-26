@@ -1004,6 +1004,17 @@ def test_reconcile_discards_an_unparseable_pid_file(tmp_path):
     assert not (job_dir / "pid").exists()
 
 
+def test_reconcile_leaves_a_folder_named_pid_alone(tmp_path):
+    """A prop, or anything else, called `pid` is a folder; unlinking it raised
+    PermissionError and the viewer would not start until someone deleted it by hand."""
+    folder = tmp_path / "sheet__props__20260926-100000" / "finished" / "pid"
+    folder.mkdir(parents=True)
+    (folder / "pid_LOD0.glb").write_bytes(b"glb")
+
+    assert api._reconcile_orphaned_jobs(tmp_path) == []
+    assert (folder / "pid_LOD0.glb").is_file()
+
+
 def test_reconcile_is_a_noop_with_no_leftover_jobs(tmp_path):
     assert api._reconcile_orphaned_jobs(tmp_path) == []
 
