@@ -832,6 +832,32 @@ def test_embedded_preview_lands_on_the_bare_3d_view_not_the_app():
     assert json.loads(result.stdout) == [True, False, "compare", "compare", "generate", "setup"]
 
 
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_cancel_works_before_the_job_exists_and_never_reaches_an_older_one():
+    """The Props tab showed Cancel during an upload but wired it only once the job came
+    back: a click did nothing, or cancelled the job before."""
+    module_url = (REPO / "viewer" / "core" / "early-cancel.js").as_uri()
+    program = f"""
+      import {{ earlyCancel }} from {json.dumps(module_url)};
+      const sent = [];
+      const early = earlyCancel((id) => sent.push(id));
+      const clicked = early.click();          // while the upload is still going
+      const before = [...sent];
+      early.started('job-2');                 // the response arrives
+      const late = earlyCancel((id) => sent.push(id));
+      late.started('job-3');
+      const direct = late.click();
+      const quiet = earlyCancel((id) => sent.push(id));
+      quiet.started('job-4');                 // never clicked
+      console.log(JSON.stringify({{ clicked, before, direct, sent }}));
+    """
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == {
+        "clicked": "queued", "before": [], "direct": "sent", "sent": ["job-2", "job-3"],
+    }
+
+
 def test_generate_preview_iframe_asks_for_the_embedded_view():
     generate = (REPO / "viewer" / "modes" / "generate.js").read_text()
     app = (REPO / "viewer" / "app.js").read_text()

@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compressed LODs with Finish's normal and metallic-roughness bake
   (`scripts/finish_props.py`). The walkthrough and what was measured are in
   `docs/prop-sheets.md`.
+- **Props tab in the viewer.** Split a prop sheet and bake every prop's LODs from the
+  browser, with a 3D view and downloads per prop, a warning when gltfpack is missing, and
+  a **Turn 90°** button that re-bakes just the prop that came out facing sideways.
 
 ### Fixed
 - `blender_bake_normals.py` no longer knocks normal-map values from 1 to 63 down a
