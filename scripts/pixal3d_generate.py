@@ -30,6 +30,7 @@ texture flow.
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -40,6 +41,7 @@ sys.path.insert(0, str(REPO))
 
 from image_to_3dlab.host import executable
 from image_to_3dlab.matte import is_matted
+from image_to_3dlab.provenance import sha256_file
 
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
 CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
@@ -67,6 +69,35 @@ BANNER_STAGES = {1: "views", 2: "ss", 3: "shape", 4: "decode", 5: "texture", 6: 
 
 # u2net, as `trellis_backend.py` uses. Never BRIA RMBG -- a licence guardrail.
 MATTE_MODEL = "u2net"
+
+# Must match viewer/backend_catalog.py's "pixal3d" entry; a test holds them together.
+LICENSE_NAME = "MIT (code + flow weights); DINOv3 License (bundled encoder)"
+LICENSE_URL = "https://huggingface.co/raven38/pixal3d-sv-q8_0-v1"
+
+
+def manifest(image: Path, output: Path, *, res: int, seed: int, fov: float, gss: float,
+             gsh: float | None, matted: bool, matted_here: bool,
+             seconds: float) -> dict[str, object]:
+    """The run's provenance record, written beside the GLB as `<output>.json`.
+
+    Same place and shape as the Hunyuan route's manifest, so the viewer serves it as the
+    job's manifest without special-casing, plus the licence and file hashes.
+    """
+    return {
+        "schema_version": 1,
+        "backend": "pixal3d",
+        "input": {"path": str(image), "sha256": sha256_file(image)},
+        "output": {"path": str(output), "sha256": sha256_file(output)},
+        "parameters": {"res": res, "seed": seed, "fov": fov, "gss": gss, "gsh": gsh,
+                       "matted": matted},
+        "license": {"name": LICENSE_NAME, "url": LICENSE_URL},
+        "components": [{
+            "component": f"rembg/{MATTE_MODEL}",
+            "purpose": "background removal",
+            "license": "MIT code / Apache-2.0 U-2-Net",
+        }] if matted_here else [],
+        "timings_seconds": {"total": round(seconds, 1)},
+    }
 
 
 def has_alpha(image: Path) -> bool:
@@ -238,6 +269,7 @@ def main() -> int:
 
     image = args.image
     matted = has_alpha(image)
+    matted_here = False
     # `--matte` / `--no-matte` override the detection; by default it decides. Left to
     # itself, an image that is already cut out keeps its own matte, and anything else --
     # every picture the Generate Image tab makes included -- gets one.
@@ -247,6 +279,7 @@ def main() -> int:
         print(f"[pixal3d] matting with {MATTE_MODEL} (~5s)", flush=True)
         image = matte(image)
         matted = True
+        matted_here = True
         print(f"[pixal3d] matted image: {image}", flush=True)
 
     started = time.time()
@@ -274,9 +307,16 @@ def main() -> int:
     if not args.output.is_file():
         raise SystemExit(f"trellis-cli exited 0 without writing {args.output}")
 
+    seconds = time.time() - started
+    record = manifest(args.image, args.output, res=args.res, seed=args.seed, fov=args.fov,
+                      gss=args.gss, gsh=args.gsh, matted=matted, matted_here=matted_here,
+                      seconds=seconds)
+    record_path = args.output.with_name(f"{args.output.stem}.json")
+    record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+
     size = args.output.stat().st_size / 1048576
-    print(f"[pixal3d] done in {time.time() - started:.0f}s -> {args.output} "
-          f"({size:.1f} MB)", flush=True)
+    print(f"[pixal3d] done in {seconds:.0f}s -> {args.output} "
+          f"({size:.1f} MB); manifest {record_path.name}", flush=True)
     return 0
 
 

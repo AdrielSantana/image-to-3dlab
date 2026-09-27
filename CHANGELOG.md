@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the CPU-only build (the only one PyPI has for Windows), so everything ran on the
   processor. Re-running the installer replaces a CPU-only PyTorch. Reported by
   [@paisanllc](https://github.com/paisanllc) in #50.
+- Pixal3D now writes a record of each run (`<model>.json` beside the GLB): the input
+  image, settings, licence and file hashes, like the other routes. It wrote none before,
+  from the viewer or the command line. Reported by
+  [@paisanllc](https://github.com/paisanllc) in #50.
 
 ## [0.3.2] - 2026-09-27
 

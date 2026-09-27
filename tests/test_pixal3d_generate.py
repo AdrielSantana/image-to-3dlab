@@ -308,3 +308,65 @@ def test_the_matted_path_reaches_the_cli_absolute(tmp_path, monkeypatch):
     passed = recorded["command"][recorded["command"].index("--sv-image") + 1]
     assert Path(passed).is_absolute(), passed
     assert "matted" in passed
+
+
+# --- Provenance: every run leaves a record beside its GLB ---------------------------------
+#
+# Reported in #50: this route wrote no record at all, from the CLI or the viewer (which runs
+# this same script), unlike the Hunyuan route and pipeline.py. The record sits at
+# <output>.json, where the viewer already looks for a job's manifest.
+
+
+def test_the_manifest_carries_the_licence_from_the_catalogue(tmp_path):
+    from viewer.backend_catalog import resolve
+
+    image = tmp_path / "orc.png"
+    image.write_bytes(b"orc")
+    output = tmp_path / "orc.glb"
+    output.write_bytes(b"glb")
+    record = px.manifest(image, output, res=1024, seed=42, fov=0.35, gss=10.0, gsh=None,
+                         matted=True, matted_here=False, seconds=12.34)
+    catalogue = resolve("pixal3d")
+    assert record["backend"] == "pixal3d"
+    assert record["license"] == {"name": catalogue.license_name, "url": catalogue.license_url}
+    assert record["parameters"] == {"res": 1024, "seed": 42, "fov": 0.35, "gss": 10.0,
+                                    "gsh": None, "matted": True}
+    assert len(record["input"]["sha256"]) == 64
+    assert len(record["output"]["sha256"]) == 64
+    assert record["timings_seconds"]["total"] == 12.3
+
+
+def test_background_removal_is_named_only_when_this_run_did_it(tmp_path):
+    image = tmp_path / "a.png"
+    image.write_bytes(b"a")
+    output = tmp_path / "a.glb"
+    output.write_bytes(b"b")
+    ran = px.manifest(image, output, res=1024, seed=1, fov=0.35, gss=10.0, gsh=None,
+                      matted=True, matted_here=True, seconds=1.0)
+    given = px.manifest(image, output, res=1024, seed=1, fov=0.35, gss=10.0, gsh=None,
+                        matted=True, matted_here=False, seconds=1.0)
+    assert [c["component"] for c in ran["components"]] == [f"rembg/{px.MATTE_MODEL}"]
+    assert given["components"] == []
+
+
+def test_a_successful_run_writes_its_manifest_beside_the_glb(tmp_path, monkeypatch):
+    image = tmp_path / "gnome.png"
+    image.write_bytes(b"png")
+    output = tmp_path / "out" / "gnome.glb"
+
+    class FakeProcess:
+        stdout = iter(["[1/3] structure\n"])
+
+        def wait(self):
+            output.write_bytes(b"glb")
+            return 0
+
+    monkeypatch.setattr(px, "has_alpha", lambda _: True)
+    monkeypatch.setattr(px, "readiness", lambda *a, **k: {"ready": True})
+    monkeypatch.setattr(px.subprocess, "Popen", lambda *a, **k: FakeProcess())
+    monkeypatch.setattr(sys, "argv", ["pixal3d_generate.py", str(image), str(output)])
+
+    assert px.main() == 0
+    record = __import__("json").loads((tmp_path / "out" / "gnome.json").read_text())
+    assert record["backend"] == "pixal3d"
+    assert record["output"]["path"] == str(output.resolve())
