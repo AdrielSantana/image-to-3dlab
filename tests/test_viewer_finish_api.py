@@ -102,9 +102,25 @@ def test_skip_flags_appear_only_when_asked():
 
     skipped = finish.build_command(job, finish.normalise_settings({"skip_paint": True}))
     assert "--skip-paint" in skipped
+    assert "--skip-bake" not in plain
+    no_bake = finish.build_command(job, finish.normalise_settings({"skip_bake": True}))
+    assert "--skip-bake" in no_bake
 
 
-def _progress(stages=("retopologise", "repaint", "compress")):
+def test_the_bake_has_a_band_between_repaint_and_compress():
+    bands = finish.stage_bands(["retopologise", "repaint", "bake", "compress"])
+    assert bands["repaint"][1] == pytest.approx(bands["bake"][0])
+    assert bands["bake"][1] == pytest.approx(bands["compress"][0])
+
+
+def test_the_worker_and_the_viewer_agree_on_the_stage_order():
+    """One stage plan, imported from the worker, and the resume table must follow it."""
+    plan = finish.worker_module().stage_plan(False, False)
+    assert [stage for stage, _ in finish.STAGE_ARTIFACTS] == plan
+    assert set(plan) == set(finish.STAGE_WEIGHTS)
+
+
+def _progress(stages=("retopologise", "repaint", "bake", "compress")):
     """A tracker on a clock we drive, so the ETAs are assertable rather than wall-clock."""
     now = {"t": 0.0}
     tracker = finish.FinishProgress(list(stages), clock=lambda: now["t"])

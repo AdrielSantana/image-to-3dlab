@@ -30,7 +30,8 @@ function Confirm-Step($question) {
 # 1. This machine
 if (-not [Environment]::Is64BitOperatingSystem) { Die "The lab needs 64-bit Windows." }
 $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-if ($smi -and ((& nvidia-smi -L) -match "GPU")) { Say "Machine: Windows with an NVIDIA GPU" }
+$HasGpu = [bool]($smi -and ((& nvidia-smi -L) -match "GPU"))
+if ($HasGpu) { Say "Machine: Windows with an NVIDIA GPU" }
 else { Say "No NVIDIA GPU found (nvidia-smi lists none). The viewer will install, but no generation route will run here until one is." }
 
 # 2. Tools
@@ -70,9 +71,28 @@ if ($LASTEXITCODE -eq 0) { git -C $Dir checkout --quiet -B $Ref "origin/$Ref" }
 else { git -C $Dir checkout --quiet $Ref }
 
 # 4. Python
-Say "Setting up Python 3.11 and the viewer's packages (a few hundred MB, mostly PyTorch)"
+Say "Setting up Python 3.11 and the viewer's packages (a few GB with an NVIDIA GPU, mostly PyTorch)"
 & uv venv --quiet --allow-existing --python 3.11 (Join-Path $Dir ".venv")
-& uv pip install --quiet --python (Join-Path $Dir ".venv\Scripts\python.exe") -r (Join-Path $Dir "requirements.txt")
+$Py = Join-Path $Dir ".venv\Scripts\python.exe"
+
+# PyPI only has CPU-only PyTorch for Windows, so on an NVIDIA machine install the CUDA
+# build from PyTorch's own index first; requirements.txt then finds torch already there.
+# image_to_3dlab.host picks the build that matches the driver (tested in tests/test_host.py).
+# An update also replaces a CPU-only torch left by an older installer.
+if ($HasGpu) {
+    Push-Location $Dir
+    $TorchIndex = (& $Py -m image_to_3dlab.host torch-index | Out-String).Trim()
+    & $Py -m image_to_3dlab.host torch-has-cuda
+    $TorchHasCuda = ($LASTEXITCODE -eq 0)
+    Pop-Location
+    if (-not $TorchIndex) {
+        Say "Your NVIDIA driver is too old for PyTorch's CUDA builds (they need CUDA 12.8 or newer). Update the driver, then run this again. Until then PyTorch will use the CPU."
+    } elseif (-not $TorchHasCuda) {
+        Say "Installing PyTorch with CUDA from $TorchIndex"
+        & uv pip install --quiet --python $Py --reinstall-package torch --reinstall-package torchvision --index-url $TorchIndex torch torchvision
+    }
+}
+& uv pip install --quiet --python $Py -r (Join-Path $Dir "requirements.txt")
 
 # 5. Done
 Say "Done. Start the lab with:"

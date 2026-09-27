@@ -185,3 +185,17 @@ def test_windows_installer_keeps_step_with_the_shell_one():
     assert "--untracked-files=no" in ps1
     assert "hf_hub_download" not in ps1 and "bootstrap_" not in ps1
     assert "UNTESTED" in ps1
+
+
+def test_windows_installer_gets_cuda_pytorch_before_the_requirements():
+    """PyPI only has CPU-only torch for Windows. The CUDA build must come from PyTorch's
+    index, chosen by the tested helper, and before requirements.txt (which would otherwise
+    settle for the CPU wheel and never replace it)."""
+    ps1 = (REPO / "install.ps1").read_text()
+    assert "image_to_3dlab.host torch-index" in ps1
+    assert "image_to_3dlab.host torch-has-cuda" in ps1
+    assert "--index-url $TorchIndex" in ps1
+    assert ps1.index("torch-index") < ps1.index('"requirements.txt"')
+    # Only on a machine with a GPU, and only when the installed torch lacks CUDA, so an
+    # update does not re-download a few GB every time.
+    assert "if ($HasGpu)" in ps1 and "-not $TorchHasCuda" in ps1

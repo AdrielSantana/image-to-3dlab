@@ -196,3 +196,54 @@ def build_target(platform_id: str | None = None, family: str | None = None) -> s
     if platform_id == NVIDIA and family in ("windows", "linux"):
         return f"{family}-nvidia"
     return None
+
+
+# PyTorch's own index, newest CUDA first. PyPI only carries CPU-only torch for Windows, so
+# an install there needs one of these. Each needs a driver at least that new; 12.8 is also
+# the first build that knows RTX 50-series cards.
+TORCH_CUDA_BUILDS: tuple[tuple[tuple[int, int], str], ...] = (
+    ((13, 0), "cu130"),
+    ((12, 8), "cu128"),
+)
+TORCH_INDEX = "https://download.pytorch.org/whl/"
+
+
+def torch_cuda_index(driver: tuple[int, int] | None) -> str | None:
+    """The PyTorch index whose CUDA build this driver can run, or None."""
+    if driver is None:
+        return None
+    for minimum, tag in TORCH_CUDA_BUILDS:
+        if driver >= minimum:
+            return TORCH_INDEX + tag
+    return None
+
+
+def _installed_torch_cuda() -> str | None:
+    """The CUDA version the installed torch was built with; None if CPU-only or missing."""
+    try:
+        import torch
+    except Exception:  # noqa: BLE001 - any failure means "no usable CUDA torch"
+        return None
+    return torch.version.cuda
+
+
+def main(argv: list[str] | None = None, *, which: Callable = shutil.which,
+         run: Callable = subprocess.run,
+         torch_cuda: Callable[[], str | None] = _installed_torch_cuda) -> int:
+    """Small questions for the installers, answered without them parsing anything.
+
+    `torch-index`: print the PyTorch CUDA index for this driver (empty if none fits).
+    `torch-has-cuda`: exit 0 if the installed torch has CUDA, 1 if not.
+    """
+    command = (argv if argv is not None else sys.argv[1:])[:1]
+    if command == ["torch-index"]:
+        print(torch_cuda_index(driver_cuda_version(which, run)) or "")
+        return 0
+    if command == ["torch-has-cuda"]:
+        return 0 if torch_cuda() else 1
+    print("usage: python -m image_to_3dlab.host {torch-index|torch-has-cuda}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

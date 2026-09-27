@@ -66,7 +66,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "faces": 40000, "atlas": 2048, "angle": 89.0, "voxel": 0.004,
     "metallic": 0.25, "roughness": 0.65, "ior": 1.45,
     "paint_seed": 0, "paint_res": 512, "paint_steps": 15, "paint_tex": 4096,
-    "texture_size": 2048, "skip_paint": False, "skip_compress": False,
+    "texture_size": 2048, "skip_paint": False, "skip_compress": False, "skip_bake": False,
 }
 
 INTEGER_SETTINGS = {
@@ -78,13 +78,17 @@ INTEGER_SETTINGS = {
 STAGE_ARTIFACTS: tuple[tuple[str, str], ...] = (
     ("retopologise", "result_retopo.glb"),
     ("repaint", "result_painted.glb"),
+    ("bake", "result_baked.glb"),
     ("compress", "result.glb"),
 )
 
 # How the overall bar divides between stages. Grossly uneven on purpose: a measured run on
 # 2026-09-21 spent 7.8s retopologising, 324.5s repainting and 0.6s compressing, so equal
-# thirds would park the bar at 33% for five of its six minutes.
-STAGE_WEIGHTS: dict[str, float] = {"retopologise": 5.0, "repaint": 92.0, "compress": 3.0}
+# thirds would park the bar at 33% for five of its six minutes. The bake-detail stage took
+# 4.3s on the orc (2026-09-27), about half a retopology.
+STAGE_WEIGHTS: dict[str, float] = {
+    "retopologise": 5.0, "repaint": 90.0, "bake": 2.0, "compress": 3.0,
+}
 
 # Where the repaint's own log lines fall inside that stage. Same run: ~30s of setup, 165s
 # of diffusion steps, 9s decoding views and 72s of super-res. The diffusion steps are
@@ -110,7 +114,7 @@ def normalise_settings(raw: dict[str, Any]) -> dict[str, Any]:
     for key, value in raw.items():
         if key not in DEFAULT_SETTINGS:
             continue
-        if key in {"skip_paint", "skip_compress"}:
+        if key in {"skip_paint", "skip_compress", "skip_bake"}:
             settings[key] = bool(value)
             continue
         try:
@@ -160,6 +164,8 @@ def build_command(
         command.append("--skip-paint")
     if settings["skip_compress"]:
         command.append("--skip-compress")
+    if settings["skip_bake"]:
+        command.append("--skip-bake")
     if resume:
         command.append("--resume")
     return command
@@ -381,6 +387,7 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
         job.status = "running"
         stages = worker_module().stage_plan(
             job.settings["skip_paint"], job.settings["skip_compress"],
+            job.settings.get("skip_bake", False),
         )
         job.emit({
             "phase": "queued", "overall_pct": 0, "stages": stages,

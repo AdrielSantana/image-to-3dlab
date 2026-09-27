@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-27
+
+### Added
+- Finish now bakes the original's detail onto the finished model: a **normal map** (the
+  fine relief a retopology throws away) and the source's **metallic-roughness map**, so
+  metal stays shiny and skin stays matte instead of everything getting the same flat
+  sheen. New "Bake detail" stage, a few seconds long; `--skip-bake` turns it off. The
+  normal map was flagged by [@AdrielSantana](https://github.com/AdrielSantana) in #49.
+  Good catch, we'd missed it.
+
+### Fixed
+- Windows with an NVIDIA GPU: the installer now installs PyTorch with CUDA. It used to get
+  the CPU-only build (the only one PyPI has for Windows), so everything ran on the
+  processor. Re-running the installer replaces a CPU-only PyTorch. Fixed, pending
+  verification on real Windows machines: if you try it, please tell us how it went.
+  Reported by [@paisanllc](https://github.com/paisanllc) in #50.
+- Pixal3D now writes a record of each run (`<model>.json` beside the GLB): the input
+  image, settings, licence and file hashes, like the other routes. It wrote none before,
+  from the viewer or the command line. Reported by
+  [@paisanllc](https://github.com/paisanllc) in #50.
+
 ## [0.3.2] - 2026-09-27
 
 ### Added
