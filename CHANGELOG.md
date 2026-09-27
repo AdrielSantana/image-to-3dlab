@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Finish now bakes the original's detail onto the finished model: a **normal map** (the
+  fine relief a retopology throws away) and the source's **metallic-roughness map**, so
+  metal stays shiny and skin stays matte instead of everything getting the same flat
+  sheen. New "Bake detail" stage, a few seconds long; `--skip-bake` turns it off. The
+  normal map was flagged by [@AdrielSantana](https://github.com/AdrielSantana) in #49.
+  Good catch, we'd missed it.
+
 ## [0.3.2] - 2026-09-27
 
 ### Added

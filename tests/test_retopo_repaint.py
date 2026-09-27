@@ -25,27 +25,39 @@ def _load():
 rr = _load()
 
 
-def test_the_full_chain_runs_three_stages_in_order():
+def test_the_full_chain_runs_four_stages_in_order():
     assert rr.stage_plan(skip_paint=False, skip_compress=False) == [
+        "retopologise", "repaint", "bake", "compress",
+    ]
+
+
+def test_the_bake_comes_after_the_repaint_because_the_repaint_re_unwraps():
+    stages = rr.stage_plan(skip_paint=False, skip_compress=False)
+    assert stages.index("bake") == stages.index("repaint") + 1
+
+
+def test_skipping_the_bake_drops_only_the_bake():
+    assert rr.stage_plan(skip_paint=False, skip_compress=False, skip_bake=True) == [
         "retopologise", "repaint", "compress",
     ]
 
 
 def test_skipping_paint_keeps_the_transferred_texture_path():
     assert rr.stage_plan(skip_paint=True, skip_compress=False) == [
-        "retopologise", "compress",
+        "retopologise", "bake", "compress",
     ]
 
 
 def test_skipping_compress_leaves_the_asset_uncompressed():
     assert rr.stage_plan(skip_paint=False, skip_compress=True) == [
-        "retopologise", "repaint",
+        "retopologise", "repaint", "bake",
     ]
 
 
 def test_retopology_is_never_skipped():
     """It is what makes the repaint affordable; there is no route that omits it."""
-    assert rr.stage_plan(skip_paint=True, skip_compress=True) == ["retopologise"]
+    assert rr.stage_plan(skip_paint=True, skip_compress=True, skip_bake=True) == [
+        "retopologise"]
 
 
 def test_the_blender_command_passes_arguments_in_the_documented_order():
@@ -101,3 +113,18 @@ def test_resume_is_opt_in_on_the_real_parser():
     assert rr.build_parser().parse_args(
         ["a.glb", "a.png", "out.glb", "--resume"]
     ).resume is True
+
+
+def test_the_bake_command_bakes_the_original_onto_the_current_mesh():
+    command = rr.bake_command(Path("gen.glb"), Path("painted.glb"), Path("baked.glb"), 2048,
+                              blender=Path("/bl"))
+    assert command[:4] == ["/bl", "--background", "--python", command[3]]
+    assert command[3].endswith("blender_bake_detail.py")
+    after = command[command.index("--") + 1:]
+    assert after == ["gen.glb", "painted.glb", "baked.glb", "2048"]
+
+
+def test_skip_bake_is_on_the_real_parser_and_off_by_default():
+    parser = rr.build_parser()
+    assert parser.parse_args(["a.glb", "b.png", "c.glb"]).skip_bake is False
+    assert parser.parse_args(["a.glb", "b.png", "c.glb", "--skip-bake"]).skip_bake is True

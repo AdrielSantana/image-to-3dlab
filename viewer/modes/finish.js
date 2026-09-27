@@ -14,10 +14,11 @@ import { JobProgressPanel, formatDuration } from '../components/job-progress.js'
 
 const f = (id) => document.getElementById(id);
 const STAGE_META = {
-  stages: ['retopologise', 'repaint', 'compress'],
+  stages: ['retopologise', 'repaint', 'bake', 'compress'],
   stage_labels: {
     retopologise: 'Retopologise',
     repaint: 'Repaint',
+    bake: 'Bake detail',
     compress: 'Compress textures',
   },
 };

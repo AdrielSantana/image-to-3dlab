@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Finish a generated asset: retopologise, repaint, compress — one command.
+"""Finish a generated asset: retopologise, repaint, bake detail, compress — one command.
 
     python scripts/retopo_repaint.py generated.glb source.png finished.glb
 
 **Why this exists.** The route that works on this repo's assets is four separate commands
 run by hand, each with its own flags, in an order that matters:
 
-    blender_retopo_bake.py → run_paint_pbr.py → compress_glb_textures.py
+    blender_retopo_bake.py → run_paint_pbr.py → blender_bake_detail.py → compress_glb_textures.py
 
 Run by hand across several assets, each gets slightly different treatment and the
 comparison between them stops meaning anything. It also takes ~8 minutes of attention per
@@ -27,11 +27,18 @@ stage's face-count ceiling stops being reachable.
    viewable even if the paint stage fails.
 2. **Repaint** (`hunyuan_mlx/paint`, its own venv). Reuses `run_paint` from
    `hunyuan_mlx_xiong_generate.py` rather than re-deriving the env-var contract.
-3. **Compress** (`compress_glb_textures.py`). The paint stage emits two uncompressed
+3. **Bake detail** (`blender_bake_detail.py`, headless Blender). A normal map from the
+   original high-poly, so the retopo keeps its relief, plus the source's
+   metallic-roughness map when there was no repaint (a repaint makes its own). After the
+   repaint because the repaint re-unwraps: a map baked onto the retopo's UVs would land
+   in the wrong place. Seconds, not minutes.
+4. **Compress** (`compress_glb_textures.py`). The paint stage emits two uncompressed
    4096² PNGs, which is 30 MB of a 32 MB asset.
 
-**Surface response is per-asset and this does not guess it.** Only base colour is baked, so
-`--metallic/--roughness/--ior` stand in for the source's material. The defaults are neutral
+**Surface response is per-asset and this does not guess it.** The retopology stage bakes
+only base colour, so `--metallic/--roughness/--ior` stand in for the source's material
+until the bake-detail stage replaces them with the source's own map (and always, with
+`--skip-bake`). The defaults are neutral
 organic; the Snag wanted 0.648 / 0.686 / 1.4 by eye. Whatever is used is recorded in the
 JSON so the next asset can be judged against a known setting rather than a remembered one.
 """
@@ -59,7 +66,7 @@ def emit_stage(phase: str, message: str) -> None:
     print(f"{STAGE_MARKER}::{phase}::{message}", flush=True)
 
 
-def stage_plan(skip_paint: bool, skip_compress: bool) -> list[str]:
+def stage_plan(skip_paint: bool, skip_compress: bool, skip_bake: bool = False) -> list[str]:
     """The stages this run will execute, in order.
 
     Named separately from the running of them so a caller — the viewer's job API, say —
@@ -68,6 +75,8 @@ def stage_plan(skip_paint: bool, skip_compress: bool) -> list[str]:
     stages = ["retopologise"]
     if not skip_paint:
         stages.append("repaint")
+    if not skip_bake:
+        stages.append("bake")
     if not skip_compress:
         stages.append("compress")
     return stages
@@ -89,6 +98,17 @@ def retopo_command(
         str(SCRIPTS / "blender_retopo_bake.py"), "--",
         str(source), str(output), str(faces), str(atlas), str(angle),
         str(voxel), str(metallic), str(roughness), str(ior),
+    ]
+
+
+def bake_command(
+    source: Path, target: Path, output: Path, size: int, blender: Path = BLENDER,
+) -> list[str]:
+    """The headless bake-detail invocation: original high-poly onto the current mesh."""
+    return [
+        str(blender), "--background", "--python",
+        str(SCRIPTS / "blender_bake_detail.py"), "--",
+        str(source), str(target), str(output), str(size),
     ]
 
 
@@ -142,6 +162,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="cap for colour textures in the compress stage")
     parser.add_argument("--skip-paint", action="store_true",
                         help="stop after retopology, keeping the transferred texture")
+    parser.add_argument("--skip-bake", action="store_true",
+                        help="skip the normal-map and metallic-roughness bake from the "
+                             "original; the asset keeps flat surface settings")
     parser.add_argument("--skip-compress", action="store_true")
     parser.add_argument(
         "--resume", action="store_true",
@@ -163,7 +186,7 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     stem = args.output.with_suffix("")
-    stages = stage_plan(args.skip_paint, args.skip_compress)
+    stages = stage_plan(args.skip_paint, args.skip_compress, args.skip_bake)
     print(f"[retopo-repaint] {args.source.name} -> {args.output.name}: "
           f"{' -> '.join(stages)}", flush=True)
 
@@ -205,6 +228,18 @@ def main() -> int:
         timings["repaint"] = round(time.time() - step, 1)
         current = painted
 
+    if not args.skip_bake:
+        baked = Path(f"{stem}_baked.glb")
+        step = time.time()
+        if reuse(baked, args.resume):
+            emit_stage("bake", f"Reusing {baked.name}")
+        else:
+            emit_stage("bake", "Baking normal map and surface from the original")
+            _run(bake_command(args.source, current, baked, args.atlas, args.blender),
+                 Path(f"{stem}_bake.log"), "bake")
+        timings["bake"] = round(time.time() - step, 1)
+        current = baked
+
     if not args.skip_compress:
         sys.path.insert(0, str(SCRIPTS))
         import importlib.util
@@ -238,6 +273,7 @@ def main() -> int:
         "retopology": {"faces": args.faces, "atlas": args.atlas, "voxel": args.voxel,
                        "angle": args.angle},
         "surface": {"metallic": args.metallic, "roughness": args.roughness, "ior": args.ior},
+        "bake": None if args.skip_bake else {"size": args.atlas},
         "paint": None if args.skip_paint else {
             "seed": args.paint_seed, "res": args.paint_res,
             "steps": args.paint_steps, "texture": args.paint_tex,
