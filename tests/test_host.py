@@ -98,6 +98,20 @@ def test_driver_cuda_version_is_read_from_the_smi_header():
     assert host.driver_cuda_version(which=which, run=_smi(0, SMI_HEADER)) == (12, 8)
 
 
+# Driver 610 renamed the field to "CUDA UMD Version". Real header from an RTX 5090 on
+# Windows 11, reported by paisanllc in #50.
+SMI_HEADER_610 = """
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.88                 KMD Version: 610.88            CUDA UMD Version: 13.3  |
+|-----------------------------------------+------------------------+----------------------+
+"""
+
+
+def test_driver_cuda_version_reads_the_driver_610_spelling():
+    which = lambda _: "/usr/bin/nvidia-smi"
+    assert host.driver_cuda_version(which=which, run=_smi(0, SMI_HEADER_610)) == (13, 3)
+
+
 def test_driver_cuda_version_is_none_without_a_driver_or_a_header():
     assert host.driver_cuda_version(which=lambda _: None) is None
     which = lambda _: "/usr/bin/nvidia-smi"

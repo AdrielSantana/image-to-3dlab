@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and 13 test modules needed them, but nothing installed them.
 - `scripts/README.md` no longer lists `build_showcase_reel.py`, which isn't in the repo yet.
   The registry tests failed on every fresh clone.
+- NVIDIA driver 610 and newer: Setup no longer refuses every model. The driver renamed
+  the CUDA field that `nvidia-smi` prints, so we couldn't read the CUDA version and
+  treated the card as too old. Found, diagnosed and tested on an RTX 5090 by
+  [@paisanllc](https://github.com/paisanllc) in #50.
 
 ## [0.3.1] - 2026-09-24
 

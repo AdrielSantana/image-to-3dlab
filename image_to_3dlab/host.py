@@ -60,9 +60,10 @@ def driver_cuda_version(which: Callable = shutil.which,
     """The newest CUDA the installed driver supports, from `nvidia-smi`'s header.
 
     This is the driver's ceiling, not an installed toolkit. A binary compiled with a newer
-    CUDA than this fails at its first kernel, not at load time.
+    CUDA than this fails at its first kernel, not at load time. Driver 610 renamed the
+    field from "CUDA Version" to "CUDA UMD Version", so both spellings are accepted.
     """
-    match = re.search(r"CUDA Version:\s*(\d+)\.(\d+)", _smi([], which, run) or "")
+    match = re.search(r"CUDA (?:UMD )?Version:\s*(\d+)\.(\d+)", _smi([], which, run) or "")
     return (int(match[1]), int(match[2])) if match else None
 
 
