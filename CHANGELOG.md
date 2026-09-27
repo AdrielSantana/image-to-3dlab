@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-27
+
 ### Added
 - Finish now bakes the original's detail onto the finished model: a **normal map** (the
   fine relief a retopology throws away) and the source's **metallic-roughness map**, so
