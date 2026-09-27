@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Windows with an NVIDIA GPU: the installer now installs PyTorch with CUDA. It used to get
   the CPU-only build (the only one PyPI has for Windows), so everything ran on the
-  processor. Re-running the installer replaces a CPU-only PyTorch. Reported by
-  [@paisanllc](https://github.com/paisanllc) in #50.
+  processor. Re-running the installer replaces a CPU-only PyTorch. Fixed, pending
+  verification on real Windows machines: if you try it, please tell us how it went.
+  Reported by [@paisanllc](https://github.com/paisanllc) in #50.
 - Pixal3D now writes a record of each run (`<model>.json` beside the GLB): the input
   image, settings, licence and file hashes, like the other routes. It wrote none before,
   from the viewer or the command line. Reported by
