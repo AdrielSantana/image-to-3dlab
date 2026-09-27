@@ -188,3 +188,44 @@ def test_container_memory_limit_is_read_from_cgroup_v2_or_v1(tmp_path):
     # cgroup v1 spells "no limit" as a huge number, which must not read as a limit.
     (v1 / "memory" / "memory.limit_in_bytes").write_text("9223372036854771712\n")
     assert host.cgroup_memory(v1) is None
+
+
+# --- PyTorch CUDA build for Windows (PyPI only has CPU-only torch there) -------------
+
+def test_a_cuda_13_driver_gets_the_cu130_build():
+    assert host.torch_cuda_index((13, 3)) == "https://download.pytorch.org/whl/cu130"
+    assert host.torch_cuda_index((13, 0)) == "https://download.pytorch.org/whl/cu130"
+
+
+def test_a_cuda_12_8_driver_gets_the_cu128_build():
+    assert host.torch_cuda_index((12, 8)) == "https://download.pytorch.org/whl/cu128"
+    assert host.torch_cuda_index((12, 9)) == "https://download.pytorch.org/whl/cu128"
+
+
+def test_an_older_driver_or_no_driver_gets_no_cuda_build():
+    """12.8 is also the floor for RTX 50-series cards; below it, updating the driver is
+    the fix, not an older wheel."""
+    assert host.torch_cuda_index((12, 6)) is None
+    assert host.torch_cuda_index(None) is None
+
+
+def test_the_installer_command_prints_the_index_for_this_driver(capsys):
+    which = lambda _: "/usr/bin/nvidia-smi"
+    code = host.main(["torch-index"], which=which, run=_smi(0, SMI_HEADER_610))
+    assert code == 0
+    assert capsys.readouterr().out.strip() == "https://download.pytorch.org/whl/cu130"
+
+
+def test_the_installer_command_prints_nothing_without_a_usable_driver(capsys):
+    assert host.main(["torch-index"], which=lambda _: None) == 0
+    assert capsys.readouterr().out.strip() == ""
+
+
+def test_torch_has_cuda_is_false_when_torch_is_missing_or_cpu_only(capsys):
+    assert host.main(["torch-has-cuda"], torch_cuda=lambda: None) == 1
+    assert host.main(["torch-has-cuda"], torch_cuda=lambda: "13.0") == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_an_unknown_command_is_an_error():
+    assert host.main(["nonsense"]) == 2
