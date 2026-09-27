@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The project is now licensed under Apache-2.0, with a `NOTICE` file asking forks and
   derived projects to credit image-to-3dlab. Model weights keep their own licences.
 
+### Changed
+- Qwen-Image: the pictures you generate are yours, following Qwen's
+  [21 Sept statement](https://x.com/QwenDevs/status/2101917379785838660) that outputs are
+  not part of the licensed materials. A 3D model made from one no longer counts as
+  non-commercial. The licence text itself still says non-commercial, so we say plainly
+  that it is ambiguous and that commercial users should check it themselves.
+
 ### Fixed
 - A fresh install now includes `trimesh`, `fast_simplification` and `rtree`. The mesh tools
   and 13 test modules needed them, but nothing installed them.

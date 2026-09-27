@@ -20,6 +20,19 @@ class LicenseProfile:
     conditions: tuple[str, ...]
 
 
+# Qwen said on 2026-09-21 that outputs are not part of the licensed Materials, but did not
+# change the licence text, which still makes *running* the model non-commercial. We mirror
+# both halves and cite the statement, rather than read more into it than it says.
+QWEN_OUTPUT_STATEMENT = "https://x.com/QwenDevs/status/2101917379785838660"
+QWEN_OUTPUT_RIGHTS = (
+    "Qwen's licence is a bit ambiguous. Qwen says the pictures you generate are yours: "
+    f"outputs are not part of the licensed Materials ({QWEN_OUTPUT_STATEMENT}, 21 Sept "
+    "2026). The licence text still says the model is for non-commercial use, and our "
+    "reading is that commercial work needs a commercial licence from Qwen "
+    "(model-business@notice.qwencloud.com). If you plan to use it commercially, check "
+    "Qwen's licence yourself."
+)
+
 LICENSES = {
     "sf3d": LicenseProfile(
         classification="commercial-conditional",
@@ -58,13 +71,9 @@ LICENSES = {
         license_name="Qwen Research License Agreement",
         license_url="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
         conditions=(
-            "NON-COMMERCIAL USE ONLY. Outputs may not be used commercially.",
-            "Attribution required: documentation must state 'Built with Qwen'.",
-            (
-                "This sits at the FRONT of the chain: any 3D asset generated from a "
-                "Qwen-Image source image inherits the restriction, including after a "
-                "Hunyuan repaint or a TRELLIS pass."
-            ),
+            "NON-COMMERCIAL USE ONLY for running the model.",
+            QWEN_OUTPUT_RIGHTS,
+            "Attribution: say 'Built with Qwen'.",
         ),
     ),
 }
@@ -101,8 +110,8 @@ def validate_run_policy(
             f"{backend} is {profile.classification}; manifest disallows conditional models"
         )
     # research-only is stricter than conditional and is not covered by allow_conditional.
-    # A non-commercial model at the front of the chain taints everything downstream of it,
-    # so it is refused for anything but a private showcase, whatever the manifest says.
+    # Running a non-commercial model is refused for anything but a private showcase,
+    # whatever the manifest says. (Its outputs are the user's; running it is the limit.)
     if profile.classification == "research-only" and not (
         use_case == "showcase" and distribution == "private"
     ):

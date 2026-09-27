@@ -168,10 +168,11 @@ def test_image_and_3d_routes_are_distinguishable():
 
 
 def test_the_image_route_states_its_non_commercial_licence():
-    """It sits at the front of the chain, so its restriction reaches everything after it."""
+    """Running the model is non-commercial; the pictures are yours, per Qwen's statement."""
     entry = next(b for b in bc.catalog_status()["backends"] if b["id"] == "qwen-image")
     assert "non-commercial" in entry["license"]["name"].lower()
     assert "non-commercial" in entry["caveat"].lower()
+    assert "yours" in entry["caveat"] and "inherits" not in entry["caveat"]
 
 
 def test_sizes_are_stated_before_anything_is_fetched():

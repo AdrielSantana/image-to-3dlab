@@ -34,6 +34,7 @@ if str(REPO) not in sys.path:
 
 from image_to_3dlab import host as _host
 from image_to_3dlab.host import APPLE, NVIDIA
+from image_to_3dlab.provenance import QWEN_OUTPUT_RIGHTS
 
 HF_HUB_DIR = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
 
@@ -344,8 +345,8 @@ CATALOG: tuple[Backend, ...] = (
         kind="image",
         best_for="Makes the source image when you do not have one. Prompt in, picture out.",
         tradeoff=(
-            "Non-commercial licence, and the restriction carries into any 3D asset you "
-            "make from the picture."
+            "Licence is a bit ambiguous: Qwen says the pictures are yours, the text "
+            "says non-commercial."
         ),
         license_name="Qwen Research License (non-commercial)",
         license_url="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
@@ -355,8 +356,7 @@ CATALOG: tuple[Backend, ...] = (
         build_probes=(_host.executable(REPO / "vendor" / "sdcpp", "sd-cli"),),
         caveat=(
             "The Qwen Research License is non-commercial only and asks that you say "
-            "'Built with Qwen'. Anything you generate from one of these images inherits "
-            "that, including after a Hunyuan repaint."
+            "'Built with Qwen'. " + QWEN_OUTPUT_RIGHTS
         ),
         weights=(
             WeightSet("Qwen-Image 2.1 diffusion model (Q8_0)",

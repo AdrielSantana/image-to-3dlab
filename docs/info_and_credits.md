@@ -22,7 +22,9 @@ This lab builds on other people's models and ports. Thank you.
 
 ## Licences travel with the output
 
-- Anything made from a Qwen-Image picture is **non-commercial**.
+- Qwen-Image's licence is a bit ambiguous. Qwen says the pictures you make are yours
+  ([statement](https://x.com/QwenDevs/status/2101917379785838660), 21 Sept 2026), but the licence text still says **non-commercial**. Our
+  reading is that commercial work needs a licence from Qwen; check it yourself if you plan to.
 - The Hunyuan3D weights are **not licensed in the EU, the UK or South Korea**. dgrauet's
   shape port is Tencent-licensed code too, which is why it is cloned separately rather than
   shipped here.

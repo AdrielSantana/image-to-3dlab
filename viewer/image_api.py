@@ -14,9 +14,9 @@ So the defaults here are cfg 1.0, 10 steps, 768px. **Those timings are one machi
 faster chip does better and an NVIDIA card is in a different league; nothing here should
 be read as "this is how long it takes".
 
-**The licence travels with the image.** Qwen-Image is non-commercial, and a mesh generated
-from one of its pictures inherits that. Every run writes a sidecar saying so, because a
-PNG in a folder six months from now remembers nothing on its own.
+**The licence travels with the image.** Running Qwen-Image is non-commercial; the pictures
+it makes are yours, per Qwen's own statement. Every run writes a sidecar saying both, because
+a PNG in a folder six months from now remembers nothing on its own.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from image_to_3dlab.host import NVIDIA, executable, host_platform
+from image_to_3dlab.provenance import QWEN_OUTPUT_RIGHTS
 from image_to_3dlab.sdcpp import NO_GPU_HELP, BackendWatch
 
 HF_HUB = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
@@ -52,6 +53,7 @@ MODEL_ID = "qwen-image-2.1"
 LICENSE_NAME = "Qwen Research License (non-commercial)"
 LICENSE_URL = "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE"
 ATTRIBUTION = "Built with Qwen"
+OUTPUT_RIGHTS = QWEN_OUTPUT_RIGHTS
 
 # Each weight file, as (hugging face cache directory, filename glob).
 WEIGHT_FILES = {
@@ -258,10 +260,8 @@ def provenance(prompt: str, settings: dict[str, Any], seconds: float,
             "url": LICENSE_URL,
             "classification": "research-only",
             "attribution": ATTRIBUTION,
-            "inherited_by_derivatives": (
-                "Any 3D asset generated from this image inherits the non-commercial "
-                "restriction, including after a repaint."
-            ),
+            # Key kept for sidecar compatibility; it now says what derivatives do NOT inherit.
+            "inherited_by_derivatives": OUTPUT_RIGHTS,
         },
         "prompt": prompt,
         "settings": settings,

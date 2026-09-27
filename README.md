@@ -19,9 +19,11 @@ on an RTX 4090.
 
 ![Three creatures generated from text prompts on a laptop, about four and a half minutes each](docs/images/prompt-to-source-image.jpg)
 
-Built with Qwen. Those weights are **non-commercial**, and anything you build from a
-generated picture inherits that, so the pipeline sorts those runs into their own folder and
-says so in the sidecar. Bring your own image and none of that applies.
+Built with Qwen. Candidly, Qwen's licence is a bit ambiguous. Qwen says the pictures you
+generate are yours ([their statement](https://x.com/QwenDevs/status/2101917379785838660)), but the [licence](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE) still says the model
+is for non-commercial use. Our reading is that commercial work needs a licence from Qwen;
+if you plan to go commercial, check their licence yourself. The pipeline keeps those runs in
+their own folder and says so in the sidecar. Bring your own image and none of that applies.
 
 Five backends, one Generate 3D page. Sadly life is full of trade-offs, so pick the tradeoff you want (lol):
 
