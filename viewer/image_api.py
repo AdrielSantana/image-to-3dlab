@@ -45,9 +45,10 @@ from image_to_3dlab.sdcpp import NO_GPU_HELP, BackendWatch
 
 HF_HUB = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
 BINARY = executable(REPO / "vendor" / "sdcpp", "sd-cli")
-# Research-only output goes in its own folder, matching how provenance.py classifies the
-# model. Nobody should have to open a sidecar to find out which pictures are restricted.
-OUTPUT_ROOT = REPO / "output" / "images" / "research_only"
+# Every picture lands in output/images/. Its licence (Qwen's research licence, today) is
+# recorded in the provenance written beside it, which is what travels with the file; a
+# folder name did not, and sorting by it only made the pictures harder to find.
+OUTPUT_ROOT = REPO / "output" / "images"
 
 MODEL_ID = "qwen-image-2.1"
 LICENSE_NAME = "Qwen Research License (non-commercial)"
