@@ -50,11 +50,12 @@ export function compareUrl(beforeUrl, afterUrl, facesAway = false) {
 
 function showCompare(beforeUrl, afterUrl, directory, facesAway = false) {
   if (!beforeUrl || !afterUrl) return;
-  f('finish-compare').hidden = false;
-  f('finish-compare-label').textContent = `Before and after · ${directory}`;
+  f('finish-compare-empty').hidden = true;
+  f('finish-compare-frame').hidden = false;
+  f('finish-compare-label').textContent = 'Before and after';
+  f('finish-compare-label').title = directory;
   f('finish-compare-frame').src = compareUrl(
     beforeUrl, `${afterUrl}?t=${Date.now()}`, facesAway);
-  f('finish-compare').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function updateSubmit() {
@@ -64,7 +65,7 @@ function updateSubmit() {
 function configureStages(stages) {
   progress.configure({
     stages: stages || STAGE_META.stages.filter(
-      (stage) => stage !== 'repaint' || !f('finish-skip-paint').checked,
+      (stage) => stage !== 'repaint' || f('finish-repaint').checked,
     ),
     stage_labels: STAGE_META.stage_labels,
   });
@@ -201,7 +202,8 @@ async function resume(directory, button) {
   progress.reset();
   configureStages();
   f('finish-result').hidden = true;
-  f('finish-compare').hidden = true;
+  f('finish-compare-frame').hidden = true;
+  f('finish-compare-empty').hidden = false;
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = `Resuming ${directory}…`;
   try {
@@ -222,21 +224,21 @@ async function resume(directory, button) {
 
 f('finish-asset').onchange = (event) => {
   state.asset = event.target.files[0] || null;
-  f('finish-asset-name').textContent = state.asset ? state.asset.name : 'no asset chosen';
+  f('finish-asset-name').textContent = state.asset ? state.asset.name : 'no model chosen';
   updateSubmit();
 };
 
 f('finish-image').onchange = (event) => {
   state.image = event.target.files[0] || null;
-  f('finish-image-name').textContent = state.image ? state.image.name : 'no image chosen';
+  f('finish-image-name').textContent = state.image ? state.image.name : 'the picture the model was made from';
   updateSubmit();
 };
 
-f('finish-skip-paint').onchange = () => {
+f('finish-repaint').onchange = () => {
   // Without a repaint the source image is still needed: the worker records it, and the
   // stage list changes, so the panel has to be rebuilt.
   configureStages();
-  f('finish-paint-fields').hidden = f('finish-skip-paint').checked;
+  f('finish-paint-fields').hidden = !f('finish-repaint').checked;
 };
 
 f('finish-runs-refresh').onclick = loadRuns;
@@ -247,7 +249,8 @@ f('finish-submit').onclick = async () => {
   progress.reset();
   configureStages();
   f('finish-result').hidden = true;
-  f('finish-compare').hidden = true;
+  f('finish-compare-frame').hidden = true;
+  f('finish-compare-empty').hidden = false;
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = 'Uploading…';
 
@@ -257,8 +260,8 @@ f('finish-submit').onclick = async () => {
     roughness: Number(f('finish-roughness').value),
     ior: Number(f('finish-ior').value),
     texture_size: Number(f('finish-texture').value),
-    skip_paint: f('finish-skip-paint').checked,
-    skip_photo: f('finish-skip-photo').checked,
+    skip_paint: !f('finish-repaint').checked,
+    skip_photo: !f('finish-photo').checked,
     paint_res: Number(f('finish-paint-res').value),
     paint_steps: Number(f('finish-paint-steps').value),
   };

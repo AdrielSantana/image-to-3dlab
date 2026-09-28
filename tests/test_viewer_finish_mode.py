@@ -72,7 +72,7 @@ def test_the_mlx_attention_choice_is_still_offered():
 
 def test_skipping_the_repaint_hides_only_the_paint_fields():
     assert "finish-paint-fields" in _element_ids(INDEX)
-    assert "f('finish-paint-fields').hidden = f('finish-skip-paint').checked;" in FINISH
+    assert "f('finish-paint-fields').hidden = !f('finish-repaint').checked;" in FINISH
 
 
 def test_every_progress_track_has_a_styled_fill():

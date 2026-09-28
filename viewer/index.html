@@ -355,87 +355,87 @@
 </section>
 
 <section id="finish-view" hidden>
-  <div class="generate-card" style="max-width:720px; margin:16px auto;">
-    <h2 style="margin-top:0">Finish an asset</h2>
-    <p style="font-size:12px; opacity:.75; margin-top:4px">
-      Retopologise, optionally repaint from the source art, and compress the textures.
-      Pixal3D output usually needs no repaint &mdash; untick it and this takes seconds.
-      A bleached TRELLIS.2 asset does, and that costs about six minutes.
-    </p>
+  <div class="generate-grid">
+    <div class="generate-card">
+      <h2>Finish a model</h2>
+      <p>Make a generated model game-ready: fewer triangles, better paint, a smaller file.</p>
 
-    <div class="field"><label for="finish-asset">Asset (.glb)</label>
-      <input id="finish-asset" type="file" accept=".glb,model/gltf-binary">
-      <small id="finish-asset-name">no asset chosen</small></div>
-    <div class="field"><label for="finish-image">Source art</label>
-      <input id="finish-image" type="file" accept="image/png,image/jpeg,image/webp">
-      <small id="finish-image-name">no image chosen</small></div>
+      <div class="field"><label for="finish-asset">Model (.glb)</label>
+        <input id="finish-asset" type="file" accept=".glb,model/gltf-binary">
+        <small id="finish-asset-name">no model chosen</small></div>
+      <div class="field"><label for="finish-image">Source image</label>
+        <input id="finish-image" type="file" accept="image/png,image/jpeg,image/webp">
+        <small id="finish-image-name">the picture the model was made from</small></div>
+      <div class="field"><label for="finish-faces">Triangles</label>
+        <select id="finish-faces">
+          <option value="15000">15,000 &middot; light</option>
+          <option value="40000" selected>40,000 &middot; game-ready</option>
+          <option value="100000">100,000 &middot; detailed</option>
+        </select></div>
 
-    <div class="field"><label for="finish-faces">Face target</label>
-      <input id="finish-faces" type="number" step="1000" min="1000" max="200000" value="40000">
-      <small>Counted in triangles. Quadriflow declines these meshes, so it falls back to
-        collapse decimation after a voxel remesh.</small></div>
-    <div class="field"><label for="finish-texture">Texture size</label>
-      <select id="finish-texture"><option>1024</option><option selected>2048</option><option>4096</option></select>
-      <small>The paint stage emits uncompressed 4096&sup2; PNGs; 2048 JPEG is usually
-        indistinguishable and about a tenth the size.</small></div>
+      <label class="check"><input id="finish-repaint" type="checkbox" checked>
+        <span>Repaint the sides and back
+        <small>from the source image &middot; about 6 minutes</small></span></label>
+      <label class="check"><input id="finish-photo" type="checkbox" checked>
+        <span>Keep the photo's real pixels
+        <small>sharp text and logos &middot; Pixal3D models made here</small></span></label>
 
-    <div class="field"><label for="finish-metallic">Metallic</label>
-      <input id="finish-metallic" type="number" step="0.001" min="0" max="1" value="0.25"></div>
-    <div class="field"><label for="finish-roughness">Roughness</label>
-      <input id="finish-roughness" type="number" step="0.001" min="0" max="1" value="0.65"></div>
-    <div class="field"><label for="finish-ior">IOR</label>
-      <input id="finish-ior" type="number" step="0.01" min="1" max="3" value="1.45">
-      <small>Only base colour is baked, so these stand in for the source's material.
-        Tune them by eye for each asset.</small></div>
+      <details class="image-advanced">
+        <summary>Advanced</summary>
+        <div class="field"><label for="finish-texture">Texture size</label>
+          <select id="finish-texture"><option>1024</option><option selected>2048</option><option>4096</option></select></div>
+        <div class="field"><label for="finish-metallic">Metallic</label>
+          <input id="finish-metallic" type="number" step="0.001" min="0" max="1" value="0.25"></div>
+        <div class="field"><label for="finish-roughness">Roughness</label>
+          <input id="finish-roughness" type="number" step="0.001" min="0" max="1" value="0.65"></div>
+        <div class="field"><label for="finish-ior">IOR</label>
+          <input id="finish-ior" type="number" step="0.01" min="1" max="3" value="1.45">
+          <small>Stand-ins for the surface until the detail bake replaces them.</small></div>
+        <div id="finish-paint-fields">
+          <div class="field"><label for="finish-paint-res">Paint resolution</label>
+            <select id="finish-paint-res"><option selected>512</option><option>768</option><option>1024</option></select></div>
+          <div class="field"><label for="finish-paint-steps">Paint steps</label>
+            <input id="finish-paint-steps" type="number" step="1" min="1" max="50" value="15"></div>
+        </div>
+      </details>
 
-    <label class="check"><input id="finish-skip-photo" type="checkbox"><span>skip source photo</span>
-      <small>by default, a Pixal3D model made here keeps the photo's real pixels wherever the
-        photo can see it: text, logos and faces stay exact instead of being redrawn</small></label>
-    <label class="check"><input id="finish-skip-paint" type="checkbox"><span>skip repaint</span>
-      <small>keep the transferred texture &mdash; right for Pixal3D output</small></label>
-    <div id="finish-paint-fields">
-      <div class="field"><label for="finish-paint-res">Paint resolution</label>
-        <select id="finish-paint-res"><option selected>512</option><option>768</option><option>1024</option></select></div>
-      <div class="field"><label for="finish-paint-steps">Paint steps</label>
-        <input id="finish-paint-steps" type="number" step="1" min="1" max="50" value="15"></div>
-    </div>
+      <button id="finish-submit" disabled>Finish model</button>
+      <button id="finish-cancel" hidden>Cancel</button>
 
-    <button id="finish-submit" disabled>Finish asset</button>
-    <button id="finish-cancel" hidden>Cancel</button>
-
-    <div id="finish-progress-box" class="generate-card" hidden>
-      <div id="generate-progress-head"><span id="finish-overall-label">Waiting</span><span id="finish-overall-eta"></span></div>
-      <div class="progress-track"><div id="finish-overall-bar"></div></div>
-      <div id="finish-stages"></div>
-      <div id="finish-status" aria-live="polite" style="font-size:12px; margin-top:6px"></div>
-    </div>
-
-    <div id="finish-result" hidden>
-      <a id="finish-download" download>Download finished GLB</a>
-      <a id="finish-record" download>Download record</a>
-      <small id="finish-where"></small>
-    </div>
-
-    <div id="finish-runs-box" class="generate-card" style="margin-top:16px">
-      <div id="generate-progress-head">
-        <span>Runs on disk</span>
-        <button id="finish-runs-refresh" class="ghost">Refresh</button>
+      <div id="finish-progress-box" hidden>
+        <div id="generate-progress-head"><span id="finish-overall-label">Waiting</span><span id="finish-overall-eta"></span></div>
+        <div class="progress-track"><div id="finish-overall-bar"></div></div>
+        <div id="finish-stages"></div>
+        <div id="finish-status" aria-live="polite" style="font-size:12px; margin-top:6px"></div>
       </div>
-      <p style="font-size:12px; opacity:.75; margin:4px 0 8px">
-        Every stage writes its artifact into <code>output/finish/</code> and stays there.
-        A run whose browser tab was closed is still downloadable here, and one that stopped
-        part-way resumes from whatever it already finished &mdash; the repaint is five of a
-        six-minute run, so resuming skips nearly all of it.
-      </p>
-      <div id="finish-runs"></div>
+
+      <div id="finish-result" hidden>
+        <a id="finish-download" download>Download model</a>
+        <a id="finish-record" download>Download record</a>
+        <small id="finish-where"></small>
+      </div>
     </div>
-  </div>
-  <div id="finish-compare" hidden>
-    <div class="finish-compare-head">
-      <span id="finish-compare-label">Before and after</span>
-      <small>Drag to turn both; the cameras move together.</small>
+
+    <div class="finish-side">
+      <div id="finish-compare" class="generate-card">
+        <div class="finish-compare-head">
+          <h2 id="finish-compare-label">Before and after</h2>
+          <small>Drag to turn both together.</small>
+        </div>
+        <div id="finish-compare-empty">Finish a model, or pick a past run, to see it next to
+          the original.</div>
+        <iframe id="finish-compare-frame" title="before and after" hidden></iframe>
+      </div>
+
+      <div id="finish-runs-box" class="generate-card">
+        <div id="generate-progress-head">
+          <h2>Past runs</h2>
+          <button id="finish-runs-refresh" class="ghost">Refresh</button>
+        </div>
+        <p>Saved in <code>output/finish/</code>. A run that stopped part-way can resume.</p>
+        <div id="finish-runs"></div>
+      </div>
     </div>
-    <iframe id="finish-compare-frame" title="before and after"></iframe>
   </div>
 </section>
 

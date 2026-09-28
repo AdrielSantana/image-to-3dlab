@@ -141,9 +141,24 @@
 .setup-remove { margin-left: 8px; opacity: .55; border-color: #5a3038; color: #e0a9a9; }
 .setup-remove:hover { opacity: 1; background: #3a1f24; }
 
-/* Finish: before/after comparison, wider than the form card so each pane is usable. */
-#finish-compare { max-width: 1200px; margin: 0 auto 24px; padding: 0 16px; }
-.finish-compare-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 6px; }
-.finish-compare-head small { opacity: .7; }
-#finish-compare-frame { width: 100%; height: 560px; border: 1px solid #303744;
+/* Finish: the before/after view and past runs sit beside the form, as Generate's preview does. */
+.finish-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+#finish-compare { display: flex; flex-direction: column; min-height: 520px; }
+.finish-compare-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 8px; }
+.finish-compare-head small { opacity: .6; }
+#finish-compare-empty { flex: 1; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; opacity: .55; font-size: 13px;
+  border: 1px dashed #303744; border-radius: 8px; }
+#finish-compare-frame { flex: 1; width: 100%; min-height: 460px; border: 1px solid #303744;
   border-radius: 8px; background: #14161a; }
+#finish-compare-empty[hidden], #finish-compare-frame[hidden] { display: none; }
+#finish-progress-box { margin-top: 14px; }
+#finish-result { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: 12px; }
+#finish-result[hidden] { display: none; }
+#finish-result a { color: #9bc8ff; }
+#finish-result small { flex-basis: 100%; opacity: .6; }
+#finish-submit { margin-top: 14px; }
+/* Finish's options: the note goes under its label rather than squeezing it. */
+#finish-view .check { align-items: flex-start; }
+#finish-view .check span { display: flex; flex-direction: column; }
+#finish-view .check small { font-size: 11px; margin-top: 2px; }

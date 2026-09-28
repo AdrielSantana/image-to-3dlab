@@ -433,7 +433,15 @@ updateChrome();
 
 // --- sizing + render loop ------------------------------------------------------------
 
+// Embedded (a narrow iframe), the toolbar can wrap onto a second row; start the panes
+// below it rather than under it, or it covers the pane labels.
+function fitPanesBelowBar() {
+  if (!RESTRICTED) return;
+  panesEl.style.top = `${document.getElementById('bar').offsetHeight}px`;
+}
+
 function resize() {
+  fitPanesBelowBar();
   for (const view of views) {
     const w = view.pane.clientWidth, h = view.pane.clientHeight;
     // updateStyle must stay ON. With it off, three.js leaves the canvas CSS size equal to
@@ -445,6 +453,7 @@ function resize() {
   }
 }
 addEventListener('resize', () => { resize(); frame(); });
+fitPanesBelowBar();
 
 // One rendered frame. Advances spin, lets OrbitControls damping settle, mirrors the lead
 // camera when synced, draws every model pane, and reschedules itself *only* while
