@@ -215,13 +215,14 @@ def build_generate_command(
 
 
 def _prepare_rgba(image: Path, destination: Path) -> Path:
-    import rembg
     from PIL import Image
+
+    from image_to_3dlab.matte import cut_out
 
     source = Image.open(image).convert("RGBA")
     alpha = source.getchannel("A")
     if alpha.getextrema()[0] == 255:
-        source = rembg.remove(source, session=rembg.new_session("u2net"))
+        source, _ = cut_out(source)
     if source.getchannel("A").getextrema()[0] == 255:
         raise RuntimeError(
             "TRELLIS preprocessing did not produce a transparent foreground"

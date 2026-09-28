@@ -10,6 +10,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from image_to_3dlab.matte import matte_model
+
 
 @dataclass(frozen=True)
 class LicenseProfile:
@@ -32,6 +34,13 @@ QWEN_OUTPUT_RIGHTS = (
     "(model-business@notice.qwencloud.com). If you plan to use it commercially, check "
     "Qwen's licence yourself."
 )
+
+
+# Whichever remover this machine runs (image_to_3dlab/matte.py picks it); both are MIT.
+MATTE_LICENSES = {
+    "birefnet-general-lite": "MIT (BiRefNet)",
+    "u2net": "MIT code / Apache-2.0 U-2-Net",
+}
 
 LICENSES = {
     "sf3d": LicenseProfile(
@@ -233,9 +242,9 @@ def finalize_output(
         "components": (
             [
                 {
-                    "component": "rembg/u2net",
+                    "component": f"rembg/{matte_model()}",
                     "purpose": "background removal",
-                    "license": "MIT code / Apache-2.0 U-2-Net",
+                    "license": MATTE_LICENSES[matte_model()],
                     "commercial_status": "commercial-clear",
                 }
             ]

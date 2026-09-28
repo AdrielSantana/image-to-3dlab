@@ -211,6 +211,7 @@ character with them.
 | ~13 GB disk | Hunyuan3D-MLX 2.0 shape + paint weights (auto-downloaded once) |
 | ~14 GB disk | TRELLIS.2-4B weights (auto-downloaded once, if using TRELLIS) |
 | ~94 MB download | TinyCLIP flat-input advisor (local and non-blocking) |
+| ~224 MB download | BiRefNet-lite background remover (optional, recommended; Setup & Status or `scripts/bootstrap_matte.py`) |
 
 ## How long a run takes
 
@@ -230,7 +231,8 @@ On a Mac, TRELLIS.2 runs about twice as fast with **Attention backend** set to `
 
 - **Pixal3D** code and flow weights: MIT. The Q8_0 bundle also carries the **DINOv3** image
   encoder under its own licence, so treat its output the same as TRELLIS's. Background
-  removal uses `rembg` (u2net), never BRIA RMBG-2.0.
+  removal uses BiRefNet-lite (MIT) once installed, `rembg`'s u2net otherwise, and never
+  BRIA RMBG-2.0.
 - **TRELLIS.2** code and weights: MIT. **DINOv3** image encoder: separate DINOv3 License,
   so TRELLIS output is classified `commercial-conditional`.
 - **TinyCLIP ViT-8M/16** input advisor: MIT. It only warns about risky input style and is

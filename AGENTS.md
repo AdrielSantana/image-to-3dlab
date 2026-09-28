@@ -99,7 +99,10 @@ it uses.
 
 ## Provenance & licensing (do not weaken)
 
-- Every run emits a `.provenance.json` sidecar; outputs are sorted into license-class folders.
+- Every run emits a `.provenance.json` sidecar recording the licence of every model it used.
+  That record is the guardrail and travels with the file; output folders are just
+  organisation (3D runs still sort by licence class, generated images all go to
+  `output/images/`). `output/` is git-ignored: it holds our own work, not the product.
 - `validate_run_policy` gates generation on declared intent — keep it ahead of model work.
 - **BRIA RMBG-2.0 must never be loaded by this repo's own generation pipeline** (the vendored
   `trellis-mac`/`trellis-space-mac` backends) — the TRELLIS backend **refuses to run** unless

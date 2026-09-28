@@ -4,7 +4,10 @@ torch>=2.4
 torchvision>=0.19
 Pillow>=10.3
 requests>=2.32
-rembg>=2.0.57
+# 2.0.69 is the newest that knows BiRefNet-lite and still installs beside numpy 1.x; newer
+# releases pull numpy 2, which the rest of this environment has not been tested with.
+rembg==2.0.69
+numpy<2
 onnxruntime>=1.18
 huggingface-hub>=0.23
 trimesh>=4.0

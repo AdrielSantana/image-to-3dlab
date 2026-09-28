@@ -271,3 +271,50 @@ def test_a_successful_steps_patch_is_reported(capsys):
     def runner(command, **kwargs):
         return types.SimpleNamespace(returncode=0, stdout="patched flow_runner.cpp", stderr="")
     assert boot.apply_steps_patch(runner) is True
+
+
+# --- Rebuilding an existing install so it picks up our patches ------------------------------
+
+
+@pytest.mark.parametrize("present, rebuild, kind, expected", [
+    (False, False, "metal-source", "install"),
+    (False, True, "metal-source", "install"),
+    (True, False, "metal-source", "keep"),
+    (True, True, "metal-source", "rebuild"),
+    (True, True, "cuda-source", "rebuild"),
+    (True, True, "prebuilt", "cannot-rebuild"),
+])
+def test_an_existing_build_is_only_rebuilt_when_asked(present, rebuild, kind, expected):
+    """0.3.4's 8-step default needs the steps patch compiled in; before --rebuild, an
+    existing install printed "leaving it alone" and the release notes' command did nothing."""
+    assert boot.build_decision(present, rebuild, kind) == expected
+
+
+def test_rebuild_reaches_the_build_decision(monkeypatch, capsys):
+    """--rebuild on an existing Mac build recompiles instead of leaving it alone."""
+    calls = []
+    monkeypatch.setattr(boot, "target", lambda: "macos-arm64")
+    monkeypatch.setattr(boot, "current_kind", lambda key, prefer=False: "metal-source")
+    monkeypatch.setattr(boot, "build_present", lambda: True)
+    monkeypatch.setattr(boot, "rebuild_existing", lambda: calls.append("rebuild"))
+    monkeypatch.setattr(boot, "build_from_source", lambda kind: calls.append("fresh"))
+    monkeypatch.setattr(boot, "install_weights", lambda: calls.append("weights"))
+    assert boot.main(["--build-only", "--rebuild", "--yes"]) == 0
+    assert calls == ["rebuild"]
+    assert "Rebuilding" in capsys.readouterr().out
+
+
+def test_a_rebuild_patches_then_compiles_without_the_fresh_install_checks(monkeypatch):
+    """No Metal-compiler probe: a fresh Terminal usually cannot see it, and C++ is all
+    that changes."""
+    ran = []
+
+    def runner(command, **kwargs):
+        ran.append(command)
+        return types.SimpleNamespace(returncode=0, stdout="patched", stderr="")
+
+    monkeypatch.setattr(boot, "build_present", lambda: True)
+    boot.rebuild_existing(runner)
+    assert ran[0][-1].endswith("patch_pixal3d_steps.py")
+    assert ran[1][:2] == ["cmake", "--build"]
+    assert not any("xcrun" in part for command in ran for part in command)
