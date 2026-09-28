@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -53,6 +54,16 @@ DEFAULT_FOV = 0.3490658503988659
 # Structure guidance strength. `trellis-cli` defaults to 7.5, which can drop thin parts
 # (a sword blade vanished entirely); 10 keeps them. 13 is worse: thin parts detach.
 DEFAULT_GSS = 10.0
+
+# Sampling steps. `trellis-cli` hard-codes 12 for every flow; `--steps` lowers it through
+# `PIXAL3D_STEPS`, which only a build patched by `scripts/patch_pixal3d_steps.py` reads.
+DEFAULT_STEPS = 12
+# What "auto" picks when the build can honour it: same shape and front as 12 on the robot
+# and murloc tests (2026-09-28), 16-31% faster; small painted marks on unseen sides soften.
+FAST_STEPS = 8
+STEPS_ENV = "PIXAL3D_STEPS"
+STEPS_MARKER = "i2l_steps"
+FLOW_SOURCE = PIXAL3D_ROOT / "src" / "flow_runner.cpp"
 
 STAGES = ["stage", "views", "ss", "shape", "decode", "texture", "write"]
 STAGE_LABELS = {
@@ -77,7 +88,7 @@ LICENSE_URL = "https://huggingface.co/raven38/pixal3d-sv-q8_0-v1"
 
 def manifest(image: Path, output: Path, *, res: int, seed: int, fov: float, gss: float,
              gsh: float | None, matted: bool, matted_here: bool,
-             seconds: float) -> dict[str, object]:
+             seconds: float, steps: int = DEFAULT_STEPS) -> dict[str, object]:
     """The run's provenance record, written beside the GLB as `<output>.json`.
 
     Same place and shape as the Hunyuan route's manifest, so the viewer serves it as the
@@ -89,7 +100,7 @@ def manifest(image: Path, output: Path, *, res: int, seed: int, fov: float, gss:
         "input": {"path": str(image), "sha256": sha256_file(image)},
         "output": {"path": str(output), "sha256": sha256_file(output)},
         "parameters": {"res": res, "seed": seed, "fov": fov, "gss": gss, "gsh": gsh,
-                       "matted": matted},
+                       "matted": matted, "steps": steps},
         "license": {"name": LICENSE_NAME, "url": LICENSE_URL},
         "components": [{
             "component": f"rembg/{MATTE_MODEL}",
@@ -187,6 +198,63 @@ def build_command(
     return command + [str(output)]
 
 
+def steps_problem(steps: int | None, source: Path = FLOW_SOURCE,
+                  cli: Path = CLI) -> str | None:
+    """Why `--steps` cannot be honoured, or None when it can.
+
+    An unpatched build ignores `PIXAL3D_STEPS` and quietly runs 12 steps, which would give
+    a 27-minute run a label that is a lie. Checked before starting, in seconds.
+    """
+    if steps is None or steps == DEFAULT_STEPS:
+        return None
+    if not 1 <= steps <= 50:
+        return "--steps must be 1 to 50"
+    if not source.is_file() or STEPS_MARKER not in source.read_text():
+        return ("trellis-cli is not patched for --steps: run "
+                "scripts/patch_pixal3d_steps.py, then rebuild trellis-cli")
+    if not cli.is_file() or cli.stat().st_mtime < source.stat().st_mtime:
+        return ("trellis-cli is older than the patched flow_runner.cpp: rebuild it with "
+                "cmake --build vendor/pixal3d-cpp/build --target trellis-cli")
+    return None
+
+
+def resolve_steps(requested: int | None, source: Path = FLOW_SOURCE,
+                  cli: Path = CLI) -> tuple[int, str]:
+    """The step count a run will use, and a log line saying why.
+
+    Unset means auto: FAST_STEPS on a patched, rebuilt trellis-cli, otherwise the stock 12
+    -- never a refusal, because every install that predates the patch lands here. An
+    explicit `--steps` the build cannot honour is refused instead (see steps_problem).
+    """
+    if requested is None:
+        if steps_problem(FAST_STEPS, source, cli) is None:
+            return FAST_STEPS, f"steps={FAST_STEPS} (auto)"
+        return DEFAULT_STEPS, (f"steps={DEFAULT_STEPS} (auto: this trellis-cli has no steps "
+                               "patch; run scripts/patch_pixal3d_steps.py and rebuild for "
+                               f"{FAST_STEPS})")
+    problem = steps_problem(requested, source, cli)
+    if problem:
+        raise SystemExit(problem)
+    return requested, f"steps={requested}"
+
+
+def run_env(steps: int | None, base: dict[str, str] | None = None) -> dict[str, str]:
+    """The CLI's environment. `PIXAL3D_STEPS` is set only when asked for, and a stray one
+    in the caller's shell is dropped, so the manifest's step count is always the truth."""
+    env = {k: v for k, v in (os.environ if base is None else base).items() if k != STEPS_ENV}
+    if steps is not None and steps != DEFAULT_STEPS:
+        env[STEPS_ENV] = str(steps)
+    return env
+
+
+def steps_not_applied(line: str, steps: int | None, seen_override: bool) -> bool:
+    """True when a flow has started sampling without announcing the override: the build
+    ignored `PIXAL3D_STEPS`, and the run should stop now rather than 20 minutes later."""
+    if steps is None or steps == DEFAULT_STEPS or seen_override:
+        return False
+    return "[flow] [" in line
+
+
 def stage_from_banner(line: str) -> tuple[str, int] | None:
     """Turn a `[n/6] ...` banner into (stage_id, percent), or None.
 
@@ -239,6 +307,12 @@ def main() -> int:
         help="shape guidance strength; left to the runtime default when unset",
     )
     parser.add_argument(
+        "--steps", type=int, default=None,
+        help=f"sampling steps per flow. Default: {FAST_STEPS} when trellis-cli is patched "
+             f"(scripts/patch_pixal3d_steps.py + rebuild), else {DEFAULT_STEPS}. An explicit "
+             "value the build cannot honour is refused",
+    )
+    parser.add_argument(
         "--matte", dest="matte", action="store_true", default=None,
         help="force background removal even if the image looks cut out already",
     )
@@ -257,6 +331,8 @@ def main() -> int:
         raise SystemExit(
             f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d.py"
         )
+
+    steps, steps_note = resolve_steps(args.steps, cli=args.cli)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # `trellis-cli` is launched from its own tree so it can find its Metal library, which
@@ -289,14 +365,21 @@ def main() -> int:
     )
     print(f"[pixal3d] res={args.res} seed={args.seed} gss={args.gss} matted={matted}",
           flush=True)
+    print(f"[pixal3d] {steps_note}", flush=True)
 
     process = subprocess.Popen(
         command, cwd=str(PIXAL3D_ROOT), stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT, text=True, bufsize=1,
+        stderr=subprocess.STDOUT, text=True, bufsize=1, env=run_env(steps),
     )
     assert process.stdout is not None
+    seen_override = False
     for raw in process.stdout:
         line = raw.rstrip("\n")
+        seen_override = seen_override or f"{STEPS_ENV}=" in line
+        if steps_not_applied(line, steps, seen_override):
+            process.kill()
+            raise SystemExit(f"trellis-cli ignored {STEPS_ENV}; stopped before wasting "
+                             "the run. Re-apply scripts/patch_pixal3d_steps.py and rebuild")
         # ggml logs every Metal pipeline it compiles; that is hundreds of lines of noise.
         if line.startswith("ggml_metal") or "loaded kernel" in line:
             continue
@@ -310,7 +393,7 @@ def main() -> int:
     seconds = time.time() - started
     record = manifest(args.image, args.output, res=args.res, seed=args.seed, fov=args.fov,
                       gss=args.gss, gsh=args.gsh, matted=matted, matted_here=matted_here,
-                      seconds=seconds)
+                      seconds=seconds, steps=steps)
     record_path = args.output.with_name(f"{args.output.stem}.json")
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 

@@ -330,7 +330,7 @@ def test_the_manifest_carries_the_licence_from_the_catalogue(tmp_path):
     assert record["backend"] == "pixal3d"
     assert record["license"] == {"name": catalogue.license_name, "url": catalogue.license_url}
     assert record["parameters"] == {"res": 1024, "seed": 42, "fov": 0.35, "gss": 10.0,
-                                    "gsh": None, "matted": True}
+                                    "gsh": None, "matted": True, "steps": 12}
     assert len(record["input"]["sha256"]) == 64
     assert len(record["output"]["sha256"]) == 64
     assert record["timings_seconds"]["total"] == 12.3
@@ -370,3 +370,110 @@ def test_a_successful_run_writes_its_manifest_beside_the_glb(tmp_path, monkeypat
     record = __import__("json").loads((tmp_path / "out" / "gnome.json").read_text())
     assert record["backend"] == "pixal3d"
     assert record["output"]["path"] == str(output.resolve())
+
+
+# --- Fewer sampling steps ------------------------------------------------------------------
+#
+# `--steps` only works on a trellis-cli rebuilt after scripts/patch_pixal3d_steps.py. An
+# unpatched build ignores the variable and runs 12 steps, so every check below exists to
+# stop a slow run from being recorded as a fast one.
+
+
+def _flow_source(tmp_path, patched):
+    source = tmp_path / "flow_runner.cpp"
+    source.write_text("// i2l_steps\n" if patched else "// upstream\n")
+    return source
+
+
+def test_default_steps_need_no_patch(tmp_path):
+    missing = tmp_path / "nope.cpp"
+    assert px.steps_problem(None, missing, missing) is None
+    assert px.steps_problem(12, missing, missing) is None
+
+
+def test_fewer_steps_on_an_unpatched_source_is_refused(tmp_path):
+    source = _flow_source(tmp_path, patched=False)
+    cli = tmp_path / "trellis-cli"
+    cli.write_text("")
+    assert "not patched" in px.steps_problem(8, source, cli)
+
+
+def test_a_binary_older_than_the_patch_is_refused(tmp_path):
+    import os
+    source = _flow_source(tmp_path, patched=True)
+    cli = tmp_path / "trellis-cli"
+    cli.write_text("")
+    os.utime(cli, (1, 1))
+    assert "rebuild" in px.steps_problem(8, source, cli)
+
+
+def test_a_rebuilt_patched_binary_is_accepted(tmp_path):
+    import os
+    source = _flow_source(tmp_path, patched=True)
+    os.utime(source, (1, 1))
+    cli = tmp_path / "trellis-cli"
+    cli.write_text("")
+    assert px.steps_problem(8, source, cli) is None
+
+
+def test_out_of_range_steps_are_refused(tmp_path):
+    assert "1 to 50" in px.steps_problem(0, tmp_path / "x", tmp_path / "y")
+
+
+def test_the_env_carries_steps_only_when_asked():
+    assert px.run_env(8, {"PATH": "/bin"}) == {"PATH": "/bin", "PIXAL3D_STEPS": "8"}
+    assert px.run_env(None, {"PATH": "/bin"}) == {"PATH": "/bin"}
+
+
+def test_a_stray_steps_variable_in_the_shell_is_dropped():
+    """Otherwise a run labelled 12 steps in its manifest could quietly be an 8-step one."""
+    assert px.run_env(None, {"PIXAL3D_STEPS": "4"}) == {}
+
+
+def test_a_flow_starting_without_the_override_stops_the_run():
+    progress = "      [flow] [....................]  0/12    0.0s  starting"
+    assert px.steps_not_applied(progress, 8, seen_override=False)
+    assert not px.steps_not_applied(progress, 8, seen_override=True)
+    assert not px.steps_not_applied(progress, None, seen_override=False)
+    assert not px.steps_not_applied("[2/6] SS proj conditioning", 8, seen_override=False)
+
+
+def test_the_manifest_records_the_steps(tmp_path):
+    image = tmp_path / "i.png"
+    output = tmp_path / "o.glb"
+    image.write_bytes(b"i")
+    output.write_bytes(b"o")
+    record = px.manifest(image, output, res=1024, seed=42, fov=0.349, gss=10.0, gsh=None,
+                         matted=True, matted_here=False, seconds=1.0, steps=8)
+    assert record["parameters"]["steps"] == 8
+
+
+def _built(tmp_path, patched):
+    import os
+    source = _flow_source(tmp_path, patched=patched)
+    os.utime(source, (1, 1))
+    cli = tmp_path / "trellis-cli"
+    cli.write_text("")
+    return source, cli
+
+
+def test_auto_runs_fast_steps_on_a_patched_build(tmp_path):
+    source, cli = _built(tmp_path, patched=True)
+    steps, note = px.resolve_steps(None, source, cli)
+    assert steps == px.FAST_STEPS == 8
+    assert "auto" in note
+
+
+def test_auto_falls_back_to_twelve_on_an_unpatched_build(tmp_path):
+    """Every install that predates the patch lands here; it must run, not refuse."""
+    source, cli = _built(tmp_path, patched=False)
+    steps, note = px.resolve_steps(None, source, cli)
+    assert steps == 12
+    assert "patch_pixal3d_steps.py" in note
+
+
+def test_an_explicit_count_the_build_cannot_honour_is_refused(tmp_path):
+    source, cli = _built(tmp_path, patched=False)
+    with pytest.raises(SystemExit, match="not patched"):
+        px.resolve_steps(8, source, cli)
+    assert px.resolve_steps(12, source, cli)[0] == 12

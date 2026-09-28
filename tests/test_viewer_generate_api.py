@@ -1012,3 +1012,25 @@ def test_failure_reason_keeps_a_traceback_together():
     reason = api.failure_reason(log)
     assert reason.startswith("Traceback")
     assert reason.endswith("RuntimeError: weights missing")
+
+
+def test_pixal3d_steps_default_to_auto_and_leave_the_choice_to_the_wrapper():
+    settings = api._pixal3d_validate_settings({})
+    assert settings["steps"] == "auto"
+    job = types.SimpleNamespace(image_path=Path("i.png"), output_path=Path("o.glb"),
+                                settings=settings)
+    assert "--steps" not in api._pixal3d_build_args(job)
+
+
+def test_pixal3d_full_steps_are_passed_through():
+    settings = api._pixal3d_validate_settings({"steps": "12"})
+    job = types.SimpleNamespace(image_path=Path("i.png"), output_path=Path("o.glb"),
+                                settings=settings)
+    args = api._pixal3d_build_args(job)
+    assert args[args.index("--steps") + 1] == "12"
+
+
+@pytest.mark.parametrize("steps", [8, 0, "fast", None])
+def test_pixal3d_steps_outside_the_offered_choices_are_refused(steps):
+    with pytest.raises(ValueError):
+        api._pixal3d_validate_settings({"steps": steps})
