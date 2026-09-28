@@ -69,9 +69,10 @@ def test_labels_are_attached_positionally():
     assert p["lb"] == "ours"
 
 
-def test_at_most_three_assets():
-    p = _params(serve.compare_url(["1.glb", "2.glb", "3.glb", "4.glb"], 8777))
-    assert {k for k in p if len(k) == 1} == set("abc")
+def test_at_most_four_assets():
+    """Compare lays out up to four panes as a 2x2 grid; a fifth is dropped."""
+    p = _params(serve.compare_url(["1.glb", "2.glb", "3.glb", "4.glb", "5.glb"], 8777))
+    assert {k for k in p if len(k) == 1} == set("abcd")
 
 
 def test_port_is_honoured():
