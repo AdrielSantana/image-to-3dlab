@@ -357,7 +357,8 @@
 </section>
 
 <section id="finish-view" hidden>
-  <div class="generate-grid">
+  <div class="generate-grid finish-grid">
+    <div class="finish-left">
     <div class="generate-card">
       <h2>Finish a model</h2>
       <p>Make a generated model game-ready: fewer triangles, better paint, a smaller file.</p>
@@ -419,25 +420,29 @@
       </div>
     </div>
 
+    <div id="finish-runs-box" class="generate-card">
+      <div id="generate-progress-head">
+        <h2>Past runs</h2>
+        <button id="finish-runs-refresh" class="ghost">Refresh</button>
+      </div>
+      <p>Saved in <code>output/finish/</code>. A run that stopped part-way can resume.</p>
+      <div id="finish-runs"></div>
+    </div>
+    </div>
+
     <div class="finish-side">
       <div id="finish-compare" class="generate-card">
         <div class="finish-compare-head">
           <h2 id="finish-compare-label">Before and after</h2>
           <small>Drag to turn both together.</small>
+          <button id="finish-compare-expand" class="ghost" hidden
+                  title="Fill the window (Esc to return)">&#x2922; Full window</button>
         </div>
         <div id="finish-compare-empty">Finish a model, or pick a past run, to see it next to
           the original.</div>
         <iframe id="finish-compare-frame" title="before and after" hidden></iframe>
       </div>
 
-      <div id="finish-runs-box" class="generate-card">
-        <div id="generate-progress-head">
-          <h2>Past runs</h2>
-          <button id="finish-runs-refresh" class="ghost">Refresh</button>
-        </div>
-        <p>Saved in <code>output/finish/</code>. A run that stopped part-way can resume.</p>
-        <div id="finish-runs"></div>
-      </div>
     </div>
   </div>
 </section>

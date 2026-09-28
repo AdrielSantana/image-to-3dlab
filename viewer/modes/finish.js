@@ -52,11 +52,26 @@ function showCompare(beforeUrl, afterUrl, directory, facesAway = false) {
   if (!beforeUrl || !afterUrl) return;
   f('finish-compare-empty').hidden = true;
   f('finish-compare-frame').hidden = false;
+  f('finish-compare-expand').hidden = false;
   f('finish-compare-label').textContent = 'Before and after';
   f('finish-compare-label').title = directory;
   f('finish-compare-frame').src = compareUrl(
     beforeUrl, `${afterUrl}?t=${Date.now()}`, facesAway);
 }
+
+function setExpanded(expanded) {
+  f('finish-compare').classList.toggle('expanded', expanded);
+  f('finish-compare-expand').innerHTML = expanded ? '&#x2715; Close' : '&#x2922; Full window';
+}
+f('finish-compare-expand').onclick = () =>
+  setExpanded(!f('finish-compare').classList.contains('expanded'));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && f('finish-compare').classList.contains('expanded')) {
+    setExpanded(false);
+  }
+});
+// Leaving the Finish tab must not leave a full-window comparison covering the next one.
+document.addEventListener('viewer:modechange', () => setExpanded(false));
 
 function updateSubmit() {
   f('finish-submit').disabled = !state.asset || !state.image || state.running;
@@ -204,6 +219,8 @@ async function resume(directory, button) {
   f('finish-result').hidden = true;
   f('finish-compare-frame').hidden = true;
   f('finish-compare-empty').hidden = false;
+  f('finish-compare-expand').hidden = true;
+  setExpanded(false);
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = `Resuming ${directory}…`;
   try {
@@ -251,6 +268,8 @@ f('finish-submit').onclick = async () => {
   f('finish-result').hidden = true;
   f('finish-compare-frame').hidden = true;
   f('finish-compare-empty').hidden = false;
+  f('finish-compare-expand').hidden = true;
+  setExpanded(false);
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = 'Uploading…';
 
