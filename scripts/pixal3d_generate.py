@@ -224,7 +224,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("image", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--res", type=int, choices=(1024, 1536), default=1024)
+    parser.add_argument("--res", type=int, choices=(1024,), default=1024)  # --sv-image is 1024-only
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--fov", type=float, default=DEFAULT_FOV,

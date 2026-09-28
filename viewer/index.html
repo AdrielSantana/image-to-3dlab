@@ -252,9 +252,9 @@
 
       <div class="backend-fields" data-backend="pixal3d" hidden>
         <div class="field"><label for="pixal3d-res">Resolution</label>
-          <select id="pixal3d-res"><option selected>1024</option><option>1536</option></select>
-          <small>These weights have no 512 option. 1536 is slower and needs more
-            memory.</small></div>
+          <select id="pixal3d-res"><option selected>1024</option></select>
+          <small>Pixal3D's single-image mode runs at 1024 only: there is no 512 texture
+            model, and 1536 is refused for single images.</small></div>
         <div class="field"><label for="pixal3d-seed">Seed</label><input id="pixal3d-seed" type="number" step="1" value="42"></div>
         <div class="field"><label for="pixal3d-fov">Gauge FOV (radians)</label>
           <input id="pixal3d-fov" type="number" step="0.0001" value="0.3491">

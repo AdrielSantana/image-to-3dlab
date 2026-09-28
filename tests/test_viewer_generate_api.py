@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import importlib.util
 import json
+import re
 import sys
 import types
 from pathlib import Path
@@ -448,10 +449,17 @@ def test_pixal3d_progress_climbs_with_the_banners(tmp_path):
 
 
 def test_pixal3d_settings_reject_an_unavailable_resolution():
-    """The single-view weight family has no res-512 texture flow."""
-    with pytest.raises(ValueError):
-        api._pixal3d_validate_settings({"res": 512})
-    assert api._pixal3d_validate_settings({"res": 1536})["res"] == 1536
+    """No res-512 texture flow, and trellis-cli --sv-image refuses 1536."""
+    for res in (512, 1536):
+        with pytest.raises(ValueError):
+            api._pixal3d_validate_settings({"res": res})
+    assert api._pixal3d_validate_settings({"res": 1024})["res"] == 1024
+
+
+def test_pixal3d_page_offers_only_the_resolution_that_runs():
+    page = (Path(__file__).resolve().parents[1] / "viewer" / "index.html").read_text()
+    select = page.split('<select id="pixal3d-res">', 1)[1].split("</select>", 1)[0]
+    assert re.findall(r"<option[^>]*>(\d+)</option>", select) == ["1024"]
 
 
 def test_pixal3d_settings_reject_a_fov_given_in_degrees():
