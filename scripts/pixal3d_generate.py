@@ -41,7 +41,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from image_to_3dlab.host import executable
-from image_to_3dlab.matte import is_matted
+from image_to_3dlab.matte import cut_out, fallback_note, is_matted, matte_model
 from image_to_3dlab.provenance import sha256_file
 
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
@@ -78,8 +78,12 @@ STAGE_LABELS = {
 BANNER_STAGES = {1: "views", 2: "ss", 3: "shape", 4: "decode", 5: "texture", 6: "write"}
 
 
-# u2net, as `trellis_backend.py` uses. Never BRIA RMBG -- a licence guardrail.
-MATTE_MODEL = "u2net"
+# The remover that did the cut, recorded in the manifest. Chosen by image_to_3dlab/matte.py:
+# BiRefNet-lite when installed, u2net otherwise. Never BRIA RMBG -- a licence guardrail.
+MATTE_LICENSES = {
+    "birefnet-general-lite": "MIT (BiRefNet)",
+    "u2net": "MIT code / Apache-2.0 U-2-Net",
+}
 
 # Must match viewer/backend_catalog.py's "pixal3d" entry; a test holds them together.
 LICENSE_NAME = "MIT (code + flow weights); DINOv3 License (bundled encoder)"
@@ -88,7 +92,8 @@ LICENSE_URL = "https://huggingface.co/raven38/pixal3d-sv-q8_0-v1"
 
 def manifest(image: Path, output: Path, *, res: int, seed: int, fov: float, gss: float,
              gsh: float | None, matted: bool, matted_here: bool,
-             seconds: float, steps: int = DEFAULT_STEPS) -> dict[str, object]:
+             seconds: float, steps: int = DEFAULT_STEPS,
+             matte_model: str | None = None) -> dict[str, object]:
     """The run's provenance record, written beside the GLB as `<output>.json`.
 
     Same place and shape as the Hunyuan route's manifest, so the viewer serves it as the
@@ -103,10 +108,10 @@ def manifest(image: Path, output: Path, *, res: int, seed: int, fov: float, gss:
                        "matted": matted, "steps": steps},
         "license": {"name": LICENSE_NAME, "url": LICENSE_URL},
         "components": [{
-            "component": f"rembg/{MATTE_MODEL}",
+            "component": f"rembg/{matte_model}",
             "purpose": "background removal",
-            "license": "MIT code / Apache-2.0 U-2-Net",
-        }] if matted_here else [],
+            "license": MATTE_LICENSES.get(matte_model, "see rembg"),
+        }] if matted_here and matte_model else [],
         "timings_seconds": {"total": round(seconds, 1)},
     }
 
@@ -132,36 +137,35 @@ def has_alpha(image: Path) -> bool:
         return is_matted(opened)
 
 
-def _rembg_remove(image, session=None):
-    """Indirection so a test can stand in for a 170 MB model download."""
-    import rembg
-
-    return rembg.remove(image, session=session or rembg.new_session(MATTE_MODEL))
+def _rembg_remove(image):
+    """Indirection so a test can stand in for a model download. Returns (RGBA, model)."""
+    return cut_out(image)
 
 
 def matte_path(image: Path) -> Path:
     return image.with_name(f"{image.stem}__matted.png")
 
 
-def matte(image: Path, destination: Path | None = None) -> Path:
-    """Cut the subject out ourselves, with u2net, and write an RGBA beside the source.
+def matte(image: Path, destination: Path | None = None) -> tuple[Path, str]:
+    """Cut the subject out ourselves and write an RGBA beside the source.
+
+    Returns the cutout's path and the remover that made it (see image_to_3dlab/matte.py).
 
     We do this rather than passing `--bg-removal birefnet` because that was measured and
     does nothing: trellis-cli decides "already matted" from the alpha channel's presence,
     the same mistake `has_alpha` used to make, so a Qwen image with its junk alpha sails
     straight through uncut. Handing over a real cutout removes the guess entirely.
 
-    u2net specifically, matching `image_to_3dlab/trellis_backend.py`. **Never BRIA RMBG**,
-    which this repo's generation pipeline must not load.
+    **Never BRIA RMBG**, which this repo's generation pipeline must not load.
     """
     from PIL import Image
 
     destination = destination or matte_path(image)
     with Image.open(image) as opened:
-        cut = _rembg_remove(opened.convert("RGB"))
+        cut, model = _rembg_remove(opened.convert("RGB"))
     destination.parent.mkdir(parents=True, exist_ok=True)
     cut.save(destination)
-    return destination
+    return destination, model
 
 
 def build_command(
@@ -346,14 +350,17 @@ def main() -> int:
     image = args.image
     matted = has_alpha(image)
     matted_here = False
+    used_matte = None
     # `--matte` / `--no-matte` override the detection; by default it decides. Left to
     # itself, an image that is already cut out keeps its own matte, and anything else --
     # every picture the Generate Image tab makes included -- gets one.
     if args.matte is False:
         print("[pixal3d] --no-matte: using the image exactly as given", flush=True)
     elif args.matte or not matted:
-        print(f"[pixal3d] matting with {MATTE_MODEL} (~5s)", flush=True)
-        image = matte(image)
+        print(f"[pixal3d] matting with {matte_model()}", flush=True)
+        image, used_matte = matte(image)
+        if fallback_note(used_matte):
+            print(f"[pixal3d] note: {fallback_note(used_matte)}", flush=True)
         matted = True
         matted_here = True
         print(f"[pixal3d] matted image: {image}", flush=True)
@@ -393,6 +400,7 @@ def main() -> int:
     seconds = time.time() - started
     record = manifest(args.image, args.output, res=args.res, seed=args.seed, fov=args.fov,
                       gss=args.gss, gsh=args.gsh, matted=matted, matted_here=matted_here,
+                      matte_model=used_matte,
                       seconds=seconds, steps=steps)
     record_path = args.output.with_name(f"{args.output.stem}.json")
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A better background remover.** BiRefNet-lite now cuts the subject out for Pixal3D,
+  TRELLIS and SF3D. The old one (u2net) lost white parts against light backgrounds and
+  thin things like sword blades and axe handles; BiRefNet-lite keeps them. It is an
+  optional 224 MB download from **Setup & Status** (or `scripts/bootstrap_matte.py`);
+  without it, runs use u2net as before and say so. Cutout edges no longer carry a thin
+  outline of the old background colour.
+
 ### Changed
 - Generated images now save to `output/images/` instead of `output/images/research_only/`.
   Each image's provenance record still carries Qwen-Image's licence.

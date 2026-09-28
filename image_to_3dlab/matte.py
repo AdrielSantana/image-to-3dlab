@@ -21,3 +21,100 @@ def is_matted(image) -> bool:
     alpha = image.convert("RGBA").getchannel("A")
     transparent = sum(alpha.histogram()[:MATTE_TRANSPARENT_BELOW])
     return transparent / (alpha.width * alpha.height) >= MATTE_MIN_TRANSPARENT
+
+
+# --- Cutting the subject out ----------------------------------------------------------------
+#
+# BiRefNet-lite, when installed: on 2026-09-28 u2net ate a white robot's upper arms on a
+# light backdrop, an axe handle and a sword + shield, and BiRefNet (full or lite) kept all
+# of them; lite matched full at full size and ran ~25x faster on this Mac. u2net stays as
+# the fallback so a machine without lite still works. Never BRIA RMBG, which this repo's
+# generation pipeline must not load.
+#
+# Nothing here downloads lite: AGENTS.md forbids fetching weights without an explicit
+# choice, so it arrives only through scripts/bootstrap_matte.py / Setup & Status.
+
+LITE_MODEL = "birefnet-general-lite"
+FALLBACK_MODEL = "u2net"
+LITE_URL = ("https://github.com/danielgatis/rembg/releases/download/v0.0.0/"
+            "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx")
+LITE_BYTES = 224_005_088
+LITE_MD5 = "4fab47adc4ff364be1713e97b7e66334"  # rembg's own known hash for this file
+
+
+def model_home():
+    """Where rembg keeps its models (its own U2NET_HOME convention)."""
+    import os
+    from pathlib import Path
+
+    return Path(os.environ.get("U2NET_HOME", Path.home() / ".u2net"))
+
+
+def model_file(name: str):
+    return model_home() / f"{name}.onnx"
+
+
+def matte_model() -> str:
+    """The best remover this machine has: lite once installed, else u2net."""
+    return LITE_MODEL if model_file(LITE_MODEL).is_file() else FALLBACK_MODEL
+
+
+def fallback_note(model: str) -> str | None:
+    """What to tell the user when a run falls back to u2net, or None."""
+    if model != FALLBACK_MODEL:
+        return None
+    return ("using u2net, which can eat thin or light-coloured parts; install "
+            "BiRefNet-lite (224 MB) from Setup & Status or scripts/bootstrap_matte.py")
+
+
+def clean_edges(rgba, solid: int = 250, reach: int = 4):
+    """Give half-transparent edge pixels the colour of the subject, not the old backdrop.
+
+    A soft matte keeps each edge pixel's original colour, which is part backdrop: a thin
+    grey or dark outline that a 3D generator then paints onto the model's rim. Colours are
+    pulled in from the nearest solid pixels, `reach` pixels at a time; alpha is untouched.
+    Takes and returns an H x W x 4 uint8 array.
+    """
+    import numpy as np
+
+    rgb = rgba[..., :3].astype(np.float64)
+    known = rgba[..., 3] >= solid
+    height, width = known.shape
+    for _ in range(reach):
+        padded_rgb = np.pad(rgb, ((1, 1), (1, 1), (0, 0)))
+        padded_known = np.pad(known, 1)
+        total = np.zeros_like(rgb)
+        count = np.zeros(known.shape)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dy == dx == 0:
+                    continue
+                k = padded_known[1 + dy:1 + dy + height, 1 + dx:1 + dx + width]
+                total += padded_rgb[1 + dy:1 + dy + height, 1 + dx:1 + dx + width] * k[..., None]
+                count += k
+        grow = ~known & (count > 0)
+        if not grow.any():
+            break
+        rgb[grow] = total[grow] / count[grow, None]
+        known = known | grow
+    out = rgba.copy()
+    out[..., :3] = np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
+    return out
+
+
+def new_session(model: str | None = None):
+    import rembg
+
+    return rembg.new_session(model or matte_model())
+
+
+def cut_out(image, session=None):
+    """Remove the background from a PIL image; returns (RGBA image, model name used)."""
+    import numpy as np
+    import rembg
+    from PIL import Image
+
+    model = matte_model() if session is None else getattr(session, "model_name", "custom")
+    session = session or new_session(model)
+    cut = rembg.remove(image.convert("RGB"), session=session).convert("RGBA")
+    return Image.fromarray(clean_edges(np.asarray(cut))), model
