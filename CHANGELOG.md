@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Pixal3D no longer offers 1536 in Generate 3D. Its single-image mode only runs at 1024,
+  so picking 1536 failed as soon as the run started.
 - The finished-model preview in Generate 3D showed the whole viewer (tabs, menu, About)
   inside its own panel. It now shows just the model.
 

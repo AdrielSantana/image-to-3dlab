@@ -1436,7 +1436,9 @@ PIXAL3D_DEFAULT_SETTINGS: dict[str, Any] = {
     "seed": 42,
     "fov": 0.3490658503988659,
 }
-PIXAL3D_VALID_RES = {1024, 1536}
+# trellis-cli --sv-image refuses anything but 1024 ("supports --res 1024 only in this
+# release"), and the single-view weights ship no res-512 texture flow.
+PIXAL3D_VALID_RES = {1024}
 PIXAL3D_STAGES = ["views", "ss", "shape", "decode", "texture", "write"]
 PIXAL3D_STAGE_LABELS = {
     "views": "Preparing view",
@@ -1463,8 +1465,7 @@ def _pixal3d_validate_settings(raw: Any) -> dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise ValueError("res and seed must be integers, fov a number") from exc
     if settings["res"] not in PIXAL3D_VALID_RES:
-        # The single-view weight family has no res-512 texture flow.
-        raise ValueError("res must be 1024 or 1536")
+        raise ValueError("Pixal3D single-image runs at res 1024 only")
     if not 0.05 <= settings["fov"] <= 2.0:
         raise ValueError("fov is in radians; 0.349 is 20 degrees")
     return settings
