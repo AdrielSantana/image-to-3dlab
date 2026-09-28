@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.4] - 2026-09-28
 
 ### Added
+- `scripts/bootstrap_pixal3d.py --rebuild` recompiles an existing Pixal3D install with
+  this repo's patches, which is how existing Mac and Linux installs get the 8-step default.
+  Minutes, no model downloads, and no Xcode setup needed.
 - **A better background remover.** BiRefNet-lite now cuts the subject out for Pixal3D,
   TRELLIS and SF3D. The old one (u2net) lost white parts against light backgrounds and
   thin things like sword blades and axe handles; BiRefNet-lite keeps them. It is an
