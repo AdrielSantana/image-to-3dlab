@@ -335,6 +335,36 @@ def install_weights(models: Path = MODELS) -> None:
     print(f"  weights in {models}")
 
 
+def rebuild_existing(runner=subprocess.run) -> Path:
+    """Patch and recompile an existing source build in place.
+
+    Not build_from_source: that re-checks for the Metal compiler, which a fresh Terminal
+    usually cannot see (xcode-select points at the Command Line Tools), and refused on the
+    maintainer's own Mac. The patches touch C++ only, so an incremental `cmake --build` of
+    the already-configured tree is all a rebuild needs.
+    """
+    apply_steps_patch(runner)
+    runner(build_command(host.build_jobs()), check=True)
+    if not build_present():
+        raise SystemExit("The rebuild finished without trellis-cli.")
+    return cli_path()
+
+
+def build_decision(present: bool, rebuild: bool, kind: str) -> str:
+    """What to do about trellis-cli: "install", "keep", "rebuild" or "cannot-rebuild".
+
+    An existing build is normally left alone. `--rebuild` recompiles a source build so it
+    picks up this repo's patches (the 8-step default needs scripts/patch_pixal3d_steps.py
+    compiled in); only the changed files rebuild, so it takes minutes and fetches no
+    models. A prebuilt download has no source to patch, so it says so instead.
+    """
+    if not present:
+        return "install"
+    if not rebuild:
+        return "keep"
+    return "cannot-rebuild" if kind == "prebuilt" else "rebuild"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -344,6 +374,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="Install trellis-cli and stop, leaving the weights.")
     parser.add_argument("--weights-only", action="store_true",
                         help="Fetch the weights only, assuming trellis-cli is present.")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="Recompile an existing source build so it picks up this "
+                             "repo's patches (e.g. the 8-step default). No downloads.")
     parser.add_argument("--prebuilt", action="store_true",
                         help="Use upstream's prebuilt CUDA build even when nvcc could "
                              "compile a faster one. For timing the two.")
@@ -370,8 +403,16 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     if build:
-        if build_present():
-            print(f"\ntrellis-cli is already installed at {cli_path()}, leaving it alone.")
+        decision = build_decision(build_present(), args.rebuild, kind)
+        if decision == "keep":
+            print(f"\ntrellis-cli is already installed at {cli_path()}, leaving it alone "
+                  "(--rebuild recompiles it with this repo's patches).")
+        elif decision == "cannot-rebuild":
+            print("\nThis machine uses the prebuilt trellis-cli download, which cannot be "
+                  "patched or rebuilt; it keeps its stock settings (12 steps).")
+        elif decision == "rebuild":
+            print(f"\nRebuilding trellis-cli at {cli_path()} with this repo's patches.")
+            rebuild_existing()
         else:
             install_build(key, kind)
     if weights:
