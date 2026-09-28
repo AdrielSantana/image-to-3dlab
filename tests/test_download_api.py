@@ -228,3 +228,32 @@ def test_every_route_claiming_automated_setup_actually_has_a_command():
     for backend in backend_catalog.CATALOG:
         has_command = backend.id in dl.COMMANDS
         assert backend.automated_setup is has_command, backend.id
+
+
+def test_the_background_remover_is_removed_as_one_file_leaving_its_folder(tmp_path, monkeypatch):
+    """BiRefNet-lite shares rembg's folder with u2net: Remove takes the file, not the folder."""
+    import dataclasses
+
+    monkeypatch.setenv("U2NET_HOME", str(tmp_path))
+    lite = tmp_path / "birefnet-general-lite.onnx"
+    lite.write_bytes(b"12345")
+    (tmp_path / "u2net.onnx").write_bytes(b"keep me")
+    real = dl.BY_ID["matte"]
+    entry = dataclasses.replace(real, weights=(dataclasses.replace(real.weights[0], path=lite),))
+    monkeypatch.setitem(dl.BY_ID, "matte", entry)
+
+    result = dl.remove("matte")
+    assert result["freed_bytes"] == 5
+    assert not lite.exists()
+    assert (tmp_path / "u2net.onnx").read_bytes() == b"keep me"
+
+
+def test_rembgs_model_folder_is_a_known_place(tmp_path, monkeypatch):
+    monkeypatch.setenv("U2NET_HOME", str(tmp_path))
+    assert dl._inside_known_roots(tmp_path / "birefnet-general-lite.onnx") is True
+
+
+def test_the_remover_download_asks_nothing_twice():
+    """--yes because the Setup & Status dialog already asked."""
+    assert dl.COMMANDS["matte"][-1] == "--yes"
+    assert dl.COMMANDS["matte"][1].endswith("bootstrap_matte.py")

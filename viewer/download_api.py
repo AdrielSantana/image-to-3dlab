@@ -66,6 +66,7 @@ COMMANDS: dict[str, list[str]] = {
     # Setup & Status dialog; asking again on a stdin nobody is attached to would hang.
     "qwen-image": [sys.executable, str(REPO / "scripts" / "bootstrap_qwen_image.py"),
                    "--yes"],
+    "matte": [sys.executable, str(REPO / "scripts" / "bootstrap_matte.py"), "--yes"],
 }
 
 
@@ -217,6 +218,13 @@ def remove(backend_id: str) -> dict[str, Any]:
         path = weight.path.resolve()
         if not _inside_known_roots(path):
             raise RuntimeError(f"refusing to delete outside the repo or cache: {path}")
+        if path.is_file():
+            # A single-file model (BiRefNet-lite) shares its folder with u2net: remove the
+            # file, never the folder.
+            freed += path.stat().st_size
+            path.unlink()
+            removed.append(str(path))
+            continue
         if not path.is_dir():
             continue
         from backend_catalog import _dir_state
@@ -228,7 +236,10 @@ def remove(backend_id: str) -> dict[str, Any]:
 
 
 def _inside_known_roots(path: Path) -> bool:
-    roots = (REPO.resolve(), HF_HUB_DIR.resolve())
+    from image_to_3dlab.matte import model_home
+
+    # rembg's model folder too, for the background remover's single file.
+    roots = (REPO.resolve(), HF_HUB_DIR.resolve(), model_home().resolve())
     return any(root == path or root in path.parents for root in roots)
 
 

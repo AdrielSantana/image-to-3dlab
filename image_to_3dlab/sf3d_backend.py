@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from image_to_3dlab import matte
 from image_to_3dlab.matte import is_matted
 
 
@@ -61,7 +62,6 @@ def _load_sf3d(repo: Path):
 def _run(
     image_path: Path, output_path: Path, options: SF3DOptions, device: str
 ) -> Path:
-    import rembg
     import torch
     from PIL import Image
 
@@ -72,7 +72,9 @@ def _run(
     model.eval()
 
     image = Image.open(image_path).convert("RGBA")
-    image = cut_out(image, remove_background, rembg.new_session())
+    # BiRefNet-lite when installed, else u2net (image_to_3dlab/matte.py). rembg's own
+    # default is u2net, which eats thin and light-coloured parts.
+    image = cut_out(image, remove_background, matte.new_session())
     image = resize_foreground(image, options.foreground_ratio)
     prepared = output_path.with_name(f"{output_path.stem}_input.png")
     image.save(prepared)

@@ -263,15 +263,16 @@ def test_matting_writes_a_real_cutout_beside_the_source(tmp_path, monkeypatch):
     source = tmp_path / "fox.png"
     Image.new("RGB", (32, 32), (200, 120, 60)).save(source)
 
-    def fake_remove(image, session=None):
+    def fake_remove(image):
         out = image.convert("RGBA")
         a = np.zeros((32, 32), dtype=np.uint8)
         a[8:24, 8:24] = 255
         out.putalpha(Image.fromarray(a))
-        return out
+        return out, "birefnet-general-lite"
 
     monkeypatch.setattr(px, "_rembg_remove", fake_remove)
-    matted = px.matte(source, tmp_path / "cut.png")
+    matted, model = px.matte(source, tmp_path / "cut.png")
+    assert model == "birefnet-general-lite"
     assert matted.is_file()
     # And the result must satisfy our own matte test, or we have solved nothing.
     assert px.has_alpha(matted) is True
@@ -298,7 +299,7 @@ def test_the_matted_path_reaches_the_cli_absolute(tmp_path, monkeypatch):
         raise SystemExit(0)
 
     monkeypatch.setattr(px, "has_alpha", lambda _: False)          # forces the matte branch
-    monkeypatch.setattr(px, "matte", lambda p, d=None: px.matte_path(p))
+    monkeypatch.setattr(px, "matte", lambda p, d=None: (px.matte_path(p), "u2net"))
     monkeypatch.setattr(px, "readiness", lambda *a, **k: {"ready": True})
     monkeypatch.setattr(px.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(sys, "argv", ["pixal3d_generate.py", "gnome.png", "out/gnome.glb"])
@@ -342,10 +343,12 @@ def test_background_removal_is_named_only_when_this_run_did_it(tmp_path):
     output = tmp_path / "a.glb"
     output.write_bytes(b"b")
     ran = px.manifest(image, output, res=1024, seed=1, fov=0.35, gss=10.0, gsh=None,
-                      matted=True, matted_here=True, seconds=1.0)
+                      matted=True, matted_here=True, seconds=1.0,
+                      matte_model="birefnet-general-lite")
     given = px.manifest(image, output, res=1024, seed=1, fov=0.35, gss=10.0, gsh=None,
                         matted=True, matted_here=False, seconds=1.0)
-    assert [c["component"] for c in ran["components"]] == [f"rembg/{px.MATTE_MODEL}"]
+    assert [c["component"] for c in ran["components"]] == ["rembg/birefnet-general-lite"]
+    assert ran["components"][0]["license"] == "MIT (BiRefNet)"
     assert given["components"] == []
 
 

@@ -33,6 +33,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from image_to_3dlab import host as _host
+from image_to_3dlab import matte as _matte
 from image_to_3dlab.host import APPLE, NVIDIA
 from image_to_3dlab.provenance import QWEN_OUTPUT_RIGHTS
 
@@ -92,7 +93,8 @@ class WeightSet:
         return {
             "label": self.label,
             "source": self.source,
-            "source_url": f"https://huggingface.co/{self.source}",
+            "source_url": self.source if self.source.startswith("https://")
+            else f"https://huggingface.co/{self.source}",
             "bytes_expected": self.bytes_expected,
             "human_expected": human_bytes(self.bytes_expected),
             "present": present,
@@ -372,6 +374,24 @@ CATALOG: tuple[Backend, ...] = (
                       note="Turns the generated latent back into pixels."),
         ),
     ),
+    Backend(
+        id="matte",
+        label="Background remover (BiRefNet-lite)",
+        kind="tool",
+        best_for=("Cuts the subject out before every generator, keeping the thin and "
+                  "light-coloured parts the built-in u2net loses."),
+        tradeoff="Optional. Without it, runs fall back to u2net.",
+        license_name="MIT",
+        license_url="https://github.com/ZhengPeng7/BiRefNet",
+        install="scripts/bootstrap_matte.py",
+        runs_on=(APPLE, NVIDIA),
+        setup_minutes=2,
+        weights=(
+            WeightSet("BiRefNet-lite", _matte.LITE_URL, _matte.LITE_BYTES,
+                      _matte.model_file(_matte.LITE_MODEL),
+                      note="One file, used by Pixal3D, TRELLIS and SF3D alike."),
+        ),
+    ),
 )
 
 BY_ID = {backend.id: backend for backend in CATALOG}
@@ -474,6 +494,10 @@ def _dir_state(path: Path) -> tuple[bool, int]:
     skipped rather than raised: a partially written cache is the normal case here, not an
     error worth failing the whole status call for.
     """
+    if path.is_file():
+        # A single-file model (BiRefNet-lite) shares its folder with other models, so the
+        # file is the unit, not the folder.
+        return True, path.stat().st_size
     if not path.is_dir():
         return False, 0
     total = 0

@@ -163,8 +163,24 @@ def test_image_and_3d_routes_are_distinguishable():
     """The Setup page groups them, and 'kind' is how it knows which is which."""
     kinds = {b["id"]: b["kind"] for b in bc.catalog_status()["backends"]}
     assert kinds["qwen-image"] == "image"
-    assert all(k in {"image", "3d"} for k in kinds.values())
+    assert kinds["matte"] == "tool"  # a helper every route uses, not a route itself
+    assert all(k in {"image", "3d", "tool"} for k in kinds.values())
     assert "3d" in kinds.values()
+
+
+def test_the_background_remover_is_one_announced_file(tmp_path, monkeypatch):
+    entry = next(b for b in bc.catalog_status()["backends"] if b["id"] == "matte")
+    (weights,) = entry["weights"]
+    assert weights["bytes_expected"] == 224_005_088
+    assert weights["source_url"].startswith("https://github.com/danielgatis/rembg/")
+    assert weights["path"].endswith("birefnet-general-lite.onnx")
+
+
+def test_a_single_file_counts_as_present_by_its_own_size(tmp_path):
+    model = tmp_path / "model.onnx"
+    assert bc._dir_state(model) == (False, 0)
+    model.write_bytes(b"12345")
+    assert bc._dir_state(model) == (True, 5)
 
 
 def test_the_image_route_states_its_non_commercial_licence():
