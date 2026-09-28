@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-09-28
+
 ### Added
 - **A better background remover.** BiRefNet-lite now cuts the subject out for Pixal3D,
   TRELLIS and SF3D. The old one (u2net) lost white parts against light backgrounds and
