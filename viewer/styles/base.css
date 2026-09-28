@@ -36,3 +36,8 @@ canvas { display: block; }
 .credits-col ul { margin: 4px 0 0; padding-left: 20px; }
 .credits-col code { background: #0006; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 .credits-col a { color: #9bc8ff; }
+
+/* Generate tab's preview iframe (?restricted=1): the 3D view only, no app chrome. */
+.embedded #mode-switch, .embedded #update-banner { display: none; }
+.embedded #bar { top: 0; }
+.embedded #panes { top: 44px; }

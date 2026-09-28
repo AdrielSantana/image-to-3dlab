@@ -808,3 +808,34 @@ def test_alpha_badge_only_asks_for_rembg_when_the_backend_needs_a_cutout():
     assert trellis_without["tone"] == "alpha-bad" and "rembg" in trellis_without["text"]
     assert pixal_without["tone"] == "alpha-good"
     assert "rembg" not in pixal_without["text"]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_embedded_preview_lands_on_the_bare_3d_view_not_the_app():
+    module_url = (REPO / "viewer" / "core" / "embed.js").as_uri()
+    program = f"""
+      import {{ isEmbedded, landingMode }} from {json.dumps(module_url)};
+      console.log(JSON.stringify([
+        isEmbedded('?a=x.glb&restricted=1'), isEmbedded(''),
+        landingMode({{ embedded: true, skipSetup: false }}),
+        landingMode({{ embedded: true, skipSetup: true }}),
+        landingMode({{ embedded: false, skipSetup: true }}),
+        landingMode({{ embedded: false, skipSetup: false }}),
+      ]));
+    """
+    result = subprocess.run(
+        [NODE, "--input-type=module", "--eval", program],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(result.stdout) == [True, False, "compare", "compare", "generate", "setup"]
+
+
+def test_generate_preview_iframe_asks_for_the_embedded_view():
+    generate = (REPO / "viewer" / "modes" / "generate.js").read_text()
+    app = (REPO / "viewer" / "app.js").read_text()
+    css = (REPO / "viewer" / "styles" / "base.css").read_text()
+    assert "restricted=1" in generate
+    assert "isEmbedded(location.search)" in app
+    assert ".embedded #mode-switch" in css

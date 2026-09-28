@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The finished-model preview in Generate 3D showed the whole viewer (tabs, menu, About)
+  inside its own panel. It now shows just the model.
+
 ## [0.3.3] - 2026-09-27
 
 ### Added

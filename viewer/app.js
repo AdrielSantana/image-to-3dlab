@@ -9,6 +9,7 @@ import './modes/finish.js';
 import './modes/rig-review.js';
 import './modes/animate.js';
 import { subscribeRigEditState } from './core/rig-edit-state.js';
+import { isEmbedded, landingMode } from './core/embed.js';
 
 const byId = (id) => document.getElementById(id);
 const modes = {
@@ -58,6 +59,12 @@ subscribeRigEditState(({ pendingCount }) => {
 // First run lands on Setup & Status, because a fresh clone can generate nothing until
 // weights exist and the page is where that is explained. Once the user ticks "skip this
 // next time" it is never the landing page again -- it stays one click away in the menu.
-setMode(skipRequested() ? 'generate' : 'setup');
-welcomeOnArrival();
-checkForUpdates();
+// Inside the Generate tab's preview iframe the page is just a 3D view: hide the app chrome
+// and skip the About/update checks, which would otherwise navigate the iframe elsewhere.
+const embedded = isEmbedded(location.search);
+document.documentElement.classList.toggle('embedded', embedded);
+setMode(landingMode({ embedded, skipSetup: skipRequested() }));
+if (!embedded) {
+  welcomeOnArrival();
+  checkForUpdates();
+}
