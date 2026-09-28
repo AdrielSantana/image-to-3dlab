@@ -112,8 +112,9 @@ def test_the_setup_mode_is_registered_and_lands_first():
     assert "import { skipRequested } from './modes/setup.js';" in APP
     assert "setup: byId('setup-view')" in APP
     # First run lands on Setup & Status; ticking skip makes Generate the default. The page
-    # is never forced back, because overriding that preference would ignore the user.
-    assert "setMode(skipRequested() ? 'generate' : 'setup');" in APP
+    # is never forced back, because overriding that preference would ignore the user. The
+    # choice itself lives in core/embed.js landingMode (tested in test_viewer_js_modules).
+    assert "setMode(landingMode({ embedded, skipSetup: skipRequested() }));" in APP
 
 
 def test_generate_no_longer_carries_the_full_setup_card():
