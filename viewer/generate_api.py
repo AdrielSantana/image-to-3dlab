@@ -1435,7 +1435,11 @@ PIXAL3D_DEFAULT_SETTINGS: dict[str, Any] = {
     "res": 1024,
     "seed": 42,
     "fov": 0.3490658503988659,
+    # "auto": the wrapper runs 8 on a patched trellis-cli and 12 otherwise, so an install
+    # without scripts/patch_pixal3d_steps.py keeps working. 12 forces the full count.
+    "steps": "auto",
 }
+PIXAL3D_STEP_CHOICES = {"auto", 12}
 # trellis-cli --sv-image refuses anything but 1024 ("supports --res 1024 only in this
 # release"), and the single-view weights ship no res-512 texture flow.
 PIXAL3D_VALID_RES = {1024}
@@ -1468,6 +1472,13 @@ def _pixal3d_validate_settings(raw: Any) -> dict[str, Any]:
         raise ValueError("Pixal3D single-image runs at res 1024 only")
     if not 0.05 <= settings["fov"] <= 2.0:
         raise ValueError("fov is in radians; 0.349 is 20 degrees")
+    if settings["steps"] != "auto":
+        try:
+            settings["steps"] = int(settings["steps"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError('steps must be "auto" or 12') from exc
+    if settings["steps"] not in PIXAL3D_STEP_CHOICES:
+        raise ValueError('steps must be "auto" or 12')
     return settings
 
 
@@ -1478,7 +1489,7 @@ def _pixal3d_build_args(job: Job) -> list[str]:
         "--res", str(s["res"]),
         "--seed", str(s["seed"]),
         "--fov", str(s["fov"]),
-    ]
+    ] + ([] if s.get("steps", "auto") == "auto" else ["--steps", str(s["steps"])])
 
 
 def _pixal3d_parse_line(job: Job, line: str) -> None:

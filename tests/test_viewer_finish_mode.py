@@ -52,7 +52,7 @@ def test_pixal3d_is_offered_as_a_backend_with_its_settings():
     assert '<option value="pixal3d">' in INDEX
     assert 'data-backend="pixal3d"' in INDEX
     ids = _element_ids(INDEX)
-    for field in ("pixal3d-res", "pixal3d-seed", "pixal3d-fov"):
+    for field in ("pixal3d-res", "pixal3d-steps", "pixal3d-seed", "pixal3d-fov"):
         assert field in ids
 
 
@@ -60,7 +60,7 @@ def test_the_generate_mode_reads_the_pixal3d_fields_that_exist():
     block = GENERATE[GENERATE.index("pixal3d: () => ({"):]
     block = block[: block.index("}),")]
     referenced = set(re.findall(r"g\('([^']+)'\)", block))
-    assert referenced == {"pixal3d-res", "pixal3d-seed", "pixal3d-fov"}
+    assert referenced == {"pixal3d-res", "pixal3d-steps", "pixal3d-seed", "pixal3d-fov"}
     assert not referenced - _element_ids(INDEX)
 
 

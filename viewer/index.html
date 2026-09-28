@@ -255,6 +255,12 @@
           <select id="pixal3d-res"><option selected>1024</option></select>
           <small>Pixal3D's single-image mode runs at 1024 only: there is no 512 texture
             model, and 1536 is refused for single images.</small></div>
+        <div class="field"><label for="pixal3d-steps">Steps</label>
+          <select id="pixal3d-steps"><option value="auto" selected>8 (faster)</option>
+            <option value="12">12 (full)</option></select>
+          <small>8 looks the same as 12 on most models and runs 15-30% faster. Small
+            markings on the back can come out softer. Needs the steps patch; without
+            it, runs use 12.</small></div>
         <div class="field"><label for="pixal3d-seed">Seed</label><input id="pixal3d-seed" type="number" step="1" value="42"></div>
         <div class="field"><label for="pixal3d-fov">Gauge FOV (radians)</label>
           <input id="pixal3d-fov" type="number" step="0.0001" value="0.3491">

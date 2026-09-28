@@ -257,6 +257,22 @@ def fetch_source(ref: str) -> None:
                     "--recursive"], check=True)
 
 
+def apply_steps_patch(runner=subprocess.run) -> bool:
+    """Patch the fetched source so `--steps` works (scripts/patch_pixal3d_steps.py).
+
+    Never fatal: if upstream moved the anchor the build still succeeds, and the wrapper's
+    "auto" steps simply stay at 12. Returns whether the patch is in place.
+    """
+    result = runner([sys.executable, str(REPO / "scripts" / "patch_pixal3d_steps.py")],
+                    capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        print("Warning: could not apply the steps patch; Pixal3D will run 12 steps.\n"
+              f"  {(result.stderr or result.stdout).strip()}", flush=True)
+        return False
+    print(result.stdout.strip(), flush=True)
+    return True
+
+
 def build_from_source(kind: str) -> Path:
     """Clone and compile: Metal on a Mac, CUDA on Linux with the toolkit installed."""
     needed = ("cmake", "ninja", "git") if kind == "metal-source" else ("cmake", "git")
@@ -277,6 +293,7 @@ def build_from_source(kind: str) -> Path:
     # The Mac build has always tracked upstream's default branch; the CUDA build pins the
     # same release the prebuilts come from, which is the one tested on NVIDIA.
     fetch_source("HEAD" if kind == "metal-source" else PREBUILT_RELEASE)
+    apply_steps_patch()
     flags = cmake_flags(kind, find_nvcc(), host.compute_capability())
     generator = ["-G", "Ninja"] if shutil.which("ninja") else []
     print(f"Building ({'Metal' if kind == 'metal-source' else 'CUDA'})", flush=True)

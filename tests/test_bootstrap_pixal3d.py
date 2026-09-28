@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import tarfile
+import types
 import zipfile
 from pathlib import Path
 
@@ -255,3 +256,18 @@ def test_the_build_command_names_a_job_count():
     command = boot.build_command(jobs=10)
     assert command[-2:] == ["-j", "10"]
     assert "trellis-cli" in command
+
+
+def test_a_failed_steps_patch_does_not_fail_the_install(capsys):
+    """Upstream moving the anchor must cost the speed-up, not the whole install."""
+    def runner(command, **kwargs):
+        assert command[-1].endswith("patch_pixal3d_steps.py")
+        return types.SimpleNamespace(returncode=1, stdout="", stderr="anchor not found")
+    assert boot.apply_steps_patch(runner) is False
+    assert "12 steps" in capsys.readouterr().out
+
+
+def test_a_successful_steps_patch_is_reported(capsys):
+    def runner(command, **kwargs):
+        return types.SimpleNamespace(returncode=0, stdout="patched flow_runner.cpp", stderr="")
+    assert boot.apply_steps_patch(runner) is True

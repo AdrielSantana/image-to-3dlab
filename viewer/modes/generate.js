@@ -250,6 +250,7 @@ g('generate-submit').onclick = async () => {
       res: Number(g('pixal3d-res').value),
       seed: Number(g('pixal3d-seed').value),
       fov: Number(g('pixal3d-fov').value),
+      steps: g('pixal3d-steps').value === 'auto' ? 'auto' : Number(g('pixal3d-steps').value),
     }),
     'hunyuan-mlx-xiong': () => ({
       model: g('xiong-model').value,
