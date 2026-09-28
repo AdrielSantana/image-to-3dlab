@@ -116,10 +116,13 @@ Same engines without the browser.
 
 **Pixal3D:**
 ```bash
-python scripts/pixal3d_generate.py input.png output.glb --res 1024 --seed 42
+python scripts/pixal3d_generate.py input.png output.glb --seed 42
 ```
 A pre-matted RGBA image skips background removal entirely and keeps the cutout identical to
-whatever else you ran on it.
+whatever else you ran on it. Pixal3D runs at 1024, the only resolution its single-image
+mode supports. It takes 8 sampling steps by default, 15-30% faster than 12 with the same
+shape; pass `--steps 12` for a hero asset. The 8-step default needs a Pixal3D built from
+source (every Mac, and Linux with the CUDA toolkit); the prebuilt NVIDIA download runs 12.
 
 **Hunyuan3D-MLX (Xiong, full pipeline):**
 ```bash
@@ -216,7 +219,7 @@ Rough times for one run, as measured. Yours will differ with the machine and the
 | Step | M5 MacBook, 32 GB | RTX 4090 |
 |---|---|---|
 | Text to image (Qwen-Image) | ~4.5 min | ~20 s |
-| Image to 3D (Pixal3D) | ~6 min | ~3 min |
+| Image to 3D (Pixal3D) | ~6 min; ~20 for very detailed models | ~3 min |
 | Image to 3D (Hunyuan3D-MLX) | ~9 min | Mac only |
 | Image to 3D (TRELLIS.2) | 15–35 min | Mac only |
 
