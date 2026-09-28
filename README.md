@@ -214,14 +214,13 @@ character with them.
 
 ## How long a run takes
 
-Rough times for one run, measured on the maintainer's machines: a base M5 MacBook (10-core GPU,
-32 GB) and an RTX 4090. Yours will differ with the machine and the picture; a faster GPU
-shrinks every number here.
+Rough times for one run on a base M5 MacBook (32 GB); the RTX 4090 column is from a rented
+cloud GPU. Yours will differ with the machine and the picture.
 
 | Step | M5 MacBook, 32 GB | RTX 4090 |
 |---|---|---|
 | Text to image (Qwen-Image) | ~4.5 min | ~20 s |
-| Image to 3D (Pixal3D) | ~6 min; ~20 for very detailed models | ~3 min |
+| Image to 3D (Pixal3D) | ~6 min | ~3 min |
 | Image to 3D (Hunyuan3D-MLX) | ~9 min | Mac only |
 | Image to 3D (TRELLIS.2) | 15–35 min | Mac only |
 
