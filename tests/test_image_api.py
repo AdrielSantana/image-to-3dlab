@@ -155,10 +155,9 @@ def test_provenance_says_the_output_is_yours_but_the_model_is_not():
     assert "inherits the non-commercial" not in note
 
 
-def test_output_goes_to_a_research_only_folder():
-    """Restricted pictures are separated by folder, so nobody has to open a sidecar to
-    find out which ones they are."""
-    assert api.OUTPUT_ROOT.name == "research_only"
+def test_output_goes_to_the_images_folder():
+    """One folder for every picture; the licence travels in the provenance record."""
+    assert api.OUTPUT_ROOT == api.REPO / "output" / "images"
 
 
 def test_only_one_job_runs_at_a_time(tmp_path):

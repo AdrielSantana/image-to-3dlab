@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Generated images now save to `output/images/` instead of `output/images/research_only/`.
+  Each image's provenance record still carries Qwen-Image's licence.
 - Pixal3D now runs 8 sampling steps instead of 12 by default: 15-30% faster, with the
   same shape and front in our tests. Small markings on the sides the photo can't see can
   come out a little softer; pick **12 (full)** under Steps for hero assets. Mac installs
