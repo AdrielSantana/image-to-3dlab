@@ -18,6 +18,8 @@ const STAGE_META = {
   stage_labels: {
     retopologise: 'Retopologise',
     repaint: 'Repaint',
+    photo: 'Keep source photo',
+
     bake: 'Bake detail',
     compress: 'Compress textures',
   },
@@ -31,6 +33,29 @@ const progress = new JobProgressPanel({
 });
 
 const state = { asset: null, image: null, jobId: null, running: false, source: null, poll: null };
+
+// Before and after, side by side with synced cameras: the Compare view in an iframe, as the
+// Generate tab embeds its preview. ?restricted=1 strips the app chrome and the add-pane.
+// Pixal3D models face the other way from the viewer's default camera, so a comparison of
+// one starts turned round; the server says which runs had a Pixal3D camera.
+const PIXAL3D_FRONT_AZIMUTH = 200;
+
+export function compareUrl(beforeUrl, afterUrl, facesAway = false) {
+  const q = new URLSearchParams({
+    a: beforeUrl, la: 'Before', b: afterUrl, lb: 'After', restricted: '1',
+  });
+  if (facesAway) q.set('az', String(PIXAL3D_FRONT_AZIMUTH));
+  return `/viewer/index.html?${q}`;
+}
+
+function showCompare(beforeUrl, afterUrl, directory, facesAway = false) {
+  if (!beforeUrl || !afterUrl) return;
+  f('finish-compare').hidden = false;
+  f('finish-compare-label').textContent = `Before and after · ${directory}`;
+  f('finish-compare-frame').src = compareUrl(
+    beforeUrl, `${afterUrl}?t=${Date.now()}`, facesAway);
+  f('finish-compare').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 function updateSubmit() {
   f('finish-submit').disabled = !state.asset || !state.image || state.running;
@@ -76,6 +101,7 @@ function applyEvent(event) {
     f('finish-download').href = event.result_url;
     f('finish-record').href = event.record_url;
     f('finish-where').textContent = `output/finish/${event.directory}/`;
+    showCompare(event.source_url, event.result_url, event.directory, event.pixal3d);
     f('finish-status').textContent =
       `Finished in ${formatDuration(event.elapsed_seconds)} — ` +
       `${(event.size_bytes / 1048576).toFixed(1)} MB`;
@@ -133,6 +159,14 @@ function runRow(run) {
     link.download = '';
     link.textContent = 'Download';
     actions.appendChild(link);
+    if (run.source_url) {
+      const compare = document.createElement('button');
+      compare.className = 'ghost';
+      compare.textContent = 'Compare';
+      compare.onclick = () => showCompare(
+        run.source_url, run.result_url, run.directory, run.pixal3d);
+      actions.appendChild(compare);
+    }
   }
   if (run.resumable) {
     const button = document.createElement('button');
@@ -167,6 +201,7 @@ async function resume(directory, button) {
   progress.reset();
   configureStages();
   f('finish-result').hidden = true;
+  f('finish-compare').hidden = true;
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = `Resuming ${directory}…`;
   try {
@@ -212,6 +247,7 @@ f('finish-submit').onclick = async () => {
   progress.reset();
   configureStages();
   f('finish-result').hidden = true;
+  f('finish-compare').hidden = true;
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = 'Uploading…';
 
@@ -222,6 +258,7 @@ f('finish-submit').onclick = async () => {
     ior: Number(f('finish-ior').value),
     texture_size: Number(f('finish-texture').value),
     skip_paint: f('finish-skip-paint').checked,
+    skip_photo: f('finish-skip-photo').checked,
     paint_res: Number(f('finish-paint-res').value),
     paint_steps: Number(f('finish-paint-steps').value),
   };

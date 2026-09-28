@@ -9,6 +9,7 @@ would surface to the user as "worker exited with code 1" several minutes later.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -115,7 +116,7 @@ def test_the_bake_has_a_band_between_repaint_and_compress():
 
 def test_the_worker_and_the_viewer_agree_on_the_stage_order():
     """One stage plan, imported from the worker, and the resume table must follow it."""
-    plan = finish.worker_module().stage_plan(False, False)
+    plan = finish.worker_module().stage_plan(False, False, photo=True)
     assert [stage for stage, _ in finish.STAGE_ARTIFACTS] == plan
     assert set(plan) == set(finish.STAGE_WEIGHTS)
 
@@ -335,3 +336,57 @@ def test_job_ids_are_validated_before_lookup():
     assert manager.get("../../etc/passwd") is None
     assert manager.get("not-a-job-id") is None
     assert manager.get("0" * 32) is None  # well-formed but unknown
+
+
+# --- The photo stage: match the upload to its Pixal3D run, copy its camera in -------------
+
+
+def _pixal3d_run(root, glb_bytes=b"glb-bytes"):
+    import hashlib
+    run = root / "seb" / "robot__pixal3d__1"
+    views = run / "robot__pixal3d__1.svviews"
+    views.mkdir(parents=True)
+    (views / "transforms.json").write_text('{"frames": []}')
+    glb = run / "robot__pixal3d__1.glb"
+    glb.write_bytes(glb_bytes)
+    (run / "robot__pixal3d__1.json").write_text(json.dumps({
+        "backend": "pixal3d",
+        "output": {"path": str(glb), "sha256": hashlib.sha256(glb_bytes).hexdigest()},
+    }))
+    return views
+
+
+def test_an_uploaded_pixal3d_model_finds_its_camera(tmp_path):
+    views = _pixal3d_run(tmp_path)
+    assert finish.find_source_views(b"glb-bytes", tmp_path) == views
+
+
+def test_a_model_with_no_matching_run_gets_no_camera(tmp_path):
+    _pixal3d_run(tmp_path)
+    assert finish.find_source_views(b"edited-or-foreign", tmp_path) is None
+
+
+def test_the_camera_is_copied_into_the_run_and_passed_to_the_worker(tmp_path):
+    _pixal3d_run(tmp_path / "generated")
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"glb-bytes", b"png", {})
+    assert (job.views_dir / "transforms.json").is_file()
+    command = finish.build_command(job, job.settings)
+    assert command[command.index("--views") + 1] == str(job.views_dir)
+
+
+def test_skipping_the_photo_leaves_the_camera_out(tmp_path):
+    _pixal3d_run(tmp_path / "generated")
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"glb-bytes", b"png", {"skip_photo": True})
+    assert not job.views_dir.exists()
+    assert "--views" not in finish.build_command(job, job.settings)
+
+
+def test_a_finished_run_offers_its_source_for_comparison(tmp_path):
+    run = tmp_path / "robot__finish__20260928-120000"
+    run.mkdir()
+    for name in ("source.glb", "source.png", "result.glb"):
+        (run / name).write_bytes(b"x")
+    described = finish.describe_run(run)
+    assert described["source_url"] is None or described["source_url"].endswith("source.glb")

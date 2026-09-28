@@ -388,6 +388,9 @@
       <small>Only base colour is baked, so these stand in for the source's material.
         Tune them by eye for each asset.</small></div>
 
+    <label class="check"><input id="finish-skip-photo" type="checkbox"><span>skip source photo</span>
+      <small>by default, a Pixal3D model made here keeps the photo's real pixels wherever the
+        photo can see it: text, logos and faces stay exact instead of being redrawn</small></label>
     <label class="check"><input id="finish-skip-paint" type="checkbox"><span>skip repaint</span>
       <small>keep the transferred texture &mdash; right for Pixal3D output</small></label>
     <div id="finish-paint-fields">
@@ -426,6 +429,13 @@
       </p>
       <div id="finish-runs"></div>
     </div>
+  </div>
+  <div id="finish-compare" hidden>
+    <div class="finish-compare-head">
+      <span id="finish-compare-label">Before and after</span>
+      <small>Drag to turn both; the cameras move together.</small>
+    </div>
+    <iframe id="finish-compare-frame" title="before and after"></iframe>
   </div>
 </section>
 

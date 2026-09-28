@@ -140,3 +140,10 @@
 .setup-remove:hover { opacity: 1; }
 .setup-remove { margin-left: 8px; opacity: .55; border-color: #5a3038; color: #e0a9a9; }
 .setup-remove:hover { opacity: 1; background: #3a1f24; }
+
+/* Finish: before/after comparison, wider than the form card so each pane is usable. */
+#finish-compare { max-width: 1200px; margin: 0 auto 24px; padding: 0 16px; }
+.finish-compare-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 6px; }
+.finish-compare-head small { opacity: .7; }
+#finish-compare-frame { width: 100%; height: 560px; border: 1px solid #303744;
+  border-radius: 8px; background: #14161a; }

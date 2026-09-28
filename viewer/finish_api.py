@@ -12,6 +12,7 @@ values must not mean regenerating the geometry underneath it.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -31,6 +32,9 @@ sys.path.insert(0, str(REPO))
 from image_to_3dlab import processes  # noqa: E402
 
 OUTPUT_ROOT = REPO / "output" / "finish"
+# Where generation runs (and their records) live, for matching an uploaded model to the run
+# that made it.
+GENERATED_ROOT = REPO / "output"
 WORKER = REPO / "scripts" / "retopo_repaint.py"
 JOB_ID = re.compile(r"^[0-9a-f]{32}$")
 # The exact shape `create` builds — a resume takes its directory name from a URL, so
@@ -67,6 +71,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "metallic": 0.25, "roughness": 0.65, "ior": 1.45,
     "paint_seed": 0, "paint_res": 512, "paint_steps": 15, "paint_tex": 4096,
     "texture_size": 2048, "skip_paint": False, "skip_compress": False, "skip_bake": False,
+    "skip_photo": False,
 }
 
 INTEGER_SETTINGS = {
@@ -78,6 +83,7 @@ INTEGER_SETTINGS = {
 STAGE_ARTIFACTS: tuple[tuple[str, str], ...] = (
     ("retopologise", "result_retopo.glb"),
     ("repaint", "result_painted.glb"),
+    ("photo", "result_photo.glb"),
     ("bake", "result_baked.glb"),
     ("compress", "result.glb"),
 )
@@ -87,7 +93,7 @@ STAGE_ARTIFACTS: tuple[tuple[str, str], ...] = (
 # thirds would park the bar at 33% for five of its six minutes. The bake-detail stage took
 # 4.3s on the orc (2026-09-27), about half a retopology.
 STAGE_WEIGHTS: dict[str, float] = {
-    "retopologise": 5.0, "repaint": 90.0, "bake": 2.0, "compress": 3.0,
+    "retopologise": 5.0, "repaint": 90.0, "photo": 1.0, "bake": 2.0, "compress": 3.0,
 }
 
 # Where the repaint's own log lines fall inside that stage. Same run: ~30s of setup, 165s
@@ -114,7 +120,7 @@ def normalise_settings(raw: dict[str, Any]) -> dict[str, Any]:
     for key, value in raw.items():
         if key not in DEFAULT_SETTINGS:
             continue
-        if key in {"skip_paint", "skip_compress", "skip_bake"}:
+        if key in {"skip_paint", "skip_compress", "skip_bake", "skip_photo"}:
             settings[key] = bool(value)
             continue
         try:
@@ -147,6 +153,7 @@ def build_command(
     command = [
         sys.executable, "-u", str(WORKER),
         str(job.asset_path), str(job.image_path), str(job.result_glb),
+        *(["--views", str(job.views_dir)] if uses_photo(job, settings) else []),
         "--faces", str(settings["faces"]),
         "--atlas", str(settings["atlas"]),
         "--angle", str(settings["angle"]),
@@ -169,6 +176,39 @@ def build_command(
     if resume:
         command.append("--resume")
     return command
+
+
+def uses_photo(job: "FinishJob", settings: dict[str, Any]) -> bool:
+    """Whether this run gets the photo stage: a camera was found and it was not turned off."""
+    return not settings.get("skip_photo", False) and (job.views_dir / "transforms.json").is_file()
+
+
+def find_source_views(asset: bytes, root: Path = GENERATED_ROOT) -> Path | None:
+    """The saved camera + view directory of the Pixal3D run that produced `asset`.
+
+    The browser uploads bytes, not a path, so the model is matched by content: every
+    Pixal3D run writes `<output>.json` with the GLB's sha256, and its staged views sit
+    beside the GLB as `<output>.svviews/`. Anything else (another generator, a model from
+    elsewhere, an edited file) has no match and simply gets no photo stage.
+    """
+    digest = hashlib.sha256(asset).hexdigest()
+    if not root.is_dir():
+        return None
+    for record_path in root.rglob("*.json"):
+        if record_path.stat().st_size > 20000:
+            continue
+        record = _read_json(record_path)
+        if not isinstance(record, dict) or record.get("backend") != "pixal3d":
+            continue
+        output = record.get("output") or {}
+        if output.get("sha256") != digest:
+            continue
+        views = Path(output.get("path", "")).with_suffix(".svviews")
+        if not (views / "transforms.json").is_file():
+            views = record_path.with_suffix(".svviews")
+        if (views / "transforms.json").is_file():
+            return views
+    return None
 
 
 def stage_bands(stages: list[str]) -> dict[str, tuple[float, float]]:
@@ -278,6 +318,9 @@ class FinishJob:
         self.directory = directory
         self.asset_path = directory / "source.glb"
         self.image_path = directory / "source.png"
+        # The source photo(s) and cameras for the photo stage, copied in from the Pixal3D
+        # run so a resume or a re-run does not depend on that run still being on disk.
+        self.views_dir = directory / "source.views"
         self.result_glb = directory / "result.glb"
         self.record_path = directory / "result.retopo-repaint.json"
         self.settings_path = directory / "settings.json"
@@ -304,8 +347,9 @@ class FinishJob:
 
 
 class FinishJobManager:
-    def __init__(self, output_root: Path = OUTPUT_ROOT):
+    def __init__(self, output_root: Path = OUTPUT_ROOT, generated_root: Path = GENERATED_ROOT):
         self.output_root = output_root
+        self.generated_root = generated_root
         self.jobs: dict[str, FinishJob] = {}
         self.active: str | None = None
         self.lock = threading.Lock()
@@ -330,6 +374,10 @@ class FinishJobManager:
                 job.settings = normalise_settings(settings)
                 job.asset_path.write_bytes(asset)
                 job.image_path.write_bytes(image)
+                views = None if job.settings["skip_photo"] else find_source_views(
+                    asset, self.generated_root)
+                if views is not None:
+                    shutil.copytree(views, job.views_dir)
                 # Written up front, not with the record at the end: a run that dies
                 # halfway is exactly the one worth resuming, and resuming it means
                 # knowing the settings the surviving intermediates were made with.
@@ -387,12 +435,18 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
         job.status = "running"
         stages = worker_module().stage_plan(
             job.settings["skip_paint"], job.settings["skip_compress"],
-            job.settings.get("skip_bake", False),
+            job.settings.get("skip_bake", False), photo=uses_photo(job, job.settings),
         )
-        job.emit({
-            "phase": "queued", "overall_pct": 0, "stages": stages,
-            "message": "Resuming from what is already on disk" if job.resume else "Starting",
-        })
+        if job.resume:
+            message = "Resuming from what is already on disk"
+        elif "photo" in stages:
+            message = "Starting: found the source camera, so the photo's pixels will be kept"
+        elif not job.settings.get("skip_photo", False):
+            message = ("Starting: no source camera for this model (only Pixal3D runs made "
+                       "here have one), so the photo stage is skipped")
+        else:
+            message = "Starting"
+        job.emit({"phase": "queued", "overall_pct": 0, "stages": stages, "message": message})
         progress = FinishProgress(stages)
         job.process = subprocess.Popen(
             build_command(job, job.settings, resume=job.resume), cwd=str(REPO),
@@ -430,6 +484,8 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
                 "record_url": f"/api/finish/{job.id}/record.json",
                 "size_bytes": job.result_glb.stat().st_size,
                 "directory": job.directory.name,
+                "source_url": served_url(job.asset_path),
+                "pixal3d": (job.views_dir / "transforms.json").is_file(),
             })
         else:
             job.status = "error"
@@ -495,6 +551,10 @@ def describe_run(directory: Path) -> dict[str, Any]:
         "finished": result.is_file(),
         "size_bytes": result.stat().st_size if result.is_file() else None,
         "result_url": served_url(result) if result.is_file() else None,
+        "source_url": served_url(directory / "source.glb")
+        if (directory / "source.glb").is_file() else None,
+        # A copied-in camera means the source was a Pixal3D run (it faces the other way).
+        "pixal3d": (directory / "source.views" / "transforms.json").is_file(),
         "record_url": served_url(directory / "result.retopo-repaint.json") if record else None,
         "seconds": (record or {}).get("seconds"),
         "settings": settings,

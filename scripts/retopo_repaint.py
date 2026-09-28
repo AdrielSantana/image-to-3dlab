@@ -66,7 +66,8 @@ def emit_stage(phase: str, message: str) -> None:
     print(f"{STAGE_MARKER}::{phase}::{message}", flush=True)
 
 
-def stage_plan(skip_paint: bool, skip_compress: bool, skip_bake: bool = False) -> list[str]:
+def stage_plan(skip_paint: bool, skip_compress: bool, skip_bake: bool = False,
+               photo: bool = False) -> list[str]:
     """The stages this run will execute, in order.
 
     Named separately from the running of them so a caller — the viewer's job API, say —
@@ -75,6 +76,8 @@ def stage_plan(skip_paint: bool, skip_compress: bool, skip_bake: bool = False) -
     stages = ["retopologise"]
     if not skip_paint:
         stages.append("repaint")
+    if photo:
+        stages.append("photo")
     if not skip_bake:
         stages.append("bake")
     if not skip_compress:
@@ -132,6 +135,25 @@ def _run(command: list[str], log: Path, label: str) -> None:
         raise SystemExit(f"[{label}] failed (exit {process.returncode}); last lines:\n{tail}")
 
 
+def photo_stage(model: Path, views_dir: Path, output: Path, weights_png: Path) -> dict:
+    """Paint `model` with the real pixels of the photos in `views_dir`; see
+    image_to_3dlab/photo_paint.py. In-process: numpy only, seconds on a Finish mesh."""
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+    from PIL import Image
+
+    from image_to_3dlab import photo_paint as pp
+
+    positions, uvs, faces, texture = pp.read_glb(model)
+    views, mesh_scale = pp.load_views(views_dir)
+    painted, weight = pp.paint_texture(texture, positions, uvs, faces, views, mesh_scale)
+    output.write_bytes(pp.replace_base_colour(model.read_bytes(), pp.encode_png(painted)))
+    Image.fromarray(np.rint(weight * 255).astype(np.uint8)).save(weights_png)
+    share = round(float((weight > 0.5).mean()), 3)
+    print(f"[photo] {len(views)} view(s); {share:.0%} of the texture from the photo", flush=True)
+    return {"count": len(views), "texture_share": share}
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The command-line surface, separately from running it.
 
@@ -167,6 +189,12 @@ def build_parser() -> argparse.ArgumentParser:
                              "original; the asset keeps flat surface settings")
     parser.add_argument("--skip-compress", action="store_true")
     parser.add_argument(
+        "--views", type=Path, default=None,
+        help="transforms.json directory holding the source photo(s) and their cameras "
+             "(a Pixal3D run's .svviews). Given, every surface a photo can see takes the "
+             "photo's real pixels after the repaint, which keeps text and logos exact",
+    )
+    parser.add_argument(
         "--resume", action="store_true",
         help="reuse any stage artifact already sitting beside the output instead of "
              "recomputing it. The repaint is five to six minutes of a six-minute run, so "
@@ -186,7 +214,10 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     stem = args.output.with_suffix("")
-    stages = stage_plan(args.skip_paint, args.skip_compress, args.skip_bake)
+    if args.views is not None and not (args.views / "transforms.json").is_file():
+        raise SystemExit(f"--views has no transforms.json: {args.views}")
+    stages = stage_plan(args.skip_paint, args.skip_compress, args.skip_bake,
+                        photo=args.views is not None)
     print(f"[retopo-repaint] {args.source.name} -> {args.output.name}: "
           f"{' -> '.join(stages)}", flush=True)
 
@@ -227,6 +258,19 @@ def main() -> int:
             )
         timings["repaint"] = round(time.time() - step, 1)
         current = painted
+
+    photo_record = None
+    if args.views is not None:
+        photo_glb = Path(f"{stem}_photo.glb")
+        step = time.time()
+        if reuse(photo_glb, args.resume):
+            emit_stage("photo", f"Reusing {photo_glb.name}")
+        else:
+            emit_stage("photo", "Keeping the source photo's pixels where it can see")
+            photo_record = photo_stage(current, args.views, photo_glb,
+                                       Path(f"{stem}_photo_weights.png"))
+        timings["photo"] = round(time.time() - step, 1)
+        current = photo_glb
 
     if not args.skip_bake:
         baked = Path(f"{stem}_baked.glb")
@@ -277,6 +321,9 @@ def main() -> int:
         "paint": None if args.skip_paint else {
             "seed": args.paint_seed, "res": args.paint_res,
             "steps": args.paint_steps, "texture": args.paint_tex,
+        },
+        "photo": None if args.views is None else {
+            "views": str(args.views), **(photo_record or {"reused": True}),
         },
         "textures": report,
         "size_bytes": args.output.stat().st_size,

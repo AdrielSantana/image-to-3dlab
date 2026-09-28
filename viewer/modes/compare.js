@@ -427,6 +427,8 @@ for (const key of ['a', 'b', 'c']) {
   if (IMAGE_EXTS.has(ext)) mountSlot(idx, { kind: 'image', url: resolved, label });
   else mountSlot(idx, { kind: 'model', url: resolved, label, ext });
 }
+// ?az=degrees: the starting camera angle, for models whose front is not the viewer's.
+if (q.has('az') && Number.isFinite(Number(q.get('az')))) azimuth = Number(q.get('az'));
 updateChrome();
 
 // --- sizing + render loop ------------------------------------------------------------

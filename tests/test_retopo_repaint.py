@@ -128,3 +128,20 @@ def test_skip_bake_is_on_the_real_parser_and_off_by_default():
     parser = rr.build_parser()
     assert parser.parse_args(["a.glb", "b.png", "c.glb"]).skip_bake is False
     assert parser.parse_args(["a.glb", "b.png", "c.glb", "--skip-bake"]).skip_bake is True
+
+
+def test_the_photo_stage_runs_after_the_repaint_and_before_the_bake():
+    assert rr.stage_plan(skip_paint=False, skip_compress=False, photo=True) == [
+        "retopologise", "repaint", "photo", "bake", "compress",
+    ]
+    assert "photo" not in rr.stage_plan(skip_paint=False, skip_compress=False)
+
+
+def test_the_photo_stage_follows_retopology_when_there_is_no_repaint():
+    assert rr.stage_plan(skip_paint=True, skip_compress=False, photo=True) == [
+        "retopologise", "photo", "bake", "compress",
+    ]
+
+
+def test_views_default_to_off():
+    assert rr.build_parser().parse_args(["a.glb", "b.png", "c.glb"]).views is None

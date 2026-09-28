@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Finish keeps the source photo's real pixels.** Text, logos, numbers and faces that a
+  repaint redraws as lookalikes now come through exactly: every surface the photo can see
+  takes its real pixel, and the repaint fills the sides and back. On by default for
+  Pixal3D models made on this machine (their camera is found automatically); tick
+  **skip source photo** to turn it off. Also available as `scripts/photo_paint.py`.
+- **Before and after in Finish.** A finished run opens side by side with the model you
+  started from, cameras locked together; every finished run on disk has a **Compare**
+  button too.
+
 ### Changed
 - Pixal3D now runs 8 sampling steps instead of 12 by default: 15-30% faster, with the
   same shape and front in our tests. Small markings on the sides the photo can't see can
