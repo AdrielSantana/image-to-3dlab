@@ -214,7 +214,9 @@ character with them.
 
 ## How long a run takes
 
-Rough times for one run, as measured. Yours will differ with the machine and the picture.
+Rough times for one run, measured on the maintainer's machines: a base M5 MacBook (10-core GPU,
+32 GB) and an RTX 4090. Yours will differ with the machine and the picture; a faster GPU
+shrinks every number here.
 
 | Step | M5 MacBook, 32 GB | RTX 4090 |
 |---|---|---|
