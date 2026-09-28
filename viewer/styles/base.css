@@ -5,6 +5,7 @@ body { margin: 0; background: #14161a; color: #d8dee9; font: 13px/1.5 ui-monospa
        align-items: center; padding: 6px 10px; height: 42px; background: #111318;
        border-bottom: 1px solid #2c313a; }
 #mode-switch .mode { padding: 3px 12px; }
+#mode-switch .mode-spacer { flex: 1; }
 #mode-switch .mode.has-pending::after { content: ''; display: inline-block; width: 6px;
   height: 6px; margin-left: 6px; border-radius: 50%; background: #f0a95b;
   box-shadow: 0 0 0 2px #f0a95b22; vertical-align: middle; }

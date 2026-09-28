@@ -17,13 +17,15 @@
 <body>
 <div id="mode-switch">
   <button id="brand" class="brand" title="Welcome, and what's new">image-to-3dlab</button>
-  <button id="mode-setup" class="mode" title="What is installed, what it costs on disk">Setup &amp; Status</button>
   <button id="mode-compare" class="mode on">Compare</button>
   <button id="mode-generate-image" class="mode" title="No source image? Write a prompt and make one">Generate Image</button>
   <button id="mode-generate" class="mode" title="Turn an image into a 3D mesh">Generate 3D</button>
   <button id="mode-finish" class="mode" title="Retopologise, repaint and compress an existing asset">Finish</button>
   <button id="mode-rig" class="mode" title="Correct the rest skeleton">Rig Edit</button>
   <button id="mode-animate" class="mode" title="Pose and animate the bound skeleton">Pose</button>
+  <!-- Everyday tools on the left; setup and About, used rarely, pushed to the right. -->
+  <span class="mode-spacer"></span>
+  <button id="mode-setup" class="mode" title="What is installed, what it costs on disk">Setup &amp; Status</button>
   <button id="mode-about" class="mode" title="Who we are, what runs on this machine, and what's new">About</button>
 </div>
 <div id="update-banner" role="status" hidden>
