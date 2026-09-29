@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import importlib.util
 import json
+import os
 import re
 import sys
 import types
@@ -795,7 +796,7 @@ def test_image_has_transparent_alpha_false_for_rgb_no_alpha_channel(tmp_path):
 
 def test_pid_file_write_and_remove_roundtrip(tmp_path):
     api._write_pid_file(tmp_path, 4242)
-    assert api._pid_file_path(tmp_path).read_text() == "4242"
+    assert api._pid_file_path(tmp_path).read_text() == f"4242 {os.getpid()}"
     api._remove_pid_file(tmp_path)
     assert not api._pid_file_path(tmp_path).exists()
 
@@ -1034,3 +1035,43 @@ def test_pixal3d_full_steps_are_passed_through():
 def test_pixal3d_steps_outside_the_offered_choices_are_refused(steps):
     with pytest.raises(ValueError):
         api._pixal3d_validate_settings({"steps": steps})
+
+
+def test_reconcile_leaves_a_job_whose_owner_is_still_alive(tmp_path, monkeypatch):
+    """A Finish run driven by another live process (a second viewer, a script) is not an
+    orphan. Starting the viewer used to kill one mid-repaint (2026-09-29)."""
+    job_dir = tmp_path / "someone-elses-job"
+    job_dir.mkdir()
+    (job_dir / "pid").write_text("4242 5151")
+    killed = []
+    monkeypatch.setattr(api, "_process_alive", lambda pid: pid == 5151)
+    monkeypatch.setattr(api, "_process_group_alive", lambda pid: True)
+    monkeypatch.setattr(api, "_killpg_if_alive", killed.append)
+
+    assert api._reconcile_orphaned_jobs(tmp_path) == []
+    assert killed == []
+    assert (job_dir / "pid").read_text() == "4242 5151"
+
+
+def test_reconcile_kills_a_live_job_whose_owner_died(tmp_path, monkeypatch):
+    job_dir = tmp_path / "orphan"
+    job_dir.mkdir()
+    (job_dir / "pid").write_text("4242 5151")
+    killed = []
+    monkeypatch.setattr(api, "_process_alive", lambda pid: False)
+    monkeypatch.setattr(api, "_process_group_alive", lambda pid: True)
+    monkeypatch.setattr(api, "_killpg_if_alive", killed.append)
+
+    assert api._reconcile_orphaned_jobs(tmp_path) == ["orphan"]
+    assert killed == [4242]
+
+
+def test_reconcile_notes_a_finish_run_in_its_steps_log(tmp_path, monkeypatch):
+    job_dir = tmp_path / "fox__finish__20260929-101010"
+    (job_dir / "steps").mkdir(parents=True)
+    (job_dir / "steps" / "run.log").write_text("step 3/15\n")
+    (job_dir / "pid").write_text("4242")
+    monkeypatch.setattr(api, "_process_group_alive", lambda pid: False)
+
+    api._reconcile_orphaned_jobs(tmp_path)
+    assert "died mid-run" in (job_dir / "steps" / "run.log").read_text()

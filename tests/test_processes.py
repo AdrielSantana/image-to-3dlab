@@ -7,6 +7,7 @@ start. Windows paths are tested with fakes here; the POSIX paths run for real.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -110,3 +111,24 @@ def test_no_viewer_module_uses_posix_only_process_calls():
             if re.search(r"os\.killpg\(|start_new_session\s*=\s*True", code):
                 offenders.append(f"{path.name}:{number}")
     assert offenders == []
+
+
+def test_a_pid_record_names_the_job_and_its_owner():
+    assert processes.pid_record(4242, owner=5151) == "4242 5151"
+    assert processes.pid_record(4242) == f"4242 {os.getpid()}"
+
+
+def test_pid_records_old_and_new_both_parse():
+    assert processes.parse_pid_record("4242 5151\n") == (4242, 5151)
+    assert processes.parse_pid_record("4242") == (4242, None)
+
+
+@pytest.mark.parametrize("text", ["", "abc", "1 2 3", "12 x"])
+def test_a_malformed_pid_record_is_rejected(text):
+    with pytest.raises(ValueError):
+        processes.parse_pid_record(text)
+
+
+def test_this_process_is_alive_and_a_free_pid_is_not():
+    assert processes.process_alive(os.getpid(), windows=False)
+    assert not processes.process_alive(2**22 + 12345, windows=False)

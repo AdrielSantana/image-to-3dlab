@@ -878,7 +878,7 @@ def _write_pid_file(directory: Path, pid: int) -> None:
     dying (memory-only Job/JobManager state does not) -- see _reconcile_orphaned_jobs,
     which reads this file back on the next server startup to find and clean up jobs
     whose tracker died mid-run."""
-    _pid_file_path(directory).write_text(str(pid))
+    _pid_file_path(directory).write_text(processes.pid_record(pid))
 
 
 def _remove_pid_file(directory: Path) -> None:
@@ -892,6 +892,10 @@ def _killpg_if_alive(pid: int) -> None:
 
 def _process_group_alive(pid: int) -> bool:
     return processes.group_alive(pid)
+
+
+def _process_alive(pid: int) -> bool:
+    return processes.process_alive(pid)
 
 
 def _terminate_active_job() -> None:
@@ -916,8 +920,10 @@ def _reconcile_orphaned_jobs(output_root: Path) -> list[str]:
     failure shape as the leather_satchel/jesus_chibi incidents on 2026-08-20. Call once at
     server startup, before serving.
 
-    For each leftover <job-dir>/pid: if that process group is still running, it's an actual
-    ghost (nobody has been tracking it since the old server died) -- kill it. Either way,
+    For each leftover <job-dir>/pid: if the process that started the job is still alive
+    (another viewer, or a script driving the Finish code), the job is not an orphan and is
+    left alone. Otherwise, if that process group is still running, it's an actual ghost
+    (nobody has been tracking it since the old server died) -- kill it. Either way,
     annotate that job's run.log so it stops trailing off silently, and remove the pid file
     since this server now owns (or has just closed out) that job's fate.
 
@@ -926,9 +932,11 @@ def _reconcile_orphaned_jobs(output_root: Path) -> list[str]:
     for pid_file in sorted(output_root.rglob("pid")):
         directory = pid_file.parent
         try:
-            pid = int(pid_file.read_text().strip())
+            pid, owner = processes.parse_pid_record(pid_file.read_text())
         except (OSError, ValueError):
             pid_file.unlink(missing_ok=True)
+            continue
+        if owner is not None and owner != os.getpid() and _process_alive(owner):
             continue
         alive = _process_group_alive(pid)
         if alive:
@@ -936,8 +944,10 @@ def _reconcile_orphaned_jobs(output_root: Path) -> list[str]:
             note = "orphaned generation from a previous server session, terminated on restart"
         else:
             note = "server died mid-run (previous session) -- job status unknown, treat as failed"
-        log_path = directory / "run.log"
-        if log_path.is_file():
+        # Finish runs from 0.3.5 keep their log in steps/.
+        log_path = next((path for path in (directory / "run.log", directory / "steps" / "run.log")
+                         if path.is_file()), None)
+        if log_path is not None:
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(note + "\n")
         pid_file.unlink(missing_ok=True)
