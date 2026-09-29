@@ -145,3 +145,25 @@ def test_the_photo_stage_follows_retopology_when_there_is_no_repaint():
 
 def test_views_default_to_off():
     assert rr.build_parser().parse_args(["a.glb", "b.png", "c.glb"]).views is None
+
+
+def test_without_a_steps_folder_in_between_files_keep_their_old_names(tmp_path):
+    paths = rr.step_paths(tmp_path / "out.glb")
+    assert paths["retopo"] == tmp_path / "out_retopo.glb"
+    assert paths["painted"] == tmp_path / "out_painted.glb"
+    assert paths["photo_weights"] == tmp_path / "out_photo_weights.png"
+    assert paths["bake_log"] == tmp_path / "out_bake.log"
+
+
+def test_a_steps_folder_numbers_the_in_between_files_by_stage(tmp_path):
+    steps = tmp_path / "steps"
+    paths = rr.step_paths(tmp_path / "vanguard_5k.glb", steps)
+    assert [paths[k].name for k in ("retopo", "painted", "photo", "baked")] == [
+        "1_retopo.glb", "2_painted.glb", "3_photo.glb", "4_baked.glb"]
+    assert all(path.parent == steps for path in paths.values())
+
+
+def test_the_steps_flag_is_offered_and_off_by_default():
+    assert rr.build_parser().parse_args(["a.glb", "a.png", "b.glb"]).steps_dir is None
+    parsed = rr.build_parser().parse_args(["a.glb", "a.png", "b.glb", "--steps-dir", "s"])
+    assert parsed.steps_dir == Path("s")

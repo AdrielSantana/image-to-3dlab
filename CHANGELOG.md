@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this repo's latest fixes (such as the 8-step default) and recompiles it in a few
   minutes, downloading nothing. No Terminal needed.
 
+### Changed
+- **Finish runs are easier to read.** The finished model is the only GLB at the top of
+  the run folder, named after the asset and its face count (`vanguard_5k.glb`). The
+  in-between models sit in `steps/`, numbered in the order they were made
+  (`1_retopo.glb` to `4_baked.glb`), and what you started from sits in `input/`. Runs
+  made before this keep their old layout and still open and resume.
+
 ## [0.3.4] - 2026-09-28
 
 ### Added

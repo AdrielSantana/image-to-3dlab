@@ -79,13 +79,14 @@ INTEGER_SETTINGS = {
 }
 
 # Which artifact proves a stage already ran, for `--resume` and for describing a run that
-# the browser lost track of. Ordered as the worker runs them.
-STAGE_ARTIFACTS: tuple[tuple[str, str], ...] = (
-    ("retopologise", "result_retopo.glb"),
-    ("repaint", "result_painted.glb"),
-    ("photo", "result_photo.glb"),
-    ("bake", "result_baked.glb"),
-    ("compress", "result.glb"),
+# the browser lost track of: a key into the worker's `step_paths`, or None for the final
+# model. Ordered as the worker runs them.
+STAGE_ARTIFACTS: tuple[tuple[str, str | None], ...] = (
+    ("retopologise", "retopo"),
+    ("repaint", "painted"),
+    ("photo", "photo"),
+    ("bake", "baked"),
+    ("compress", None),
 )
 
 # How the overall bar divides between stages. Grossly uneven on purpose: a measured run on
@@ -153,6 +154,7 @@ def build_command(
     command = [
         sys.executable, "-u", str(WORKER),
         str(job.asset_path), str(job.image_path), str(job.result_glb),
+        *(["--steps-dir", str(job.steps_dir)] if job.steps_dir is not None else []),
         *(["--views", str(job.views_dir)] if uses_photo(job, settings) else []),
         "--faces", str(settings["faces"]),
         "--atlas", str(settings["atlas"]),
@@ -312,18 +314,51 @@ class FinishProgress:
         return event
 
 
+# Files only a pre-0.3.5 (flat) run has at its top level.
+LEGACY_MARKERS = ("source.glb", "source.png", "settings.json", "result.glb")
+
+
+def faces_label(faces: int) -> str:
+    """A face count the way people say it: 5000 -> "5k", 12500 -> "12.5k", 800 -> "800"."""
+    if faces < 1000:
+        return str(faces)
+    return f"{faces / 1000:g}k"
+
+
+def final_name(directory_name: str, faces: int) -> str:
+    """The finished model's file name: the asset, then its face count (`vanguard_5k.glb`).
+
+    The asset is the run folder's name up to its first `__`, which drops the generator
+    and timestamp tags a generated file carries (`vanguard__pixal3d` -> `vanguard`).
+    """
+    return f"{directory_name.split('__')[0]}_{faces_label(faces)}.glb"
+
+
 class FinishJob:
+    """One run's folder. Laid out so the finished model is the only GLB at the top:
+
+        vanguard_5k.glb                  the result
+        vanguard_5k.retopo-repaint.json  what made it
+        input/   source.glb, source.png, source.views/, settings.json
+        steps/   1_retopo.glb, 2_painted.glb, 3_photo.glb, 4_baked.glb, logs, run.log
+
+    Runs from before 0.3.5 kept everything flat (`result.glb` among `result_*.glb` and a
+    `source.glb`); they are recognised by any of those top-level files and still read.
+    """
+
     def __init__(self, job_id: str, directory: Path):
         self.id = job_id
         self.directory = directory
-        self.asset_path = directory / "source.glb"
-        self.image_path = directory / "source.png"
+        self.legacy = any((directory / name).exists() for name in LEGACY_MARKERS)
+        self.input_dir = directory if self.legacy else directory / "input"
+        self.steps_dir = None if self.legacy else directory / "steps"
+        self.asset_path = self.input_dir / "source.glb"
+        self.image_path = self.input_dir / "source.png"
         # The source photo(s) and cameras for the photo stage, copied in from the Pixal3D
         # run so a resume or a re-run does not depend on that run still being on disk.
-        self.views_dir = directory / "source.views"
-        self.result_glb = directory / "result.glb"
-        self.record_path = directory / "result.retopo-repaint.json"
-        self.settings_path = directory / "settings.json"
+        self.views_dir = self.input_dir / "source.views"
+        self.settings_path = self.input_dir / "settings.json"
+        self.log_path = (self.steps_dir or directory) / "run.log"
         self.settings: dict[str, Any] = dict(DEFAULT_SETTINGS)
         self.status = "queued"
         self.started = time.monotonic()
@@ -334,6 +369,22 @@ class FinishJob:
         self.resume = False
         self.log_lines: deque[str] = deque(maxlen=300)
 
+    @property
+    def result_glb(self) -> Path:
+        if self.legacy:
+            return self.directory / "result.glb"
+        return self.directory / final_name(self.directory.name, int(self.settings["faces"]))
+
+    @property
+    def record_path(self) -> Path:
+        return self.result_glb.with_suffix(".retopo-repaint.json")
+
+    def stage_artifact(self, key: str | None) -> Path:
+        """The file that proves a stage ran (see STAGE_ARTIFACTS)."""
+        if key is None:
+            return self.result_glb
+        return worker_module().step_paths(self.result_glb, self.steps_dir)[key]
+
     def emit(self, event: dict[str, Any]) -> None:
         payload = {"elapsed_seconds": round(time.monotonic() - self.started, 1), **event}
         with self.condition:
@@ -342,7 +393,8 @@ class FinishJob:
 
     def append_log(self, line: str) -> None:
         self.log_lines.append(line)
-        with self.directory.joinpath("run.log").open("a", encoding="utf-8") as handle:
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.log_path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
 
 
@@ -372,6 +424,7 @@ class FinishJobManager:
             job = FinishJob(uuid.uuid4().hex, directory)
             try:
                 job.settings = normalise_settings(settings)
+                job.input_dir.mkdir(parents=True, exist_ok=True)
                 job.asset_path.write_bytes(asset)
                 job.image_path.write_bytes(image)
                 views = None if job.settings["skip_photo"] else find_source_views(
@@ -538,12 +591,15 @@ def describe_run(directory: Path) -> dict[str, Any]:
     got — no server memory required, which is the point: jobs live in this process and a
     finished run must still be recoverable after a restart.
     """
+    layout = FinishJob("", directory)
+    settings = _read_json(layout.settings_path)
+    if settings is not None:
+        layout.settings.update(settings)
     complete = [
-        stage for stage, name in STAGE_ARTIFACTS if (directory / name).is_file()
+        stage for stage, key in STAGE_ARTIFACTS if layout.stage_artifact(key).is_file()
     ]
-    result = directory / "result.glb"
-    settings = _read_json(directory / "settings.json")
-    record = _read_json(directory / "result.retopo-repaint.json")
+    result = layout.result_glb
+    record = _read_json(layout.record_path)
     return {
         "directory": directory.name,
         "modified": directory.stat().st_mtime,
@@ -551,11 +607,10 @@ def describe_run(directory: Path) -> dict[str, Any]:
         "finished": result.is_file(),
         "size_bytes": result.stat().st_size if result.is_file() else None,
         "result_url": served_url(result) if result.is_file() else None,
-        "source_url": served_url(directory / "source.glb")
-        if (directory / "source.glb").is_file() else None,
+        "source_url": served_url(layout.asset_path) if layout.asset_path.is_file() else None,
         # A copied-in camera means the source was a Pixal3D run (it faces the other way).
-        "pixal3d": (directory / "source.views" / "transforms.json").is_file(),
-        "record_url": served_url(directory / "result.retopo-repaint.json") if record else None,
+        "pixal3d": (layout.views_dir / "transforms.json").is_file(),
+        "record_url": served_url(layout.record_path) if record else None,
         "seconds": (record or {}).get("seconds"),
         "settings": settings,
         # A finished run has nothing left to resume; one without its sources or its
@@ -563,8 +618,8 @@ def describe_run(directory: Path) -> dict[str, Any]:
         "resumable": (
             not result.is_file()
             and settings is not None
-            and (directory / "source.glb").is_file()
-            and (directory / "source.png").is_file()
+            and layout.asset_path.is_file()
+            and layout.image_path.is_file()
         ),
     }
 
