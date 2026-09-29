@@ -172,3 +172,4 @@
 #finish-view .check { align-items: flex-start; }
 #finish-view .check span { display: flex; flex-direction: column; }
 #finish-view .check small { font-size: 11px; margin-top: 2px; }
+#finish-view .finish-machine-note { color: #e8c37a; font-size: 12px; line-height: 1.45; margin: 4px 0 8px; }

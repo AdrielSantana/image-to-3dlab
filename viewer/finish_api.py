@@ -30,6 +30,8 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 from image_to_3dlab import processes  # noqa: E402
+from image_to_3dlab import blender as blender_lookup  # noqa: E402
+from image_to_3dlab.host import APPLE, host_platform  # noqa: E402
 
 OUTPUT_ROOT = REPO / "output" / "finish"
 # Where generation runs (and their records) live, for matching an uploaded model to the run
@@ -132,6 +134,34 @@ def normalise_settings(raw: dict[str, Any]) -> dict[str, Any]:
         if not low <= number <= high:
             raise ValueError(f"{key} must be within {low}..{high}, got {number}")
         settings[key] = int(number) if key in INTEGER_SETTINGS else number
+    return settings
+
+
+REPAINT_NOTE = ("Repaint runs on Apple Silicon only for now. Here the photo layer still keeps "
+                "the front exact; the sides and back keep the generator's own paint.")
+
+
+def capabilities(platform: str | None = None, find=blender_lookup.find_blender,
+                 version=blender_lookup.blender_version) -> dict[str, Any]:
+    """What Finish can do on this machine, for the page to say before anyone clicks."""
+    repaint = (platform or host_platform()) == APPLE
+    found = find()
+    found_version = version(found) if found else None
+    return {
+        "repaint": repaint,
+        "repaint_note": None if repaint else REPAINT_NOTE,
+        "blender": str(found) if found else None,
+        "blender_version": ".".join(map(str, found_version)) if found_version else None,
+        "blender_problem": (blender_lookup.missing_help() if found is None
+                            else blender_lookup.version_problem(found_version)),
+        "ready": found is not None,
+    }
+
+
+def fit_to_machine(settings: dict[str, Any], platform: str | None = None) -> dict[str, Any]:
+    """Settings this machine can actually run: no repaint off Apple Silicon (it is MLX)."""
+    if (platform or host_platform()) != APPLE:
+        return {**settings, "skip_paint": True}
     return settings
 
 
@@ -423,7 +453,7 @@ class FinishJobManager:
             directory.mkdir(parents=True, exist_ok=False)
             job = FinishJob(uuid.uuid4().hex, directory)
             try:
-                job.settings = normalise_settings(settings)
+                job.settings = fit_to_machine(normalise_settings(settings))
                 job.input_dir.mkdir(parents=True, exist_ok=True)
                 job.asset_path.write_bytes(asset)
                 job.image_path.write_bytes(image)
@@ -460,7 +490,8 @@ class FinishJobManager:
             for required in (job.asset_path, job.image_path):
                 if not required.is_file():
                     raise RuntimeError(f"{name} is missing {required.name}")
-            job.settings = normalise_settings(json.loads(job.settings_path.read_text()))
+            job.settings = fit_to_machine(
+                normalise_settings(json.loads(job.settings_path.read_text())))
             job.resume = True
             self.jobs[job.id] = job
             self.active = job.id

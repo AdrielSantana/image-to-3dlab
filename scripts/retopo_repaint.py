@@ -54,7 +54,16 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO / "scripts"
-BLENDER = Path("/Applications/Blender.app/Contents/MacOS/Blender")
+sys.path.insert(0, str(REPO))
+
+from image_to_3dlab.blender import MAC_APP, find_blender, missing_help  # noqa: E402
+from image_to_3dlab.host import APPLE, host_platform  # noqa: E402
+
+# Only a default for the command builders; main() finds the real one on every OS.
+BLENDER = MAC_APP
+REPAINT_OFF_MAC = ("The repaint runs on Apple Silicon only (it uses MLX). Pass --skip-paint: "
+                   "the photo layer still keeps the front exact, and the sides and back keep "
+                   "the generator's own paint.")
 
 # The viewer's job API parses these to drive its progress panel. Same contract as
 # `scripts/blender_rebind.py`, so one parser serves both.
@@ -178,6 +187,18 @@ def step_paths(output: Path, steps_dir: Path | None = None) -> dict[str, Path]:
     }
 
 
+def preflight(blender: Path | None, skip_paint: bool, platform: str | None = None,
+              find=find_blender) -> tuple[Path | None, str | None]:
+    """(Blender to use, why the run cannot start). Checked before any work: a missing
+    Blender or an off-Mac repaint used to fail minutes in, or with a bare exit code."""
+    blender = blender or find()
+    if blender is None or not blender.is_file():
+        return blender, missing_help()
+    if not skip_paint and (platform or host_platform()) != APPLE:
+        return blender, REPAINT_OFF_MAC
+    return blender, None
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The command-line surface, separately from running it.
 
@@ -230,7 +251,8 @@ def build_parser() -> argparse.ArgumentParser:
              "a run that died in compression must not pay for it twice. Only safe with "
              "the settings the intermediates were made with -- change one and start over",
     )
-    parser.add_argument("--blender", type=Path, default=BLENDER)
+    parser.add_argument("--blender", type=Path, default=None,
+                        help="Blender executable; found automatically when omitted")
     return parser
 
 
@@ -240,6 +262,9 @@ def main() -> int:
     for path in (args.source, args.image):
         if not path.is_file():
             raise SystemExit(f"not found: {path}")
+    args.blender, problem = preflight(args.blender, args.skip_paint)
+    if problem:
+        raise SystemExit(problem)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     stem = args.output.with_suffix("")

@@ -160,4 +160,12 @@ def test_absent_shape_models_are_disabled_rather_than_left_to_fail():
 
 def test_the_finish_tab_rereads_its_runs_on_arrival():
     """A run made while the tab was hidden (CLI, another tab) must show up on return."""
-    assert "if (event.detail?.mode === 'finish') loadRuns();" in FINISH
+    arrival = FINISH.split("if (event.detail?.mode === 'finish') {", 1)[1].split("}", 1)[0]
+    assert "loadRuns();" in arrival
+
+
+def test_the_finish_page_reads_what_the_machine_can_do():
+    assert "/api/finish/capabilities" in FINISH
+    assert "f('finish-repaint').disabled = true;" in FINISH
+    assert "!state.ready" in FINISH
+    assert 'id="finish-machine-note"' in INDEX

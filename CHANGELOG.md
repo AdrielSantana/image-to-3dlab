@@ -27,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`1_retopo.glb` to `4_baked.glb`), and what you started from sits in `input/`. Runs
   made before this keep their old layout and still open and resume.
 
+### Fixed
+- **Finish runs on Linux and Windows (NVIDIA).** It used to look for Blender only where a
+  Mac keeps it, so it failed on every other machine. It now finds Blender on the PATH or
+  in each system's usual folders (`I2L_BLENDER` overrides), and the Finish page says
+  before you start if Blender is missing. The repaint needs Apple Silicon for now, so off
+  a Mac it is skipped: the photo layer still keeps the front exact, and the sides and back
+  keep the generator's own paint. The installers now say if Blender is missing; they
+  never install it.
+- Starting the viewer no longer kills a Finish run that another process is still running
+  (a second viewer, or a script). Only jobs left behind by a crashed session are stopped.
+- Finish's list of past runs refreshes when you open the tab.
+
 ## [0.3.4] - 2026-09-28
 
 ### Added

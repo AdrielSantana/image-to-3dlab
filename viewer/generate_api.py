@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import image_api
 from image_to_3dlab import processes
+from image_to_3dlab.blender import find_blender, missing_help as blender_missing_help
 from image_to_3dlab.host import executable  # image_api put the repo on sys.path
 from rig_api import (
     ARTIFACTS as RIG_ARTIFACTS,
@@ -55,6 +56,7 @@ from finish_api import (
     ARTIFACTS as FINISH_ARTIFACTS,
     FINISH_JOBS,
     cancel_job as cancel_finish_job,
+    capabilities as finish_capabilities,
     list_runs as list_finish_runs,
     run_job as run_finish_job,
     status_payload as finish_status_payload,
@@ -1918,6 +1920,9 @@ class Handler(SimpleHTTPRequestHandler):
             if action in {"result.glb", "manifest.json"}:
                 self._artifact(job_id, action)
                 return
+        if parts == ["api", "finish", "capabilities"]:
+            self._send_json(200, finish_capabilities())
+            return
         if parts == ["api", "finish", "runs"]:
             self._send_json(200, {"runs": list_finish_runs(FINISH_JOBS.output_root)})
             return
@@ -2136,6 +2141,11 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(raw_settings, dict):
                 self._send_json(422, {"error": "settings must be a JSON object"})
                 return
+            # Checked here rather than a minute into the run, where a missing Blender used
+            # to surface as a bare worker exit code.
+            if find_blender() is None:
+                self._send_json(409, {"error": blender_missing_help()})
+                return
             try:
                 job = FINISH_JOBS.create(
                     asset_name, asset["data"], image["data"], raw_settings,
@@ -2207,6 +2217,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json(409, {"error": "setup is running; wait for it to finish"})
                 return
         try:
+            if find_blender() is None:
+                raise RuntimeError(blender_missing_help())
             job = FINISH_JOBS.adopt(name)
         except (RuntimeError, ValueError) as exc:
             self._send_json(409, {"error": str(exc)})

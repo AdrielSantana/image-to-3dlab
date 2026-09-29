@@ -476,3 +476,40 @@ def test_create_writes_inputs_into_the_input_folder(tmp_path):
     adopted = manager.adopt(job.directory.name)
     assert adopted.asset_path == job.asset_path
     assert adopted.result_glb == job.result_glb
+
+
+# --- Finish on machines without MLX or without Blender --------------------------------
+
+def test_the_repaint_is_forced_off_away_from_apple_silicon():
+    settings = finish.normalise_settings({"skip_paint": False})
+    assert finish.fit_to_machine(settings, platform="nvidia")["skip_paint"] is True
+    assert finish.fit_to_machine(settings, platform="apple-silicon")["skip_paint"] is False
+
+
+def test_capabilities_say_what_this_machine_can_do(tmp_path):
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    mac = finish.capabilities("apple-silicon", find=lambda: exe, version=lambda _: (5, 2))
+    assert mac["repaint"] and mac["ready"] and mac["repaint_note"] is None
+    assert mac["blender_version"] == "5.2" and mac["blender_problem"] is None
+
+    nvidia = finish.capabilities("nvidia", find=lambda: exe, version=lambda _: (5, 2))
+    assert not nvidia["repaint"] and nvidia["ready"]
+    assert "front exact" in nvidia["repaint_note"]
+
+
+def test_capabilities_explain_a_missing_or_old_blender(tmp_path):
+    missing = finish.capabilities("nvidia", find=lambda: None, version=lambda _: None)
+    assert not missing["ready"] and "blender.org" in missing["blender_problem"]
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    old = finish.capabilities("nvidia", find=lambda: exe, version=lambda _: (3, 6))
+    assert old["ready"] and "older than" in old["blender_problem"]
+
+
+def test_an_nvidia_run_never_asks_the_worker_for_a_repaint(tmp_path, monkeypatch):
+    monkeypatch.setattr(finish, "host_platform", lambda: "nvidia")
+    manager = finish.FinishJobManager(output_root=tmp_path, generated_root=tmp_path / "none")
+    job = manager.create("fox.glb", b"glb", b"png", {"skip_paint": False})
+    assert job.settings["skip_paint"] is True
+    assert "--skip-paint" in finish.build_command(job, job.settings)

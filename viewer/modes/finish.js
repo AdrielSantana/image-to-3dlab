@@ -32,7 +32,12 @@ const progress = new JobProgressPanel({
   eta: f('finish-overall-eta'),
 });
 
-const state = { asset: null, image: null, jobId: null, running: false, source: null, poll: null };
+const state = {
+  asset: null, image: null, jobId: null, running: false, source: null, poll: null,
+  // Until the server says otherwise, assume Finish can run; a failed capability read must
+  // not lock the page.
+  ready: true,
+};
 
 // Before and after, side by side with synced cameras: the Compare view in an iframe, as the
 // Generate tab embeds its preview. ?restricted=1 strips the app chrome and the add-pane.
@@ -75,11 +80,36 @@ document.addEventListener('viewer:modechange', (event) => {
   setExpanded(false);
   // Runs can land while this tab is hidden (a CLI run, another browser tab), so arriving
   // here re-reads the list rather than showing the one from page load.
-  if (event.detail?.mode === 'finish') loadRuns();
+  if (event.detail?.mode === 'finish') {
+    loadRuns();
+    loadCapabilities();
+  }
 });
 
+/** What Finish can do on this machine: Blender present, and whether the repaint (MLX,
+ * Apple Silicon only) can run. Said on the page, before anyone clicks. */
+export function applyCapabilities(caps) {
+  const note = f('finish-machine-note');
+  state.ready = caps.ready !== false;
+  if (caps.repaint === false) {
+    f('finish-repaint').checked = false;
+    f('finish-repaint').disabled = true;
+    f('finish-repaint-note').textContent = caps.repaint_note || 'Apple Silicon only for now';
+  }
+  note.hidden = !caps.blender_problem;
+  note.textContent = caps.blender_problem || '';
+  updateSubmit();
+}
+
+async function loadCapabilities() {
+  try {
+    const response = await fetch('/api/finish/capabilities');
+    if (response.ok) applyCapabilities(await response.json());
+  } catch (_) { /* an older server without the route: leave the page as it is */ }
+}
+
 function updateSubmit() {
-  f('finish-submit').disabled = !state.asset || !state.image || state.running;
+  f('finish-submit').disabled = !state.asset || !state.image || state.running || !state.ready;
 }
 
 function configureStages(stages) {
@@ -308,3 +338,4 @@ f('finish-submit').onclick = async () => {
 configureStages();
 updateSubmit();
 loadRuns();
+loadCapabilities();
