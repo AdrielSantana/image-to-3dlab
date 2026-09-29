@@ -71,7 +71,12 @@ document.addEventListener('keydown', (event) => {
   }
 });
 // Leaving the Finish tab must not leave a full-window comparison covering the next one.
-document.addEventListener('viewer:modechange', () => setExpanded(false));
+document.addEventListener('viewer:modechange', (event) => {
+  setExpanded(false);
+  // Runs can land while this tab is hidden (a CLI run, another browser tab), so arriving
+  // here re-reads the list rather than showing the one from page load.
+  if (event.detail?.mode === 'finish') loadRuns();
+});
 
 function updateSubmit() {
   f('finish-submit').disabled = !state.asset || !state.image || state.running;

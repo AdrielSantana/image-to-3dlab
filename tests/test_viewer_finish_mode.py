@@ -156,3 +156,8 @@ def test_absent_shape_models_are_disabled_rather_than_left_to_fail():
     assert "not downloaded" in GENERATE
     # And the selection must move off an option it just disabled.
     assert "select.selectedOptions[0]?.disabled" in GENERATE
+
+
+def test_the_finish_tab_rereads_its_runs_on_arrival():
+    """A run made while the tab was hidden (CLI, another tab) must show up on return."""
+    assert "if (event.detail?.mode === 'finish') loadRuns();" in FINISH
