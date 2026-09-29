@@ -257,3 +257,73 @@ def test_the_remover_download_asks_nothing_twice():
     """--yes because the Setup & Status dialog already asked."""
     assert dl.COMMANDS["matte"][-1] == "--yes"
     assert dl.COMMANDS["matte"][1].endswith("bootstrap_matte.py")
+
+
+def _pixal3d_tree(tmp_path, patched: bool, cli_newer: bool):
+    source = tmp_path / "flow_runner.cpp"
+    cli = tmp_path / "trellis-cli"
+    source.write_text("i2l_steps" if patched else "plain")
+    cli.write_text("binary")
+    older, newer = 1_000_000, 2_000_000
+    os.utime(source, (older, older) if cli_newer else (newer, newer))
+    os.utime(cli, (newer, newer) if cli_newer else (older, older))
+    return source, cli
+
+
+def test_an_unpatched_pixal3d_build_is_offered_a_rebuild(tmp_path):
+    source, cli = _pixal3d_tree(tmp_path, patched=False, cli_newer=True)
+    assert "not patched" in dl.rebuild_reason("pixal3d", source, cli)
+
+
+def test_a_patch_not_yet_compiled_in_is_offered_a_rebuild(tmp_path):
+    source, cli = _pixal3d_tree(tmp_path, patched=True, cli_newer=False)
+    assert "older" in dl.rebuild_reason("pixal3d", source, cli)
+
+
+def test_a_patched_current_build_is_left_alone(tmp_path):
+    source, cli = _pixal3d_tree(tmp_path, patched=True, cli_newer=True)
+    assert dl.rebuild_reason("pixal3d", source, cli) is None
+
+
+def test_nothing_installed_or_a_prebuilt_is_never_offered_a_rebuild(tmp_path):
+    """No binary is Set up's job; no source means a prebuilt, which cannot be patched."""
+    source, cli = _pixal3d_tree(tmp_path, patched=False, cli_newer=True)
+    assert dl.rebuild_reason("pixal3d", source, tmp_path / "missing") is None
+    assert dl.rebuild_reason("pixal3d", tmp_path / "missing", cli) is None
+
+
+def test_backends_without_a_rebuild_command_are_never_offered_one(tmp_path):
+    source, cli = _pixal3d_tree(tmp_path, patched=False, cli_newer=True)
+    assert dl.rebuild_reason("hunyuan_xiong", source, cli) is None
+
+
+def test_the_rebuild_command_recompiles_without_downloading_or_asking():
+    command = dl.REBUILDS["pixal3d"]
+    assert {"--build-only", "--rebuild", "--yes"} <= set(command)
+    assert "--weights-only" not in command
+
+
+def test_a_rebuild_runs_the_rebuild_command_not_the_setup_one():
+    import backend_catalog
+
+    run = dl.DownloadRun(backend_catalog.BY_ID["pixal3d"], rebuild=True)
+    assert run.command == dl.REBUILDS["pixal3d"]
+    assert dl.DownloadRun(backend_catalog.BY_ID["pixal3d"]).command == dl.COMMANDS["pixal3d"]
+
+
+def test_a_rebuild_is_refused_for_a_backend_that_has_none(monkeypatch):
+    import backend_catalog
+
+    monkeypatch.setattr(backend_catalog, "host_platform", lambda: "apple")
+    with pytest.raises(RuntimeError, match="no automated rebuild"):
+        dl.start("hunyuan_xiong", rebuild=True)
+
+
+def test_the_catalog_carries_a_rebuild_reason_only_where_the_backend_runs():
+    import generate_api
+
+    catalog = {"backends": [{"id": "pixal3d", "supported_here": True},
+                            {"id": "sf3d", "supported_here": False}]}
+    out = generate_api.with_rebuild_reasons(catalog, reason=lambda backend_id: "stale")
+    assert out["backends"][0]["rebuild_reason"] == "stale"
+    assert out["backends"][1]["rebuild_reason"] is None

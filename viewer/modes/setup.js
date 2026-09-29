@@ -131,6 +131,15 @@ function backendCard(backend) {
     button.onclick = () => confirmDownload(backend, button);
     action.appendChild(button);
   }
+  // An installed build that predates one of this repo's patches (Pixal3D's 8 steps).
+  // Recompiling downloads nothing, so it gets a short question, not the size dialog.
+  if (backend.rebuild_reason && backend.supported_here !== false) {
+    const rebuild = document.createElement('button');
+    rebuild.textContent = 'Rebuild';
+    rebuild.title = 'Recompile with this repo\'s latest fixes. Downloads nothing.';
+    rebuild.onclick = () => confirmRebuild(backend, rebuild);
+    action.appendChild(rebuild);
+  }
   // Reclaiming is about bytes on disk, not about whether the backend works.
   if (backend.bytes_present > 0) action.appendChild(removeButton(backend));
   return card;
@@ -227,6 +236,21 @@ function confirmDownload(backend, button) {
   startDownload(backend, button);
 }
 
+/** Recompile an installed build. Nothing is downloaded, so the question is short. */
+function confirmRebuild(backend, button) {
+  const lines = [
+    `Rebuild ${backend.label}?`,
+    '',
+    'This recompiles the copy you already have so it picks up this repo\'s latest fixes',
+    '(for Pixal3D: 8 sampling steps instead of 12, so runs are faster).',
+    '',
+    'It downloads nothing and takes a few minutes.',
+  ];
+  // eslint-disable-next-line no-alert -- same deliberate confirmation as a download
+  if (!window.confirm(lines.join('\n'))) return;
+  startDownload(backend, button, 'rebuild');
+}
+
 function formatBytes(value) {
   if (value <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -236,12 +260,13 @@ function formatBytes(value) {
   return `${size.toFixed(unit >= 3 ? 1 : 0)} ${units[unit]}`;
 }
 
-async function startDownload(backend, button) {
+async function startDownload(backend, button, action = 'download') {
   button.disabled = true;
   s('setup-run').hidden = false;
   s('setup-run-cancel').hidden = false;
-  s('setup-run-title').textContent =
-    `${backend.setup_fetches_weights ? 'Downloading' : 'Building'} ${backend.label}`;
+  const verb = action === 'rebuild' ? 'Rebuilding'
+    : backend.setup_fetches_weights ? 'Downloading' : 'Building';
+  s('setup-run-title').textContent = `${verb} ${backend.label}`;
   s('setup-run-detail').textContent = 'starting…';
   s('setup-log').textContent = '';
   s('setup-run-bar').style.width = '0%';
@@ -249,7 +274,7 @@ async function startDownload(backend, button) {
   placeRunPanel();
   s('setup-run').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   try {
-    const response = await fetch(`/api/setup/${encodeURIComponent(backend.id)}/download`, {
+    const response = await fetch(`/api/setup/${encodeURIComponent(backend.id)}/${action}`, {
       method: 'POST',
     });
     const payload = await response.json();

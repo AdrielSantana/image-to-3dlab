@@ -47,6 +47,7 @@ from download_api import (
     DOWNLOADS,
     cancel as cancel_download,
     remove as remove_weights,
+    rebuild_reason,
     start as start_download,
     status_payload as download_status_payload,
 )
@@ -248,6 +249,15 @@ def mlx_attention_status(vendor: Path | None = None, dispatch: Path | None = Non
         "ready": patched and package,
         "hint": "; ".join(hints) or None,
     }
+
+
+def with_rebuild_reasons(catalog: dict[str, Any],
+                         reason: Callable[[str], str | None] = rebuild_reason) -> dict[str, Any]:
+    """Say which installed backends want recompiling, so the page can offer a Rebuild
+    button instead of a Terminal command."""
+    for backend in catalog.get("backends", []):
+        backend["rebuild_reason"] = reason(backend["id"]) if backend.get("supported_here") else None
+    return catalog
 
 
 def setup_status() -> dict[str, Any]:
@@ -1645,7 +1655,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "setup", "run"]:
             self._start_setup()
             return
-        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"download", "cancel", "remove"}:
+        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"download", "rebuild", "cancel", "remove"}:
             self._backend_download(parts[2], parts[3])
             return
         if parts == ["api", "generate"]:
@@ -1795,7 +1805,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parts = self._path_parts()
         if parts == ["api", "catalog"]:
-            self._send_json(200, catalog_status())
+            self._send_json(200, with_rebuild_reasons(catalog_status()))
             return
         if parts == ["api", "update-check"]:
             self._send_json(200, update_check())
@@ -2313,7 +2323,7 @@ class Handler(SimpleHTTPRequestHandler):
             if action == "remove":
                 self._send_json(200, remove_weights(backend_id))
                 return
-            start_download(backend_id)
+            start_download(backend_id, rebuild=action == "rebuild")
         except KeyError as exc:
             self._send_json(404, {"error": str(exc)})
             return

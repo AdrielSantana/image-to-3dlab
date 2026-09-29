@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Before and after in Finish.** A finished run opens side by side with the model you
   started from, cameras locked together; every finished run on disk has a **Compare**
   button too.
+- **Rebuild button for Pixal3D** in Setup & Status. It shows when your install predates
+  this repo's latest fixes (such as the 8-step default) and recompiles it in a few
+  minutes, downloading nothing. No Terminal needed.
 
 ## [0.3.4] - 2026-09-28
 

@@ -69,6 +69,35 @@ COMMANDS: dict[str, list[str]] = {
     "matte": [sys.executable, str(REPO / "scripts" / "bootstrap_matte.py"), "--yes"],
 }
 
+# Recompiling an installed build so it picks up this repo's patches (Pixal3D's 8-step
+# default needs scripts/patch_pixal3d_steps.py compiled in). Downloads nothing, so it
+# needs no size confirmation; without it, picking up a patch meant opening Terminal.
+REBUILDS: dict[str, list[str]] = {
+    "pixal3d": [sys.executable, str(REPO / "scripts" / "bootstrap_pixal3d.py"),
+                "--build-only", "--rebuild", "--yes"],
+}
+REBUILD_MINUTES = 5
+
+
+def rebuild_reason(backend_id: str, source: Path | None = None,
+                   cli: Path | None = None) -> str | None:
+    """Why this backend's build should be recompiled, or None when it is fine as it is.
+
+    Only a source build can be rebuilt: no trellis-cli means nothing is installed yet (the
+    Set up button covers that), and no flow_runner.cpp means a prebuilt download, which
+    has no source to patch.
+    """
+    if backend_id not in REBUILDS:
+        return None
+    sys.path.insert(0, str(REPO / "scripts"))
+    import pixal3d_generate
+
+    source = source or pixal3d_generate.FLOW_SOURCE
+    cli = cli or pixal3d_generate.CLI
+    if not cli.is_file() or not source.is_file():
+        return None
+    return pixal3d_generate.steps_problem(pixal3d_generate.FAST_STEPS, source, cli)
+
 
 def strip_ansi(line: str) -> str:
     """Terminal output made readable in a browser.
@@ -134,8 +163,10 @@ def describe_progress(
 class DownloadRun:
     """One bootstrap subprocess, with the SSE surface the other job types use."""
 
-    def __init__(self, backend: Backend):
+    def __init__(self, backend: Backend, rebuild: bool = False):
         self.backend = backend
+        self.rebuild = rebuild
+        self.command = (REBUILDS if rebuild else COMMANDS)[backend.id]
         self.status = "queued"
         self.started = time.monotonic()
         self.events: list[dict[str, Any]] = []
@@ -163,12 +194,13 @@ def active() -> DownloadRun | None:
     return next((r for r in DOWNLOADS.values() if r.status not in TERMINAL), None)
 
 
-def start(backend_id: str) -> DownloadRun:
+def start(backend_id: str, rebuild: bool = False) -> DownloadRun:
     backend = BY_ID.get(backend_id)
     if backend is None:
         raise KeyError(f"unknown backend: {backend_id}")
-    if backend_id not in COMMANDS:
-        raise RuntimeError(f"{backend.label} has no automated setup yet")
+    if backend_id not in (REBUILDS if rebuild else COMMANDS):
+        raise RuntimeError(f"{backend.label} has no automated "
+                           f"{'rebuild' if rebuild else 'setup'} yet")
     # Checked here rather than only in the browser, because the API is the thing that
     # spends someone's bandwidth and an unsupported machine cannot finish the job.
     if not backend.runs_here():
@@ -179,7 +211,7 @@ def start(backend_id: str) -> DownloadRun:
     with LOCK:
         if active() is not None:
             raise RuntimeError("a download is already running")
-        run = DownloadRun(backend)
+        run = DownloadRun(backend, rebuild)
         DOWNLOADS[backend_id] = run
     threading.Thread(target=_run, args=(run,), daemon=True,
                      name=f"download-{backend_id}").start()
@@ -272,21 +304,22 @@ def _missing_executable(program: str) -> str | None:
 
 def _run(run: DownloadRun) -> None:
     run.status = "running"
-    missing = _missing_executable(COMMANDS[run.backend.id][0])
+    missing = _missing_executable(run.command[0])
     if missing is not None:
         run.status = "error"
         run.emit({"phase": "error", "overall_pct": 0, "detail": f"cannot start: {missing}"})
         return
     run.emit({"phase": "queued", "overall_pct": 0,
-              "detail": f"starting · {human_bytes(run.backend.bytes_expected)} expected"})
+              "detail": "starting the rebuild · nothing to download" if run.rebuild else
+                        f"starting · {human_bytes(run.backend.bytes_expected)} expected"})
     stop = threading.Event()
-    if run.backend.setup_fetches_weights:
+    if run.backend.setup_fetches_weights and not run.rebuild:
         threading.Thread(target=_watch_size, args=(run, stop), daemon=True).start()
     else:
         threading.Thread(target=_watch_elapsed, args=(run, stop), daemon=True).start()
     try:
         run.process = subprocess.Popen(
-            COMMANDS[run.backend.id], cwd=str(REPO),
+            run.command, cwd=str(REPO),
             env={**os.environ, "PYTHONUNBUFFERED": "1",
                  # The bars are unreadable in a browser and the size watcher is the real
                  # progress signal, so ask the downloader not to draw them at all.
@@ -324,8 +357,9 @@ def _run(run: DownloadRun) -> None:
         run.status = "done"
         fetched = run.backend.setup_fetches_weights
         run.emit({"phase": "done", "overall_pct": 100,
-                  "detail": f"done · {human_bytes(present)} on disk" if fetched else
-                            "built · weights download on the first generation run"})
+                  "detail": "rebuilt · the next run uses this repo's patches" if run.rebuild
+                  else f"done · {human_bytes(present)} on disk" if fetched else
+                  "built · weights download on the first generation run"})
 
 
 def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
@@ -356,13 +390,14 @@ def _watch_elapsed(run: DownloadRun, stop: threading.Event) -> None:
     against the catalogue's estimate and never claims a stall. Saying "stalled" during a
     healthy hour-long compile is worse than saying nothing.
     """
-    estimate = (run.backend.setup_minutes or 0) * 60
+    estimate = (REBUILD_MINUTES if run.rebuild else run.backend.setup_minutes or 0) * 60
+    what = "rebuilding" if run.rebuild else "building the Metal port"
     while not stop.wait(POLL_SECONDS * 2):
         elapsed = time.monotonic() - run.started
         percent = 0 if estimate <= 0 else max(0, min(95, round(elapsed / estimate * 100)))
         run.emit({
             "phase": "building", "overall_pct": percent,
-            "detail": f"building the Metal port · {int(elapsed // 60)} min elapsed"
+            "detail": f"{what} · {int(elapsed // 60)} min elapsed"
                       + (f" of roughly {estimate // 60:.0f}" if estimate else ""),
         })
 

@@ -130,7 +130,8 @@ def test_the_setup_page_states_cost_and_licence_before_downloading():
     assert "window.confirm(" in SETUP
     assert "will be downloaded from Hugging Face" in SETUP
     assert "Licence:" in SETUP
-    assert "/download" in SETUP and "/cancel" in SETUP
+    assert "action = 'download'" in SETUP and "/cancel" in SETUP
+    assert "startDownload(backend, button, 'rebuild')" in SETUP
 
 
 def test_removing_weights_needs_the_backend_id_typed_out():
