@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-09-30
+
 ### Added
 - **Pixel Match: Finish keeps your picture's real pixels.** Text, logos, numbers and faces
   that a generator or a repaint redraws as lookalikes now come through exactly: every
