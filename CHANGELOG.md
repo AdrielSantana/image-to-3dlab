@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-10-01
+
 ### Fixed
 - **The viewer loads again.** 0.3.5 shipped with a typo in one script that stopped the
   whole app starting: no tabs, Browse did nothing and dropped models downloaded instead of
