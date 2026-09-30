@@ -3,9 +3,9 @@
 // (viewer/finish_api.py), which is a sibling of the rig rebind job, so the SSE-with-polling
 // -fallback shape here matches modes/rig-review.js rather than inventing a second one.
 //
-// Repaint is optional on purpose. A Pixal3D asset arrives with usable colour already, so
-// finishing it is retopologise + compress and takes seconds; a bleached TRELLIS.2 asset
-// needs the paint stage and takes ~6 minutes.
+// Repaint is opt-in (off by default since 0.3.5). A Pixal3D asset arrives painted and Pixel
+// Match (the photo stage) keeps its front exact, so finishing takes seconds and needs no
+// Hunyuan paint weights; the repaint is there for whoever wants the sides redrawn.
 //
 // Every run lives in its own directory under output/finish/ and every stage leaves its
 // artifact there, so the run list below is the recovery path: the job registry is in the
@@ -18,6 +18,8 @@ const STAGE_META = {
   stage_labels: {
     retopologise: 'Retopologise',
     repaint: 'Repaint',
+    photo: 'Pixel Match',
+
     bake: 'Bake detail',
     compress: 'Compress textures',
   },
@@ -30,16 +32,90 @@ const progress = new JobProgressPanel({
   eta: f('finish-overall-eta'),
 });
 
-const state = { asset: null, image: null, jobId: null, running: false, source: null, poll: null };
+const state = {
+  asset: null, image: null, jobId: null, running: false, source: null, poll: null,
+  // Until the server says otherwise, assume Finish can run; a failed capability read must
+  // not lock the page.
+  ready: true,
+};
+
+// Before and after, side by side with synced cameras: the Compare view in an iframe, as the
+// Generate tab embeds its preview. ?restricted=1 strips the app chrome and the add-pane.
+// Pixal3D models face the other way from the viewer's default camera, so a comparison of
+// one starts turned round; the server says which runs had a Pixal3D camera.
+const PIXAL3D_FRONT_AZIMUTH = 200;
+
+export function compareUrl(beforeUrl, afterUrl, facesAway = false) {
+  const q = new URLSearchParams({
+    a: beforeUrl, la: 'Before', b: afterUrl, lb: 'After', restricted: '1',
+  });
+  if (facesAway) q.set('az', String(PIXAL3D_FRONT_AZIMUTH));
+  return `/viewer/index.html?${q}`;
+}
+
+function showCompare(beforeUrl, afterUrl, directory, facesAway = false) {
+  if (!beforeUrl || !afterUrl) return;
+  f('finish-compare-empty').hidden = true;
+  f('finish-compare-frame').hidden = false;
+  f('finish-compare-expand').hidden = false;
+  f('finish-compare-label').textContent = 'Before and after';
+  f('finish-compare-label').title = directory;
+  f('finish-compare-frame').src = compareUrl(
+    beforeUrl, `${afterUrl}?t=${Date.now()}`, facesAway);
+}
+
+function setExpanded(expanded) {
+  f('finish-compare').classList.toggle('expanded', expanded);
+  f('finish-compare-expand').innerHTML = expanded ? '&#x2715; Close' : '&#x2922; Full window';
+}
+f('finish-compare-expand').onclick = () =>
+  setExpanded(!f('finish-compare').classList.contains('expanded'));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && f('finish-compare').classList.contains('expanded')) {
+    setExpanded(false);
+  }
+});
+// Leaving the Finish tab must not leave a full-window comparison covering the next one.
+document.addEventListener('viewer:modechange', (event) => {
+  setExpanded(false);
+  // Runs can land while this tab is hidden (a CLI run, another browser tab), so arriving
+  // here re-reads the list rather than showing the one from page load.
+  if (event.detail?.mode === 'finish') {
+    loadRuns();
+    loadCapabilities();
+  }
+});
+
+/** What Finish can do on this machine: Blender present, and whether the repaint (MLX,
+ * Apple Silicon only) can run. Said on the page, before anyone clicks. */
+export function applyCapabilities(caps) {
+  const note = f('finish-machine-note');
+  state.ready = caps.ready !== false;
+  if (caps.repaint === false) {
+    f('finish-repaint').checked = false;
+    f('finish-repaint').disabled = true;
+    f('finish-repaint-note').textContent = caps.repaint_note || 'Apple Silicon only for now';
+  }
+  note.hidden = !caps.blender_problem;
+  note.textContent = caps.blender_problem || '';
+  updateSubmit();
+}
+
+async function loadCapabilities() {
+  try {
+    const response = await fetch('/api/finish/capabilities');
+    if (response.ok) applyCapabilities(await response.json());
+  } catch (_) { /* an older server without the route: leave the page as it is */ }
+}
 
 function updateSubmit() {
-  f('finish-submit').disabled = !state.asset || !state.image || state.running;
+  f('finish-submit').disabled = !state.asset || !state.image || state.running || !state.ready;
 }
 
 function configureStages(stages) {
   progress.configure({
     stages: stages || STAGE_META.stages.filter(
-      (stage) => stage !== 'repaint' || !f('finish-skip-paint').checked,
+      (stage) => stage !== 'repaint' || f('finish-repaint').checked,
     ),
     stage_labels: STAGE_META.stage_labels,
   });
@@ -76,6 +152,7 @@ function applyEvent(event) {
     f('finish-download').href = event.result_url;
     f('finish-record').href = event.record_url;
     f('finish-where').textContent = `output/finish/${event.directory}/`;
+    showCompare(event.source_url, event.result_url, event.directory, event.pixal3d);
     f('finish-status').textContent =
       `Finished in ${formatDuration(event.elapsed_seconds)} — ` +
       `${(event.size_bytes / 1048576).toFixed(1)} MB`;
@@ -117,7 +194,8 @@ function watch(payload) {
 function runRow(run) {
   const row = document.createElement('div');
   row.className = 'stage-row';
-  const done = run.stages_complete.join(' → ') || 'nothing yet';
+  const done = run.stages_complete
+    .map((stage) => (stage === 'photo' ? 'Pixel Match' : stage)).join(' → ') || 'nothing yet';
   const size = run.size_bytes == null ? '' : ` · ${(run.size_bytes / 1048576).toFixed(1)} MB`;
   row.innerHTML =
     `<span class="stage-dot">${run.finished ? '✓' : '·'}</span>` +
@@ -133,6 +211,14 @@ function runRow(run) {
     link.download = '';
     link.textContent = 'Download';
     actions.appendChild(link);
+    if (run.source_url) {
+      const compare = document.createElement('button');
+      compare.className = 'ghost';
+      compare.textContent = 'Compare';
+      compare.onclick = () => showCompare(
+        run.source_url, run.result_url, run.directory, run.pixal3d);
+      actions.appendChild(compare);
+    }
   }
   if (run.resumable) {
     const button = document.createElement('button');
@@ -167,6 +253,10 @@ async function resume(directory, button) {
   progress.reset();
   configureStages();
   f('finish-result').hidden = true;
+  f('finish-compare-frame').hidden = true;
+  f('finish-compare-empty').hidden = false;
+  f('finish-compare-expand').hidden = true;
+  setExpanded(false);
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = `Resuming ${directory}…`;
   try {
@@ -187,21 +277,21 @@ async function resume(directory, button) {
 
 f('finish-asset').onchange = (event) => {
   state.asset = event.target.files[0] || null;
-  f('finish-asset-name').textContent = state.asset ? state.asset.name : 'no asset chosen';
+  f('finish-asset-name').textContent = state.asset ? state.asset.name : 'no model chosen';
   updateSubmit();
 };
 
 f('finish-image').onchange = (event) => {
   state.image = event.target.files[0] || null;
-  f('finish-image-name').textContent = state.image ? state.image.name : 'no image chosen';
+  f('finish-image-name').textContent = state.image ? state.image.name : 'the picture the model was made from';
   updateSubmit();
 };
 
-f('finish-skip-paint').onchange = () => {
+f('finish-repaint').onchange = () => {
   // Without a repaint the source image is still needed: the worker records it, and the
   // stage list changes, so the panel has to be rebuilt.
   configureStages();
-  f('finish-paint-fields').hidden = f('finish-skip-paint').checked;
+  f('finish-paint-fields').hidden = !f('finish-repaint').checked;
 };
 
 f('finish-runs-refresh').onclick = loadRuns;
@@ -212,6 +302,10 @@ f('finish-submit').onclick = async () => {
   progress.reset();
   configureStages();
   f('finish-result').hidden = true;
+  f('finish-compare-frame').hidden = true;
+  f('finish-compare-empty').hidden = false;
+  f('finish-compare-expand').hidden = true;
+  setExpanded(false);
   f('finish-progress-box').hidden = false;
   f('finish-status').textContent = 'Uploading…';
 
@@ -221,7 +315,8 @@ f('finish-submit').onclick = async () => {
     roughness: Number(f('finish-roughness').value),
     ior: Number(f('finish-ior').value),
     texture_size: Number(f('finish-texture').value),
-    skip_paint: f('finish-skip-paint').checked,
+    skip_paint: !f('finish-repaint').checked,
+    skip_photo: !f('finish-photo').checked,
     paint_res: Number(f('finish-paint-res').value),
     paint_steps: Number(f('finish-paint-steps').value),
   };
@@ -244,3 +339,4 @@ f('finish-submit').onclick = async () => {
 configureStages();
 updateSubmit();
 loadRuns();
+loadCapabilities();

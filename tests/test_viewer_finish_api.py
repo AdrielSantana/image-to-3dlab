@@ -9,6 +9,7 @@ would surface to the user as "worker exited with code 1" several minutes later.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -96,7 +97,7 @@ def test_the_command_carries_every_setting():
 
 def test_skip_flags_appear_only_when_asked():
     job = finish.FinishJob("0" * 32, Path("/tmp/finish-job"))
-    plain = finish.build_command(job, finish.normalise_settings({}))
+    plain = finish.build_command(job, finish.normalise_settings({"skip_paint": False}))
     assert "--skip-paint" not in plain
     assert "--skip-compress" not in plain
 
@@ -115,7 +116,7 @@ def test_the_bake_has_a_band_between_repaint_and_compress():
 
 def test_the_worker_and_the_viewer_agree_on_the_stage_order():
     """One stage plan, imported from the worker, and the resume table must follow it."""
-    plan = finish.worker_module().stage_plan(False, False)
+    plan = finish.worker_module().stage_plan(False, False, photo=True)
     assert [stage for stage, _ in finish.STAGE_ARTIFACTS] == plan
     assert set(plan) == set(finish.STAGE_WEIGHTS)
 
@@ -335,3 +336,195 @@ def test_job_ids_are_validated_before_lookup():
     assert manager.get("../../etc/passwd") is None
     assert manager.get("not-a-job-id") is None
     assert manager.get("0" * 32) is None  # well-formed but unknown
+
+
+# --- The photo stage: match the upload to its Pixal3D run, copy its camera in -------------
+
+
+def _pixal3d_run(root, glb_bytes=b"glb-bytes"):
+    import hashlib
+    run = root / "seb" / "robot__pixal3d__1"
+    views = run / "robot__pixal3d__1.svviews"
+    views.mkdir(parents=True)
+    (views / "transforms.json").write_text('{"frames": []}')
+    glb = run / "robot__pixal3d__1.glb"
+    glb.write_bytes(glb_bytes)
+    (run / "robot__pixal3d__1.json").write_text(json.dumps({
+        "backend": "pixal3d",
+        "output": {"path": str(glb), "sha256": hashlib.sha256(glb_bytes).hexdigest()},
+    }))
+    return views
+
+
+def test_an_uploaded_pixal3d_model_finds_its_camera(tmp_path):
+    views = _pixal3d_run(tmp_path)
+    assert finish.find_source_views(b"glb-bytes", tmp_path) == views
+
+
+def test_a_model_with_no_matching_run_gets_no_camera(tmp_path):
+    _pixal3d_run(tmp_path)
+    assert finish.find_source_views(b"edited-or-foreign", tmp_path) is None
+
+
+def test_the_camera_is_copied_into_the_run_and_passed_to_the_worker(tmp_path):
+    _pixal3d_run(tmp_path / "generated")
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"glb-bytes", b"png", {})
+    assert (job.views_dir / "transforms.json").is_file()
+    command = finish.build_command(job, job.settings)
+    assert command[command.index("--views") + 1] == str(job.views_dir)
+
+
+def test_skipping_the_photo_leaves_the_camera_out(tmp_path):
+    _pixal3d_run(tmp_path / "generated")
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"glb-bytes", b"png", {"skip_photo": True})
+    assert not job.views_dir.exists()
+    assert "--views" not in finish.build_command(job, job.settings)
+
+
+def test_a_finished_run_offers_its_source_for_comparison(tmp_path):
+    run = tmp_path / "robot__finish__20260928-120000"
+    run.mkdir()
+    for name in ("source.glb", "source.png", "result.glb"):
+        (run / name).write_bytes(b"x")
+    described = finish.describe_run(run)
+    assert described["source_url"] is None or described["source_url"].endswith("source.glb")
+
+
+# --- Run folder layout (0.3.5): the finished model is the only GLB at the top ----------
+
+@pytest.mark.parametrize("faces, label", [
+    (5000, "5k"), (40000, "40k"), (12500, "12.5k"), (800, "800"), (1000, "1k"),
+])
+def test_face_counts_are_named_the_way_people_say_them(faces, label):
+    assert finish.faces_label(faces) == label
+
+
+def test_the_final_model_is_named_after_the_asset_and_its_faces():
+    assert finish.final_name("vanguard__pixal3d__finish__20260929-101010", 5000) == "vanguard_5k.glb"
+    assert finish.final_name("fox__finish__20260921-122518", 40000) == "fox_40k.glb"
+
+
+def test_a_new_run_keeps_inputs_and_steps_out_of_the_top_folder(tmp_path):
+    job = finish.FinishJob("0" * 32, tmp_path / "vanguard__pixal3d__finish__20260929-101010")
+    job.settings = finish.normalise_settings({"faces": 5000})
+
+    assert not job.legacy
+    assert job.result_glb.name == "vanguard_5k.glb"
+    assert job.result_glb.parent == job.directory
+    assert job.record_path.name == "vanguard_5k.retopo-repaint.json"
+    assert job.asset_path == job.directory / "input" / "source.glb"
+    assert job.image_path == job.directory / "input" / "source.png"
+    assert job.views_dir == job.directory / "input" / "source.views"
+    assert job.settings_path == job.directory / "input" / "settings.json"
+    assert job.log_path == job.directory / "steps" / "run.log"
+    assert job.stage_artifact("retopo") == job.directory / "steps" / "1_retopo.glb"
+    assert job.stage_artifact("baked") == job.directory / "steps" / "4_baked.glb"
+    assert job.stage_artifact(None) == job.result_glb
+
+
+def test_a_new_run_tells_the_worker_where_the_steps_go(tmp_path):
+    job = finish.FinishJob("0" * 32, tmp_path / "fox__finish__20260929-101010")
+    command = finish.build_command(job, finish.normalise_settings({}))
+    assert command[command.index("--steps-dir") + 1] == str(job.directory / "steps")
+
+
+def test_an_old_flat_run_keeps_its_old_names_and_no_steps_folder(tmp_path):
+    directory = _run_dir(tmp_path, "fox__finish__20260921-122518", {"source.glb": "g"})
+    job = finish.FinishJob("0" * 32, directory)
+    assert job.legacy
+    assert job.result_glb == directory / "result.glb"
+    assert job.record_path == directory / "result.retopo-repaint.json"
+    assert job.stage_artifact("painted") == directory / "result_painted.glb"
+    assert "--steps-dir" not in finish.build_command(job, finish.normalise_settings({}))
+
+
+def test_a_new_run_is_described_and_resumable_from_disk(tmp_path):
+    name = "vanguard__pixal3d__finish__20260929-101010"
+    directory = tmp_path / name
+    for relative, contents in {
+        "input/source.glb": "g", "input/source.png": "p",
+        "input/settings.json": json.dumps({"faces": 5000}),
+        "steps/1_retopo.glb": "r", "steps/2_painted.glb": "a",
+    }.items():
+        (directory / relative).parent.mkdir(parents=True, exist_ok=True)
+        (directory / relative).write_text(contents)
+
+    described = finish.describe_run(directory)
+    assert described["stages_complete"] == ["retopologise", "repaint"]
+    assert described["resumable"] is True
+    assert described["finished"] is False
+
+    (directory / "vanguard_5k.glb").write_text("done")
+    described = finish.describe_run(directory)
+    assert described["finished"] is True
+    assert described["resumable"] is False
+    assert described["result_url"] is None or described["result_url"].endswith("/vanguard_5k.glb")
+
+
+def test_create_writes_inputs_into_the_input_folder(tmp_path):
+    manager = finish.FinishJobManager(output_root=tmp_path, generated_root=tmp_path / "none")
+    job = manager.create("vanguard__pixal3d.glb", b"glb", b"png", {"faces": 5000})
+    assert (job.directory / "input" / "source.glb").read_bytes() == b"glb"
+    assert (job.directory / "input" / "source.png").read_bytes() == b"png"
+    assert (job.directory / "input" / "settings.json").is_file()
+    assert job.result_glb.name == "vanguard_5k.glb"
+    assert [p.name for p in job.directory.iterdir()] == ["input"]
+    # And it resumes: the adopted job finds the same files.
+    manager.finish(job)
+    adopted = manager.adopt(job.directory.name)
+    assert adopted.asset_path == job.asset_path
+    assert adopted.result_glb == job.result_glb
+
+
+# --- Finish on machines without MLX or without Blender --------------------------------
+
+def test_the_repaint_is_forced_off_away_from_apple_silicon():
+    settings = finish.normalise_settings({"skip_paint": False})
+    assert finish.fit_to_machine(settings, platform="nvidia")["skip_paint"] is True
+    assert finish.fit_to_machine(settings, platform="apple-silicon")["skip_paint"] is False
+
+
+def test_capabilities_say_what_this_machine_can_do(tmp_path):
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    mac = finish.capabilities("apple-silicon", find=lambda: exe, version=lambda _: (5, 2))
+    assert mac["repaint"] and mac["ready"] and mac["repaint_note"] is None
+    assert mac["blender_version"] == "5.2" and mac["blender_problem"] is None
+
+    nvidia = finish.capabilities("nvidia", find=lambda: exe, version=lambda _: (5, 2))
+    assert not nvidia["repaint"] and nvidia["ready"]
+    assert "front exact" in nvidia["repaint_note"]
+
+
+def test_capabilities_explain_a_missing_or_old_blender(tmp_path):
+    missing = finish.capabilities("nvidia", find=lambda: None, version=lambda _: None)
+    assert not missing["ready"] and "blender.org" in missing["blender_problem"]
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    old = finish.capabilities("nvidia", find=lambda: exe, version=lambda _: (3, 6))
+    assert old["ready"] and "older than" in old["blender_problem"]
+
+
+def test_an_nvidia_run_never_asks_the_worker_for_a_repaint(tmp_path, monkeypatch):
+    monkeypatch.setattr(finish, "host_platform", lambda: "nvidia")
+    manager = finish.FinishJobManager(output_root=tmp_path, generated_root=tmp_path / "none")
+    job = manager.create("fox.glb", b"glb", b"png", {"skip_paint": False})
+    assert job.settings["skip_paint"] is True
+    assert "--skip-paint" in finish.build_command(job, job.settings)
+
+
+def test_repaint_is_opt_in_so_finish_never_needs_the_hunyuan_paint_weights():
+    """Quick finish by default (0.3.5): Pixal3D models arrive painted, Pixel Match keeps the
+    front exact, and nobody should download 8.7 GB of Hunyuan paint to finish one."""
+    assert finish.DEFAULT_SETTINGS["skip_paint"] is True
+    assert finish.normalise_settings({})["skip_paint"] is True
+    assert finish.normalise_settings({"skip_paint": False})["skip_paint"] is False
+
+
+def test_the_finish_page_calls_it_pixel_match():
+    from pathlib import Path
+    html = Path("viewer/index.html").read_text()
+    assert "Pixel Match" in html
+    assert 'id="finish-repaint" type="checkbox" checked' not in html

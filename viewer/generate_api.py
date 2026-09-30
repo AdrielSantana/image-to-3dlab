@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import image_api
 from image_to_3dlab import processes
+from image_to_3dlab.blender import find_blender, missing_help as blender_missing_help
 from image_to_3dlab.host import executable  # image_api put the repo on sys.path
 from rig_api import (
     ARTIFACTS as RIG_ARTIFACTS,
@@ -47,6 +48,7 @@ from download_api import (
     DOWNLOADS,
     cancel as cancel_download,
     remove as remove_weights,
+    rebuild_reason,
     start as start_download,
     status_payload as download_status_payload,
 )
@@ -54,6 +56,7 @@ from finish_api import (
     ARTIFACTS as FINISH_ARTIFACTS,
     FINISH_JOBS,
     cancel_job as cancel_finish_job,
+    capabilities as finish_capabilities,
     list_runs as list_finish_runs,
     run_job as run_finish_job,
     status_payload as finish_status_payload,
@@ -248,6 +251,15 @@ def mlx_attention_status(vendor: Path | None = None, dispatch: Path | None = Non
         "ready": patched and package,
         "hint": "; ".join(hints) or None,
     }
+
+
+def with_rebuild_reasons(catalog: dict[str, Any],
+                         reason: Callable[[str], str | None] = rebuild_reason) -> dict[str, Any]:
+    """Say which installed backends want recompiling, so the page can offer a Rebuild
+    button instead of a Terminal command."""
+    for backend in catalog.get("backends", []):
+        backend["rebuild_reason"] = reason(backend["id"]) if backend.get("supported_here") else None
+    return catalog
 
 
 def setup_status() -> dict[str, Any]:
@@ -868,7 +880,7 @@ def _write_pid_file(directory: Path, pid: int) -> None:
     dying (memory-only Job/JobManager state does not) -- see _reconcile_orphaned_jobs,
     which reads this file back on the next server startup to find and clean up jobs
     whose tracker died mid-run."""
-    _pid_file_path(directory).write_text(str(pid))
+    _pid_file_path(directory).write_text(processes.pid_record(pid))
 
 
 def _remove_pid_file(directory: Path) -> None:
@@ -882,6 +894,10 @@ def _killpg_if_alive(pid: int) -> None:
 
 def _process_group_alive(pid: int) -> bool:
     return processes.group_alive(pid)
+
+
+def _process_alive(pid: int) -> bool:
+    return processes.process_alive(pid)
 
 
 def _terminate_active_job() -> None:
@@ -906,8 +922,10 @@ def _reconcile_orphaned_jobs(output_root: Path) -> list[str]:
     failure shape as the leather_satchel/jesus_chibi incidents on 2026-08-20. Call once at
     server startup, before serving.
 
-    For each leftover <job-dir>/pid: if that process group is still running, it's an actual
-    ghost (nobody has been tracking it since the old server died) -- kill it. Either way,
+    For each leftover <job-dir>/pid: if the process that started the job is still alive
+    (another viewer, or a script driving the Finish code), the job is not an orphan and is
+    left alone. Otherwise, if that process group is still running, it's an actual ghost
+    (nobody has been tracking it since the old server died) -- kill it. Either way,
     annotate that job's run.log so it stops trailing off silently, and remove the pid file
     since this server now owns (or has just closed out) that job's fate.
 
@@ -916,9 +934,11 @@ def _reconcile_orphaned_jobs(output_root: Path) -> list[str]:
     for pid_file in sorted(output_root.rglob("pid")):
         directory = pid_file.parent
         try:
-            pid = int(pid_file.read_text().strip())
+            pid, owner = processes.parse_pid_record(pid_file.read_text())
         except (OSError, ValueError):
             pid_file.unlink(missing_ok=True)
+            continue
+        if owner is not None and owner != os.getpid() and _process_alive(owner):
             continue
         alive = _process_group_alive(pid)
         if alive:
@@ -926,8 +946,10 @@ def _reconcile_orphaned_jobs(output_root: Path) -> list[str]:
             note = "orphaned generation from a previous server session, terminated on restart"
         else:
             note = "server died mid-run (previous session) -- job status unknown, treat as failed"
-        log_path = directory / "run.log"
-        if log_path.is_file():
+        # Finish runs from 0.3.5 keep their log in steps/.
+        log_path = next((path for path in (directory / "run.log", directory / "steps" / "run.log")
+                         if path.is_file()), None)
+        if log_path is not None:
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(note + "\n")
         pid_file.unlink(missing_ok=True)
@@ -1645,7 +1667,7 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "setup", "run"]:
             self._start_setup()
             return
-        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"download", "cancel", "remove"}:
+        if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"download", "rebuild", "cancel", "remove"}:
             self._backend_download(parts[2], parts[3])
             return
         if parts == ["api", "generate"]:
@@ -1795,7 +1817,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parts = self._path_parts()
         if parts == ["api", "catalog"]:
-            self._send_json(200, catalog_status())
+            self._send_json(200, with_rebuild_reasons(catalog_status()))
             return
         if parts == ["api", "update-check"]:
             self._send_json(200, update_check())
@@ -1898,6 +1920,9 @@ class Handler(SimpleHTTPRequestHandler):
             if action in {"result.glb", "manifest.json"}:
                 self._artifact(job_id, action)
                 return
+        if parts == ["api", "finish", "capabilities"]:
+            self._send_json(200, finish_capabilities())
+            return
         if parts == ["api", "finish", "runs"]:
             self._send_json(200, {"runs": list_finish_runs(FINISH_JOBS.output_root)})
             return
@@ -2116,6 +2141,11 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(raw_settings, dict):
                 self._send_json(422, {"error": "settings must be a JSON object"})
                 return
+            # Checked here rather than a minute into the run, where a missing Blender used
+            # to surface as a bare worker exit code.
+            if find_blender() is None:
+                self._send_json(409, {"error": blender_missing_help()})
+                return
             try:
                 job = FINISH_JOBS.create(
                     asset_name, asset["data"], image["data"], raw_settings,
@@ -2187,6 +2217,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json(409, {"error": "setup is running; wait for it to finish"})
                 return
         try:
+            if find_blender() is None:
+                raise RuntimeError(blender_missing_help())
             job = FINISH_JOBS.adopt(name)
         except (RuntimeError, ValueError) as exc:
             self._send_json(409, {"error": str(exc)})
@@ -2313,7 +2345,7 @@ class Handler(SimpleHTTPRequestHandler):
             if action == "remove":
                 self._send_json(200, remove_weights(backend_id))
                 return
-            start_download(backend_id)
+            start_download(backend_id, rebuild=action == "rebuild")
         except KeyError as exc:
             self._send_json(404, {"error": str(exc)})
             return

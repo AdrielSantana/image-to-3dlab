@@ -72,7 +72,7 @@ def test_the_mlx_attention_choice_is_still_offered():
 
 def test_skipping_the_repaint_hides_only_the_paint_fields():
     assert "finish-paint-fields" in _element_ids(INDEX)
-    assert "f('finish-paint-fields').hidden = f('finish-skip-paint').checked;" in FINISH
+    assert "f('finish-paint-fields').hidden = !f('finish-repaint').checked;" in FINISH
 
 
 def test_every_progress_track_has_a_styled_fill():
@@ -130,7 +130,8 @@ def test_the_setup_page_states_cost_and_licence_before_downloading():
     assert "window.confirm(" in SETUP
     assert "will be downloaded from Hugging Face" in SETUP
     assert "Licence:" in SETUP
-    assert "/download" in SETUP and "/cancel" in SETUP
+    assert "action = 'download'" in SETUP and "/cancel" in SETUP
+    assert "startDownload(backend, button, 'rebuild')" in SETUP
 
 
 def test_removing_weights_needs_the_backend_id_typed_out():
@@ -155,3 +156,16 @@ def test_absent_shape_models_are_disabled_rather_than_left_to_fail():
     assert "not downloaded" in GENERATE
     # And the selection must move off an option it just disabled.
     assert "select.selectedOptions[0]?.disabled" in GENERATE
+
+
+def test_the_finish_tab_rereads_its_runs_on_arrival():
+    """A run made while the tab was hidden (CLI, another tab) must show up on return."""
+    arrival = FINISH.split("if (event.detail?.mode === 'finish') {", 1)[1].split("}", 1)[0]
+    assert "loadRuns();" in arrival
+
+
+def test_the_finish_page_reads_what_the_machine_can_do():
+    assert "/api/finish/capabilities" in FINISH
+    assert "f('finish-repaint').disabled = true;" in FINISH
+    assert "!state.ready" in FINISH
+    assert 'id="finish-machine-note"' in INDEX

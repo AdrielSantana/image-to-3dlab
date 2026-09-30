@@ -7,7 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Pixel Match: Finish keeps your picture's real pixels.** Text, logos, numbers and faces
+  that a generator or a repaint redraws as lookalikes now come through exactly: every
+  surface the picture can see takes its real pixel. On by default for Pixal3D models made
+  on this machine (their camera is found automatically); untick **Pixel Match** to turn it
+  off. Also available as `scripts/photo_paint.py`.
+- **Before and after in Finish.** A finished run opens side by side with the model you
+  started from, cameras locked together; every finished run on disk has a **Compare**
+  button too.
+- **Rebuild button for Pixal3D** in Setup & Status. It shows when your install predates
+  this repo's latest fixes (such as the 8-step default) and recompiles it in a few
+  minutes, downloading nothing. No Terminal needed.
+- **Blender shows in Setup & Status**, found or not, with where to get it. Finish and the
+  rig tools need it; the viewer never installs it for you.
+
+### Changed
+- **Finish no longer repaints by default.** Pixal3D models arrive painted and Pixel Match
+  keeps the front exact, so a finish takes seconds instead of minutes and needs no extra
+  download. **Also repaint the sides and back** is still there (Apple Silicon, needs the
+  8.7 GB Hunyuan paint weights).
+- **Pixal3D setup brings BiRefNet-lite** (224 MB), the background remover. Without it the
+  cut-out fell back to u2net, which eats thin and light-coloured parts; on a fresh Linux
+  install it took a white robot's upper arms. The download is listed before you agree.
+- **Mac-only routes point NVIDIA users somewhere.** TRELLIS.2 and Hunyuan3D say "Mac port
+  here" and link the official NVIDIA version, instead of a bare "needs Apple Silicon".
+- **TRELLIS.2 warns about its gated DINOv3 encoder up front** (Hugging Face login plus
+  Meta's approval), so nobody waits out a 14 GB download to hit a login error.
+- **Finish runs are easier to read.** The finished model is the only GLB at the top of
+  the run folder, named after the asset and its face count (`vanguard_5k.glb`). The
+  in-between models sit in `steps/`, numbered in the order they were made
+  (`1_retopo.glb` to `4_baked.glb`), and what you started from sits in `input/`. Runs
+  made before this keep their old layout and still open and resume.
+
 ### Fixed
+- **Finish runs on Linux and Windows (NVIDIA).** It used to look for Blender only where a
+  Mac keeps it, so it failed on every other machine. It now finds Blender on the PATH or
+  in each system's usual folders (`I2L_BLENDER` overrides), and the Finish page says
+  before you start if Blender is missing. The repaint needs Apple Silicon for now, so off
+  a Mac it is skipped: the photo layer still keeps the front exact, and the sides and back
+  keep the generator's own paint. The installers now say if Blender is missing; they
+  never install it.
+- Starting the viewer no longer kills a Finish run that another process is still running
+  (a second viewer, or a script). Only jobs left behind by a crashed session are stopped.
+- Finish's list of past runs refreshes when you open the tab.
 - **Hunyuan3D-MLX paint now works on a fresh install.** The weight downloader fetched
   paint from Tencent's repo, which is missing two files paint needs and ships a third in
   the wrong format, so a new install could make shapes but not paint them. It now fetches

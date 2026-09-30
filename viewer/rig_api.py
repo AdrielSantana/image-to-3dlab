@@ -18,11 +18,11 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from image_to_3dlab import processes  # noqa: E402
+from image_to_3dlab.blender import find_blender  # noqa: E402
 from image_to_3dlab.rig_sidecar import load_sidecar, plan_corrections, verify_asset, verify_scene  # noqa: E402
 
 OUTPUT_ROOT = REPO / "output" / "rig-rebind"
 WORKER = REPO / "scripts" / "blender_rebind.py"
-DEFAULT_BLENDER = Path("/Applications/Blender.app/Contents/MacOS/Blender")
 JOB_ID = re.compile(r"^[0-9a-f]{32}$")
 TERMINAL = {"done", "error", "cancelled"}
 ARTIFACTS = {
@@ -34,14 +34,7 @@ ARTIFACTS = {
 
 
 def blender_executable() -> Path | None:
-    configured = os.environ.get("I2L_BLENDER")
-    if configured:
-        path = Path(configured).expanduser()
-        return path if path.is_file() else None
-    on_path = shutil.which("blender")
-    if on_path:
-        return Path(on_path)
-    return DEFAULT_BLENDER if DEFAULT_BLENDER.is_file() else None
+    return find_blender()
 
 
 class RigJob:

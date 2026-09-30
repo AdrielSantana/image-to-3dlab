@@ -199,3 +199,13 @@ def test_windows_installer_gets_cuda_pytorch_before_the_requirements():
     # Only on a machine with a GPU, and only when the installed torch lacks CUDA, so an
     # update does not re-download a few GB every time.
     assert "if ($HasGpu)" in ps1 and "-not $TorchHasCuda" in ps1
+
+
+def test_both_installers_look_for_blender_with_finishs_own_finder_and_never_install_it():
+    """Finish needs Blender; the installers say so when it is missing, using the same lookup
+    Finish uses, and leave installing a 400 MB application to the user."""
+    for path in (SCRIPT, REPO / "install.ps1"):
+        text = path.read_text()
+        assert "from image_to_3dlab.blender import find_blender" in text
+        assert "blender.org/download" in text
+        assert "apt install blender" not in text and "winget install" not in text

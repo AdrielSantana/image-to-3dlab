@@ -17,13 +17,15 @@
 <body>
 <div id="mode-switch">
   <button id="brand" class="brand" title="Welcome, and what's new">image-to-3dlab</button>
-  <button id="mode-setup" class="mode" title="What is installed, what it costs on disk">Setup &amp; Status</button>
   <button id="mode-compare" class="mode on">Compare</button>
   <button id="mode-generate-image" class="mode" title="No source image? Write a prompt and make one">Generate Image</button>
   <button id="mode-generate" class="mode" title="Turn an image into a 3D mesh">Generate 3D</button>
-  <button id="mode-finish" class="mode" title="Retopologise, repaint and compress an existing asset">Finish</button>
+  <button id="mode-finish" class="mode" title="Retopologise, Pixel Match and compress an existing asset">Finish</button>
   <button id="mode-rig" class="mode" title="Correct the rest skeleton">Rig Edit</button>
   <button id="mode-animate" class="mode" title="Pose and animate the bound skeleton">Pose</button>
+  <!-- Everyday tools on the left; setup and About, used rarely, pushed to the right. -->
+  <span class="mode-spacer"></span>
+  <button id="mode-setup" class="mode" title="What is installed, what it costs on disk">Setup &amp; Status</button>
   <button id="mode-about" class="mode" title="Who we are, what runs on this machine, and what's new">About</button>
 </div>
 <div id="update-banner" role="status" hidden>
@@ -35,7 +37,7 @@
 </div>
 <section id="compare-view">
 <div id="bar">
-  <button id="add" title="add another pane, side by side">＋ add pane <span id="addcount">(0/3)</span></button>
+  <button id="add" title="add another pane, side by side">＋ add pane <span id="addcount">(0/4)</span></button>
   <div class="sep"></div>
   <span class="lbl">culling</span>
   <button id="cull" class="on">backface ON</button>
@@ -57,7 +59,7 @@
 <div id="panes"></div>
 <div id="drop">
   <div class="zone">
-    <div class="big">Drop up to 3 models or images here</div>
+    <div class="big">Drop up to 4 models or images here</div>
     <div class="sub">or click to browse. Models: GLB · GLTF · OBJ. Source image: PNG · JPG · WebP.
       Drag a whole folder (or select every file) to bring a .gltf's .bin and textures with it.
       Drop an image <b>onto a loaded model</b> to overlay it for alignment.</div>
@@ -160,8 +162,8 @@
         <div class="field"><label for="image-cfg">Guidance (cfg)</label>
           <input id="image-cfg" type="number" min="0" max="20" step="0.5" value="1">
           <small><strong>Leave this at 1.</strong> This model does not use guidance, so
-            anything above 1 makes it do two passes per step for no benefit. Measured: 17
-            minutes at cfg 6 against 11 at cfg 1, for the same picture.</small></div>
+            anything above 1 makes it do two passes per step for no benefit. In our test, cfg 6
+            took about half as long again as cfg 1, for the same picture.</small></div>
         <div class="field"><label for="image-sampler">Sampler</label>
           <select id="image-sampler"><option value="euler" selected>euler</option>
             <option value="euler_a">euler_a</option><option value="heun">heun</option>
@@ -355,76 +357,93 @@
 </section>
 
 <section id="finish-view" hidden>
-  <div class="generate-card" style="max-width:720px; margin:16px auto;">
-    <h2 style="margin-top:0">Finish an asset</h2>
-    <p style="font-size:12px; opacity:.75; margin-top:4px">
-      Retopologise, optionally repaint from the source art, and compress the textures.
-      Pixal3D output usually needs no repaint &mdash; untick it and this takes seconds.
-      A bleached TRELLIS.2 asset does, and that costs about six minutes.
-    </p>
+  <div class="generate-grid finish-grid">
+    <div class="finish-left">
+    <div class="generate-card">
+      <h2>Finish a model</h2>
+      <p>Make a generated model game-ready: fewer triangles, better paint, a smaller file.</p>
 
-    <div class="field"><label for="finish-asset">Asset (.glb)</label>
-      <input id="finish-asset" type="file" accept=".glb,model/gltf-binary">
-      <small id="finish-asset-name">no asset chosen</small></div>
-    <div class="field"><label for="finish-image">Source art</label>
-      <input id="finish-image" type="file" accept="image/png,image/jpeg,image/webp">
-      <small id="finish-image-name">no image chosen</small></div>
+      <div class="field"><label for="finish-asset">Model (.glb)</label>
+        <input id="finish-asset" type="file" accept=".glb,model/gltf-binary">
+        <small id="finish-asset-name">no model chosen</small></div>
+      <div class="field"><label for="finish-image">Source image</label>
+        <input id="finish-image" type="file" accept="image/png,image/jpeg,image/webp">
+        <small id="finish-image-name">the picture the model was made from</small></div>
+      <div class="field"><label for="finish-faces">Triangles</label>
+        <select id="finish-faces">
+          <option value="5000">5,000 &middot; very low</option>
+          <option value="15000">15,000 &middot; light</option>
+          <option value="40000" selected>40,000 &middot; game-ready</option>
+          <option value="100000">100,000 &middot; detailed</option>
+        </select></div>
 
-    <div class="field"><label for="finish-faces">Face target</label>
-      <input id="finish-faces" type="number" step="1000" min="1000" max="200000" value="40000">
-      <small>Counted in triangles. Quadriflow declines these meshes, so it falls back to
-        collapse decimation after a voxel remesh.</small></div>
-    <div class="field"><label for="finish-texture">Texture size</label>
-      <select id="finish-texture"><option>1024</option><option selected>2048</option><option>4096</option></select>
-      <small>The paint stage emits uncompressed 4096&sup2; PNGs; 2048 JPEG is usually
-        indistinguishable and about a tenth the size.</small></div>
+      <p id="finish-machine-note" class="finish-machine-note" hidden></p>
+      <label class="check"><input id="finish-photo" type="checkbox" checked>
+        <span>Pixel Match
+        <small>keeps your picture's real pixels: sharp text, logos and faces &middot; Pixal3D models made here</small></span></label>
+      <label class="check"><input id="finish-repaint" type="checkbox">
+        <span>Also repaint the sides and back
+        <small id="finish-repaint-note">optional &middot; needs the Hunyuan paint weights (8.7 GB) &middot; the slow step</small></span></label>
 
-    <div class="field"><label for="finish-metallic">Metallic</label>
-      <input id="finish-metallic" type="number" step="0.001" min="0" max="1" value="0.25"></div>
-    <div class="field"><label for="finish-roughness">Roughness</label>
-      <input id="finish-roughness" type="number" step="0.001" min="0" max="1" value="0.65"></div>
-    <div class="field"><label for="finish-ior">IOR</label>
-      <input id="finish-ior" type="number" step="0.01" min="1" max="3" value="1.45">
-      <small>Only base colour is baked, so these stand in for the source's material.
-        Tune them by eye for each asset.</small></div>
+      <details class="image-advanced">
+        <summary>Advanced</summary>
+        <div class="field"><label for="finish-texture">Texture size</label>
+          <select id="finish-texture"><option>1024</option><option selected>2048</option><option>4096</option></select></div>
+        <div class="field"><label for="finish-metallic">Metallic</label>
+          <input id="finish-metallic" type="number" step="0.001" min="0" max="1" value="0.25"></div>
+        <div class="field"><label for="finish-roughness">Roughness</label>
+          <input id="finish-roughness" type="number" step="0.001" min="0" max="1" value="0.65"></div>
+        <div class="field"><label for="finish-ior">IOR</label>
+          <input id="finish-ior" type="number" step="0.01" min="1" max="3" value="1.45">
+          <small>Stand-ins for the surface until the detail bake replaces them.</small></div>
+        <div id="finish-paint-fields" hidden>
+          <div class="field"><label for="finish-paint-res">Paint resolution</label>
+            <select id="finish-paint-res"><option selected>512</option><option>768</option><option>1024</option></select></div>
+          <div class="field"><label for="finish-paint-steps">Paint steps</label>
+            <input id="finish-paint-steps" type="number" step="1" min="1" max="50" value="15"></div>
+        </div>
+      </details>
 
-    <label class="check"><input id="finish-skip-paint" type="checkbox"><span>skip repaint</span>
-      <small>keep the transferred texture &mdash; right for Pixal3D output</small></label>
-    <div id="finish-paint-fields">
-      <div class="field"><label for="finish-paint-res">Paint resolution</label>
-        <select id="finish-paint-res"><option selected>512</option><option>768</option><option>1024</option></select></div>
-      <div class="field"><label for="finish-paint-steps">Paint steps</label>
-        <input id="finish-paint-steps" type="number" step="1" min="1" max="50" value="15"></div>
+      <button id="finish-submit" disabled>Finish model</button>
+      <button id="finish-cancel" hidden>Cancel</button>
+
+      <div id="finish-progress-box" hidden>
+        <div id="generate-progress-head"><span id="finish-overall-label">Waiting</span><span id="finish-overall-eta"></span></div>
+        <div class="progress-track"><div id="finish-overall-bar"></div></div>
+        <div id="finish-stages"></div>
+        <div id="finish-status" aria-live="polite" style="font-size:12px; margin-top:6px"></div>
+      </div>
+
+      <div id="finish-result" hidden>
+        <a id="finish-download" download>Download model</a>
+        <a id="finish-record" download>Download record</a>
+        <small id="finish-where"></small>
+      </div>
     </div>
 
-    <button id="finish-submit" disabled>Finish asset</button>
-    <button id="finish-cancel" hidden>Cancel</button>
-
-    <div id="finish-progress-box" class="generate-card" hidden>
-      <div id="generate-progress-head"><span id="finish-overall-label">Waiting</span><span id="finish-overall-eta"></span></div>
-      <div class="progress-track"><div id="finish-overall-bar"></div></div>
-      <div id="finish-stages"></div>
-      <div id="finish-status" aria-live="polite" style="font-size:12px; margin-top:6px"></div>
-    </div>
-
-    <div id="finish-result" hidden>
-      <a id="finish-download" download>Download finished GLB</a>
-      <a id="finish-record" download>Download record</a>
-      <small id="finish-where"></small>
-    </div>
-
-    <div id="finish-runs-box" class="generate-card" style="margin-top:16px">
+    <div id="finish-runs-box" class="generate-card">
       <div id="generate-progress-head">
-        <span>Runs on disk</span>
+        <h2>Past runs</h2>
         <button id="finish-runs-refresh" class="ghost">Refresh</button>
       </div>
-      <p style="font-size:12px; opacity:.75; margin:4px 0 8px">
-        Every stage writes its artifact into <code>output/finish/</code> and stays there.
-        A run whose browser tab was closed is still downloadable here, and one that stopped
-        part-way resumes from whatever it already finished &mdash; the repaint is five of a
-        six-minute run, so resuming skips nearly all of it.
-      </p>
+      <p>Saved in <code>output/finish/</code>. A run that stopped part-way can resume.</p>
       <div id="finish-runs"></div>
+    </div>
+    </div>
+
+    <div class="finish-side">
+      <div id="finish-compare" class="generate-card">
+        <div class="finish-compare-head">
+          <h2 id="finish-compare-label">Before and after</h2>
+          <small>Drag to turn both together.</small>
+          <button id="finish-compare-expand" class="ghost" hidden
+                  title="Fill the window (Esc to return)">&#x2922; Full window</button>
+        </div>
+        <div id="finish-compare-empty">Finish a model, or pick a past run, to see it next to
+          the original.</div>
+        <iframe id="finish-compare-frame" title="before and after" hidden></iframe>
+      </div>
+
     </div>
   </div>
 </section>

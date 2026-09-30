@@ -12,6 +12,7 @@ values must not mean regenerating the geometry underneath it.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -29,8 +30,13 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 from image_to_3dlab import processes  # noqa: E402
+from image_to_3dlab import blender as blender_lookup  # noqa: E402
+from image_to_3dlab.host import APPLE, host_platform  # noqa: E402
 
 OUTPUT_ROOT = REPO / "output" / "finish"
+# Where generation runs (and their records) live, for matching an uploaded model to the run
+# that made it.
+GENERATED_ROOT = REPO / "output"
 WORKER = REPO / "scripts" / "retopo_repaint.py"
 JOB_ID = re.compile(r"^[0-9a-f]{32}$")
 # The exact shape `create` builds — a resume takes its directory name from a URL, so
@@ -66,7 +72,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "faces": 40000, "atlas": 2048, "angle": 89.0, "voxel": 0.004,
     "metallic": 0.25, "roughness": 0.65, "ior": 1.45,
     "paint_seed": 0, "paint_res": 512, "paint_steps": 15, "paint_tex": 4096,
-    "texture_size": 2048, "skip_paint": False, "skip_compress": False, "skip_bake": False,
+    "texture_size": 2048, "skip_paint": True, "skip_compress": False, "skip_bake": False,
+    "skip_photo": False,
 }
 
 INTEGER_SETTINGS = {
@@ -74,12 +81,14 @@ INTEGER_SETTINGS = {
 }
 
 # Which artifact proves a stage already ran, for `--resume` and for describing a run that
-# the browser lost track of. Ordered as the worker runs them.
-STAGE_ARTIFACTS: tuple[tuple[str, str], ...] = (
-    ("retopologise", "result_retopo.glb"),
-    ("repaint", "result_painted.glb"),
-    ("bake", "result_baked.glb"),
-    ("compress", "result.glb"),
+# the browser lost track of: a key into the worker's `step_paths`, or None for the final
+# model. Ordered as the worker runs them.
+STAGE_ARTIFACTS: tuple[tuple[str, str | None], ...] = (
+    ("retopologise", "retopo"),
+    ("repaint", "painted"),
+    ("photo", "photo"),
+    ("bake", "baked"),
+    ("compress", None),
 )
 
 # How the overall bar divides between stages. Grossly uneven on purpose: a measured run on
@@ -87,7 +96,7 @@ STAGE_ARTIFACTS: tuple[tuple[str, str], ...] = (
 # thirds would park the bar at 33% for five of its six minutes. The bake-detail stage took
 # 4.3s on the orc (2026-09-27), about half a retopology.
 STAGE_WEIGHTS: dict[str, float] = {
-    "retopologise": 5.0, "repaint": 90.0, "bake": 2.0, "compress": 3.0,
+    "retopologise": 5.0, "repaint": 90.0, "photo": 1.0, "bake": 2.0, "compress": 3.0,
 }
 
 # Where the repaint's own log lines fall inside that stage. Same run: ~30s of setup, 165s
@@ -114,7 +123,7 @@ def normalise_settings(raw: dict[str, Any]) -> dict[str, Any]:
     for key, value in raw.items():
         if key not in DEFAULT_SETTINGS:
             continue
-        if key in {"skip_paint", "skip_compress", "skip_bake"}:
+        if key in {"skip_paint", "skip_compress", "skip_bake", "skip_photo"}:
             settings[key] = bool(value)
             continue
         try:
@@ -125,6 +134,34 @@ def normalise_settings(raw: dict[str, Any]) -> dict[str, Any]:
         if not low <= number <= high:
             raise ValueError(f"{key} must be within {low}..{high}, got {number}")
         settings[key] = int(number) if key in INTEGER_SETTINGS else number
+    return settings
+
+
+REPAINT_NOTE = ("Repaint runs on Apple Silicon only for now. Here Pixel Match still keeps "
+                "the front exact; the sides and back keep the generator's own paint.")
+
+
+def capabilities(platform: str | None = None, find=blender_lookup.find_blender,
+                 version=blender_lookup.blender_version) -> dict[str, Any]:
+    """What Finish can do on this machine, for the page to say before anyone clicks."""
+    repaint = (platform or host_platform()) == APPLE
+    found = find()
+    found_version = version(found) if found else None
+    return {
+        "repaint": repaint,
+        "repaint_note": None if repaint else REPAINT_NOTE,
+        "blender": str(found) if found else None,
+        "blender_version": ".".join(map(str, found_version)) if found_version else None,
+        "blender_problem": (blender_lookup.missing_help() if found is None
+                            else blender_lookup.version_problem(found_version)),
+        "ready": found is not None,
+    }
+
+
+def fit_to_machine(settings: dict[str, Any], platform: str | None = None) -> dict[str, Any]:
+    """Settings this machine can actually run: no repaint off Apple Silicon (it is MLX)."""
+    if (platform or host_platform()) != APPLE:
+        return {**settings, "skip_paint": True}
     return settings
 
 
@@ -147,6 +184,8 @@ def build_command(
     command = [
         sys.executable, "-u", str(WORKER),
         str(job.asset_path), str(job.image_path), str(job.result_glb),
+        *(["--steps-dir", str(job.steps_dir)] if job.steps_dir is not None else []),
+        *(["--views", str(job.views_dir)] if uses_photo(job, settings) else []),
         "--faces", str(settings["faces"]),
         "--atlas", str(settings["atlas"]),
         "--angle", str(settings["angle"]),
@@ -169,6 +208,39 @@ def build_command(
     if resume:
         command.append("--resume")
     return command
+
+
+def uses_photo(job: "FinishJob", settings: dict[str, Any]) -> bool:
+    """Whether this run gets the photo stage: a camera was found and it was not turned off."""
+    return not settings.get("skip_photo", False) and (job.views_dir / "transforms.json").is_file()
+
+
+def find_source_views(asset: bytes, root: Path = GENERATED_ROOT) -> Path | None:
+    """The saved camera + view directory of the Pixal3D run that produced `asset`.
+
+    The browser uploads bytes, not a path, so the model is matched by content: every
+    Pixal3D run writes `<output>.json` with the GLB's sha256, and its staged views sit
+    beside the GLB as `<output>.svviews/`. Anything else (another generator, a model from
+    elsewhere, an edited file) has no match and simply gets no photo stage.
+    """
+    digest = hashlib.sha256(asset).hexdigest()
+    if not root.is_dir():
+        return None
+    for record_path in root.rglob("*.json"):
+        if record_path.stat().st_size > 20000:
+            continue
+        record = _read_json(record_path)
+        if not isinstance(record, dict) or record.get("backend") != "pixal3d":
+            continue
+        output = record.get("output") or {}
+        if output.get("sha256") != digest:
+            continue
+        views = Path(output.get("path", "")).with_suffix(".svviews")
+        if not (views / "transforms.json").is_file():
+            views = record_path.with_suffix(".svviews")
+        if (views / "transforms.json").is_file():
+            return views
+    return None
 
 
 def stage_bands(stages: list[str]) -> dict[str, tuple[float, float]]:
@@ -272,15 +344,51 @@ class FinishProgress:
         return event
 
 
+# Files only a pre-0.3.5 (flat) run has at its top level.
+LEGACY_MARKERS = ("source.glb", "source.png", "settings.json", "result.glb")
+
+
+def faces_label(faces: int) -> str:
+    """A face count the way people say it: 5000 -> "5k", 12500 -> "12.5k", 800 -> "800"."""
+    if faces < 1000:
+        return str(faces)
+    return f"{faces / 1000:g}k"
+
+
+def final_name(directory_name: str, faces: int) -> str:
+    """The finished model's file name: the asset, then its face count (`vanguard_5k.glb`).
+
+    The asset is the run folder's name up to its first `__`, which drops the generator
+    and timestamp tags a generated file carries (`vanguard__pixal3d` -> `vanguard`).
+    """
+    return f"{directory_name.split('__')[0]}_{faces_label(faces)}.glb"
+
+
 class FinishJob:
+    """One run's folder. Laid out so the finished model is the only GLB at the top:
+
+        vanguard_5k.glb                  the result
+        vanguard_5k.retopo-repaint.json  what made it
+        input/   source.glb, source.png, source.views/, settings.json
+        steps/   1_retopo.glb, 2_painted.glb, 3_photo.glb, 4_baked.glb, logs, run.log
+
+    Runs from before 0.3.5 kept everything flat (`result.glb` among `result_*.glb` and a
+    `source.glb`); they are recognised by any of those top-level files and still read.
+    """
+
     def __init__(self, job_id: str, directory: Path):
         self.id = job_id
         self.directory = directory
-        self.asset_path = directory / "source.glb"
-        self.image_path = directory / "source.png"
-        self.result_glb = directory / "result.glb"
-        self.record_path = directory / "result.retopo-repaint.json"
-        self.settings_path = directory / "settings.json"
+        self.legacy = any((directory / name).exists() for name in LEGACY_MARKERS)
+        self.input_dir = directory if self.legacy else directory / "input"
+        self.steps_dir = None if self.legacy else directory / "steps"
+        self.asset_path = self.input_dir / "source.glb"
+        self.image_path = self.input_dir / "source.png"
+        # The source photo(s) and cameras for the photo stage, copied in from the Pixal3D
+        # run so a resume or a re-run does not depend on that run still being on disk.
+        self.views_dir = self.input_dir / "source.views"
+        self.settings_path = self.input_dir / "settings.json"
+        self.log_path = (self.steps_dir or directory) / "run.log"
         self.settings: dict[str, Any] = dict(DEFAULT_SETTINGS)
         self.status = "queued"
         self.started = time.monotonic()
@@ -291,6 +399,22 @@ class FinishJob:
         self.resume = False
         self.log_lines: deque[str] = deque(maxlen=300)
 
+    @property
+    def result_glb(self) -> Path:
+        if self.legacy:
+            return self.directory / "result.glb"
+        return self.directory / final_name(self.directory.name, int(self.settings["faces"]))
+
+    @property
+    def record_path(self) -> Path:
+        return self.result_glb.with_suffix(".retopo-repaint.json")
+
+    def stage_artifact(self, key: str | None) -> Path:
+        """The file that proves a stage ran (see STAGE_ARTIFACTS)."""
+        if key is None:
+            return self.result_glb
+        return worker_module().step_paths(self.result_glb, self.steps_dir)[key]
+
     def emit(self, event: dict[str, Any]) -> None:
         payload = {"elapsed_seconds": round(time.monotonic() - self.started, 1), **event}
         with self.condition:
@@ -299,13 +423,15 @@ class FinishJob:
 
     def append_log(self, line: str) -> None:
         self.log_lines.append(line)
-        with self.directory.joinpath("run.log").open("a", encoding="utf-8") as handle:
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.log_path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
 
 
 class FinishJobManager:
-    def __init__(self, output_root: Path = OUTPUT_ROOT):
+    def __init__(self, output_root: Path = OUTPUT_ROOT, generated_root: Path = GENERATED_ROOT):
         self.output_root = output_root
+        self.generated_root = generated_root
         self.jobs: dict[str, FinishJob] = {}
         self.active: str | None = None
         self.lock = threading.Lock()
@@ -327,9 +453,14 @@ class FinishJobManager:
             directory.mkdir(parents=True, exist_ok=False)
             job = FinishJob(uuid.uuid4().hex, directory)
             try:
-                job.settings = normalise_settings(settings)
+                job.settings = fit_to_machine(normalise_settings(settings))
+                job.input_dir.mkdir(parents=True, exist_ok=True)
                 job.asset_path.write_bytes(asset)
                 job.image_path.write_bytes(image)
+                views = None if job.settings["skip_photo"] else find_source_views(
+                    asset, self.generated_root)
+                if views is not None:
+                    shutil.copytree(views, job.views_dir)
                 # Written up front, not with the record at the end: a run that dies
                 # halfway is exactly the one worth resuming, and resuming it means
                 # knowing the settings the surviving intermediates were made with.
@@ -359,7 +490,8 @@ class FinishJobManager:
             for required in (job.asset_path, job.image_path):
                 if not required.is_file():
                     raise RuntimeError(f"{name} is missing {required.name}")
-            job.settings = normalise_settings(json.loads(job.settings_path.read_text()))
+            job.settings = fit_to_machine(
+                normalise_settings(json.loads(job.settings_path.read_text())))
             job.resume = True
             self.jobs[job.id] = job
             self.active = job.id
@@ -387,12 +519,18 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
         job.status = "running"
         stages = worker_module().stage_plan(
             job.settings["skip_paint"], job.settings["skip_compress"],
-            job.settings.get("skip_bake", False),
+            job.settings.get("skip_bake", False), photo=uses_photo(job, job.settings),
         )
-        job.emit({
-            "phase": "queued", "overall_pct": 0, "stages": stages,
-            "message": "Resuming from what is already on disk" if job.resume else "Starting",
-        })
+        if job.resume:
+            message = "Resuming from what is already on disk"
+        elif "photo" in stages:
+            message = "Starting: found the source camera, so Pixel Match will keep the photo's pixels"
+        elif not job.settings.get("skip_photo", False):
+            message = ("Starting: no source camera for this model (only Pixal3D runs made "
+                       "here have one), so Pixel Match is skipped")
+        else:
+            message = "Starting"
+        job.emit({"phase": "queued", "overall_pct": 0, "stages": stages, "message": message})
         progress = FinishProgress(stages)
         job.process = subprocess.Popen(
             build_command(job, job.settings, resume=job.resume), cwd=str(REPO),
@@ -400,7 +538,7 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
             **processes.group_popen_kwargs(),
         )
-        job.directory.joinpath("pid").write_text(str(job.process.pid))
+        job.directory.joinpath("pid").write_text(processes.pid_record(job.process.pid))
         assert job.process.stdout is not None
         for raw in job.process.stdout:
             line = raw.rstrip("\n")
@@ -430,6 +568,8 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
                 "record_url": f"/api/finish/{job.id}/record.json",
                 "size_bytes": job.result_glb.stat().st_size,
                 "directory": job.directory.name,
+                "source_url": served_url(job.asset_path),
+                "pixal3d": (job.views_dir / "transforms.json").is_file(),
             })
         else:
             job.status = "error"
@@ -482,12 +622,15 @@ def describe_run(directory: Path) -> dict[str, Any]:
     got — no server memory required, which is the point: jobs live in this process and a
     finished run must still be recoverable after a restart.
     """
+    layout = FinishJob("", directory)
+    settings = _read_json(layout.settings_path)
+    if settings is not None:
+        layout.settings.update(settings)
     complete = [
-        stage for stage, name in STAGE_ARTIFACTS if (directory / name).is_file()
+        stage for stage, key in STAGE_ARTIFACTS if layout.stage_artifact(key).is_file()
     ]
-    result = directory / "result.glb"
-    settings = _read_json(directory / "settings.json")
-    record = _read_json(directory / "result.retopo-repaint.json")
+    result = layout.result_glb
+    record = _read_json(layout.record_path)
     return {
         "directory": directory.name,
         "modified": directory.stat().st_mtime,
@@ -495,7 +638,10 @@ def describe_run(directory: Path) -> dict[str, Any]:
         "finished": result.is_file(),
         "size_bytes": result.stat().st_size if result.is_file() else None,
         "result_url": served_url(result) if result.is_file() else None,
-        "record_url": served_url(directory / "result.retopo-repaint.json") if record else None,
+        "source_url": served_url(layout.asset_path) if layout.asset_path.is_file() else None,
+        # A copied-in camera means the source was a Pixal3D run (it faces the other way).
+        "pixal3d": (layout.views_dir / "transforms.json").is_file(),
+        "record_url": served_url(layout.record_path) if record else None,
         "seconds": (record or {}).get("seconds"),
         "settings": settings,
         # A finished run has nothing left to resume; one without its sources or its
@@ -503,8 +649,8 @@ def describe_run(directory: Path) -> dict[str, Any]:
         "resumable": (
             not result.is_file()
             and settings is not None
-            and (directory / "source.glb").is_file()
-            and (directory / "source.png").is_file()
+            and layout.asset_path.is_file()
+            and layout.image_path.is_file()
         ),
     }
 

@@ -128,3 +128,67 @@ def test_skip_bake_is_on_the_real_parser_and_off_by_default():
     parser = rr.build_parser()
     assert parser.parse_args(["a.glb", "b.png", "c.glb"]).skip_bake is False
     assert parser.parse_args(["a.glb", "b.png", "c.glb", "--skip-bake"]).skip_bake is True
+
+
+def test_the_photo_stage_runs_after_the_repaint_and_before_the_bake():
+    assert rr.stage_plan(skip_paint=False, skip_compress=False, photo=True) == [
+        "retopologise", "repaint", "photo", "bake", "compress",
+    ]
+    assert "photo" not in rr.stage_plan(skip_paint=False, skip_compress=False)
+
+
+def test_the_photo_stage_follows_retopology_when_there_is_no_repaint():
+    assert rr.stage_plan(skip_paint=True, skip_compress=False, photo=True) == [
+        "retopologise", "photo", "bake", "compress",
+    ]
+
+
+def test_views_default_to_off():
+    assert rr.build_parser().parse_args(["a.glb", "b.png", "c.glb"]).views is None
+
+
+def test_without_a_steps_folder_in_between_files_keep_their_old_names(tmp_path):
+    paths = rr.step_paths(tmp_path / "out.glb")
+    assert paths["retopo"] == tmp_path / "out_retopo.glb"
+    assert paths["painted"] == tmp_path / "out_painted.glb"
+    assert paths["photo_weights"] == tmp_path / "out_photo_weights.png"
+    assert paths["bake_log"] == tmp_path / "out_bake.log"
+
+
+def test_a_steps_folder_numbers_the_in_between_files_by_stage(tmp_path):
+    steps = tmp_path / "steps"
+    paths = rr.step_paths(tmp_path / "vanguard_5k.glb", steps)
+    assert [paths[k].name for k in ("retopo", "painted", "photo", "baked")] == [
+        "1_retopo.glb", "2_painted.glb", "3_photo.glb", "4_baked.glb"]
+    assert all(path.parent == steps for path in paths.values())
+
+
+def test_the_steps_flag_is_offered_and_off_by_default():
+    assert rr.build_parser().parse_args(["a.glb", "a.png", "b.glb"]).steps_dir is None
+    parsed = rr.build_parser().parse_args(["a.glb", "a.png", "b.glb", "--steps-dir", "s"])
+    assert parsed.steps_dir == Path("s")
+
+
+def test_preflight_refuses_a_missing_blender_before_any_work(tmp_path):
+    blender, problem = rr.preflight(None, skip_paint=True, platform="nvidia", find=lambda: None)
+    assert blender is None and "Blender" in problem
+
+
+def test_preflight_refuses_the_repaint_off_apple_silicon(tmp_path):
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    _, problem = rr.preflight(exe, skip_paint=False, platform="nvidia")
+    assert "--skip-paint" in problem
+
+
+def test_preflight_passes_on_nvidia_without_the_repaint_and_on_a_mac_with_it(tmp_path):
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    assert rr.preflight(exe, skip_paint=True, platform="nvidia") == (exe, None)
+    assert rr.preflight(exe, skip_paint=False, platform="apple-silicon") == (exe, None)
+
+
+def test_preflight_finds_blender_when_none_is_given(tmp_path):
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    assert rr.preflight(None, skip_paint=True, platform="nvidia", find=lambda: exe) == (exe, None)

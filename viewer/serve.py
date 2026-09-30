@@ -62,14 +62,14 @@ def compare_url(
     be served, so it is reported rather than silently 404ing in the browser.
     """
     params: dict[str, str] = {}
-    for index, asset in enumerate(assets[:3]):
+    for index, asset in enumerate(assets[:4]):
         path = Path(asset)
         if path.is_absolute():
             try:
                 path = path.relative_to(REPO)
             except ValueError as exc:
                 raise ValueError(f"{asset} is outside the repo and cannot be served") from exc
-        key = "abc"[index]
+        key = "abcd"[index]
         params[key] = str(path)
         if labels and index < len(labels):
             params["l" + key] = labels[index]

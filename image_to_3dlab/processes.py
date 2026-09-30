@@ -64,6 +64,39 @@ def group_alive(pid: int, windows: bool = _IS_WINDOWS) -> bool:
         return True  # exists, just not ours to signal
 
 
+def process_alive(pid: int, windows: bool = _IS_WINDOWS) -> bool:
+    """True if the single process `pid` exists (a server, not a job's group)."""
+    if windows:
+        return windows_group_alive(pid, ctypes.windll.kernel32)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def pid_record(pid: int, owner: int | None = None) -> str:
+    """What a job's `pid` file holds: the job's pid, then the pid of the process tracking it.
+
+    The owner is what lets a starting server tell a dead server's orphan from a job that
+    something else alive is still running (a second viewer, a script driving the Finish
+    code). Without it, starting the viewer killed a live Finish run (2026-09-29)."""
+    return f"{pid} {os.getpid() if owner is None else owner}"
+
+
+def parse_pid_record(text: str) -> tuple[int, int | None]:
+    """(job pid, owner pid). Files from before the owner was recorded hold one number.
+
+    Raises ValueError for anything that is not one or two whole numbers."""
+    fields = text.split()
+    if len(fields) not in (1, 2):
+        raise ValueError(f"not a pid record: {text!r}")
+    numbers = [int(field) for field in fields]
+    return numbers[0], numbers[1] if len(numbers) == 2 else None
+
+
 def terminate_group(pid: int, windows: bool = _IS_WINDOWS) -> None:
     """Best-effort stop of the group led by `pid`; one already gone is not an error."""
     if windows:

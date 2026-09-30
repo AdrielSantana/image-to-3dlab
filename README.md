@@ -30,13 +30,16 @@ Five backends, one Generate 3D page. Sadly life is full of trade-offs, so pick t
 | Backend | Best for | Runs on | Setup | License |
 |---|---|---|---|---|
 | **Pixal3D (C++/GGML)** ⭐ | Best results we have; one pass, no repaint needed | Mac, NVIDIA | Setup & Status, or `scripts/bootstrap_pixal3d.py` (8.4 GB weights) | MIT (code + flow weights); DINOv3 License (bundled encoder) |
-| **Hunyuan3D-MLX (Xiong, full pipeline)** | Fast, clean results | Mac | Code is in this repo; weights download separately | MIT (code); Tencent Community License (weights) |
-| **Hunyuan3D-MLX (dgrauet shape + Xiong paint)** | The cleanest shapes, at the cost of manual setup | Mac | Cloned separately, manual | Tencent Community License (code + weights) |
-| **TRELLIS.2** | Highest fidelity, closest to the official demo | Mac | Setup & Status (~1h) | MIT + DINOv3 License |
+| **Hunyuan3D-MLX (Xiong, full pipeline)** | Fast, clean results | Mac (NVIDIA: [official Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1)) | Code is in this repo; weights download separately | MIT (code); Tencent Community License (weights) |
+| **Hunyuan3D-MLX (dgrauet shape + Xiong paint)** | The cleanest shapes, at the cost of manual setup | Mac (NVIDIA: [official Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1)) | Cloned separately, manual | Tencent Community License (code + weights) |
+| **TRELLIS.2** | Highest fidelity, closest to the official demo | Mac (NVIDIA: [official TRELLIS.2](https://github.com/microsoft/TRELLIS.2)) | Setup & Status (~1h) | MIT + DINOv3 License |
 | **Stable Fast 3D** | Fastest, lower fidelity | Mac, NVIDIA (Linux) | Setup & Status, or `scripts/bootstrap_sf3d.py` (gated weights) | Stability AI Community License |
 
 ⭐ Start with **Pixal3D**. It keeps flat, saturated colours in a single pass, where
 TRELLIS.2 often needs a separate repaint.
+
+TRELLIS.2 and Hunyuan3D are built for NVIDIA upstream; this lab wraps their Apple Silicon
+ports. On an NVIDIA machine, use the official repos linked above for those two for now.
 
 <p align="center">
   <img src="docs/images/turntable-pixal3d-warrior.webp" width="360"
@@ -91,7 +94,8 @@ status telling you exactly what's missing:
   `python scripts/bootstrap_pixal3d.py`. It says what it will download and asks first. On a
   Mac it compiles with Metal (needs full Xcode). On NVIDIA Linux with the CUDA toolkit it
   compiles for your card (a few minutes, once, and about twice as fast to run); otherwise
-  it fetches a ready-made CUDA build (driver 575+).
+  it fetches a ready-made CUDA build (driver 575+). It also installs BiRefNet-lite, the
+  background remover (224 MB), so thin and light-coloured parts survive the cut-out.
 - **Stable Fast 3D**: accept Stability's licence at
   [huggingface.co/stabilityai/stable-fast-3d](https://huggingface.co/stabilityai/stable-fast-3d),
   run `hf auth login`, then set it up from Setup & Status or run
@@ -99,7 +103,11 @@ status telling you exactly what's missing:
 - **TRELLIS.2**: click **Run setup** (bootstraps the Metal port, ~1h, needs `uv`,
   Python 3.11 and Xcode command-line tools), or run it manually:
   `python scripts/bootstrap_trellis_space_macos.py`. First run downloads the ~14 GB
-  TRELLIS.2-4B weights automatically. Selecting an image also runs an optional local
+  TRELLIS.2-4B weights automatically. **Before that:** its DINOv3 image encoder is gated.
+  Request access at
+  [huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m)
+  (Meta approves by hand, so do it first) and run `hf auth login`, or the first run stops
+  after the big download. Selecting an image also runs an optional local
   TinyCLIP style advisory; its small checkpoint downloads on first use and never blocks
   generation.
 - **Hunyuan3D-MLX (dgrauet shape + Xiong paint)**: no automated setup yet; expect to read
@@ -205,12 +213,13 @@ character with them.
 | Apple Silicon Mac (M-series), 32 GB recommended | Every route |
 | **or** Linux with an NVIDIA card (24 GB VRAM tested) | Pixal3D, Stable Fast 3D, Generate Image |
 | macOS: full Xcode | compiles the Metal kernels for Pixal3D and TRELLIS |
+| Blender 4.2+ | Finish (low-poly clean-up, Pixel Match) and rigging. Install it yourself from [blender.org](https://www.blender.org/download/); Setup & Status shows whether it was found |
 | `uv` | builds the reproducible Python environments |
 | Python 3.11 (TRELLIS) / 3.12 (Hunyuan3D-MLX) | pinned by each backend's own setup |
 | ~13 GB disk | Hunyuan3D-MLX 2.0 shape + paint weights (auto-downloaded once) |
 | ~14 GB disk | TRELLIS.2-4B weights (auto-downloaded once, if using TRELLIS) |
 | ~94 MB download | TinyCLIP flat-input advisor (local and non-blocking) |
-| ~224 MB download | BiRefNet-lite background remover (optional, recommended; Setup & Status or `scripts/bootstrap_matte.py`) |
+| ~224 MB download | BiRefNet-lite background remover (comes with Pixal3D; otherwise Setup & Status or `scripts/bootstrap_matte.py`) |
 
 ## How long a run takes
 

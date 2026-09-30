@@ -16,16 +16,16 @@ const state = {
   sync: true,
 };
 
-// Up to three slots. Each holds a model view, an image view, or null. `views` is the
+// Up to four slots. Each holds a model view, an image view, or null. `views` is the
 // compacted list of *model* views — the only ones the 3D render/frame/sync loops touch;
 // image panes are static. Both are kept in sync by rebuildViews().
-const MAX = 3;
+const MAX = 4;
 // ?restricted=1 -- set when this page is loaded inside the Generate tab's embedded preview
 // iframe. That panel is sized for one model; a second/third pane crammed into it makes every
 // pane too small to see anything. Full multi-model comparison belongs in the dedicated
 // Compare tab (the whole screen), not this embedded view, so hide the add-pane affordances.
 const RESTRICTED = new URLSearchParams(location.search).get('restricted') === '1';
-const slots = [null, null, null];
+const slots = Array(MAX).fill(null);
 let views = [];
 const rebuildViews = () => { views = slots.filter((s) => s && s.kind === 'model'); updateChrome(); };
 
@@ -313,10 +313,20 @@ function setAzimuth(deg) { azimuth = deg; frame(); }
 
 function updateChrome() {
   const n = occupied();
-  // Fully empty -> the big centred drop zone. One or two loaded -> a ghost "add pane" in
-  // the remaining space so loading side by side is obvious. Full -> neither.
+  // Fully empty -> the big centred drop zone. The grid follows the count (compare.css):
+  // one or two side by side with a slim "+" strip at the edge, three or four as 2x2, where
+  // the "+" fills the empty fourth cell instead. Full -> no "+". A full-width empty pane
+  // used to sit beside two models as a dead band.
   dropEl.classList.toggle('hidden', n > 0);
-  if (ghostEl) ghostEl.style.display = (!RESTRICTED && n > 0 && n < MAX) ? 'flex' : 'none';
+  const showGhost = !RESTRICTED && n > 0 && n < MAX;
+  panesEl.dataset.count = String(Math.max(n, 1));
+  panesEl.classList.toggle('with-strip', showGhost && n < 3);
+  if (ghostEl) {
+    ghostEl.style.display = showGhost ? 'flex' : 'none';
+    ghostEl.classList.toggle('slim', n < 3);
+  }
+  // Cells change size with the layout; the canvases must follow.
+  requestAnimationFrame(() => { resize(); requestRender(); });
   document.getElementById('addcount').textContent = `(${n}/${MAX})`;
   document.getElementById('add').disabled = RESTRICTED || n >= MAX;
   if (RESTRICTED) document.getElementById('add').style.display = 'none';
@@ -415,7 +425,7 @@ document.addEventListener('drop', (e) => {
 // that serve.py serves. An image extension makes an image pane; anything else, a model.
 // This keeps `serve.py --open` and browser automation working; drops layer on top.
 const q = new URLSearchParams(location.search);
-for (const key of ['a', 'b', 'c']) {
+for (const key of ['a', 'b', 'c', 'd']) {
   const url = q.get(key);
   if (!url) continue;
   // Repo-relative: anchor at the server root, not at /viewer/ where this page lives.
@@ -427,11 +437,21 @@ for (const key of ['a', 'b', 'c']) {
   if (IMAGE_EXTS.has(ext)) mountSlot(idx, { kind: 'image', url: resolved, label });
   else mountSlot(idx, { kind: 'model', url: resolved, label, ext });
 }
+// ?az=degrees: the starting camera angle, for models whose front is not the viewer's.
+if (q.has('az') && Number.isFinite(Number(q.get('az')))) azimuth = Number(q.get('az'));
 updateChrome();
 
 // --- sizing + render loop ------------------------------------------------------------
 
+// Embedded (a narrow iframe), the toolbar can wrap onto a second row; start the panes
+// below it rather than under it, or it covers the pane labels.
+function fitPanesBelowBar() {
+  if (!RESTRICTED) return;
+  panesEl.style.top = `${document.getElementById('bar').offsetHeight}px`;
+}
+
 function resize() {
+  fitPanesBelowBar();
   for (const view of views) {
     const w = view.pane.clientWidth, h = view.pane.clientHeight;
     // updateStyle must stay ON. With it off, three.js leaves the canvas CSS size equal to
@@ -443,6 +463,7 @@ function resize() {
   }
 }
 addEventListener('resize', () => { resize(); frame(); });
+fitPanesBelowBar();
 
 // One rendered frame. Advances spin, lets OrbitControls damping settle, mirrors the lead
 // camera when synced, draws every model pane, and reschedules itself *only* while

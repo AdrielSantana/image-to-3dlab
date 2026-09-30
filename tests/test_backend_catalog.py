@@ -353,3 +353,32 @@ def test_there_is_only_ever_one_catalogue_module():
 
     assert backend_catalog is bc
     assert sys.modules["backend_catalog"] is bc
+
+
+def test_a_mac_port_points_other_machines_at_the_official_nvidia_version():
+    """TRELLIS.2 and Hunyuan3D are NVIDIA-first upstream; only our ports are Mac-only.
+
+    A Linux or Windows user must not read "needs Apple Silicon" as the whole truth.
+    """
+    for backend_id in ("trellis", "hunyuan_xiong", "hunyuan-mlx"):
+        entry = bc.BY_ID[backend_id].describe(bc.NVIDIA)
+        assert entry["supported_here"] is False
+        assert entry["upstream"]["url"].startswith("https://github.com/"), backend_id
+        assert "port" in entry["platform_note"] and "NVIDIA" in entry["platform_note"]
+        assert entry["upstream"]["label"] in entry["platform_note"], backend_id
+
+
+def test_a_route_with_no_official_elsewhere_keeps_the_plain_note():
+    entry = bc.BY_ID["pixal3d"].describe("other")
+    assert entry["upstream"] is None
+    assert entry["platform_note"].startswith("Needs ")
+
+
+def test_trellis_warns_about_the_gated_dinov3_before_setup():
+    caveat = bc.BY_ID["trellis"].caveat or ""
+    assert "dinov3" in caveat.lower() and "hf auth login" in caveat
+
+
+def test_pixal3d_setup_counts_the_background_remover_it_now_installs():
+    sources = [w.source for w in bc.BY_ID["pixal3d"].weights]
+    assert any("BiRefNet" in s for s in sources)

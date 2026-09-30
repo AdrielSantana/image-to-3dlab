@@ -54,7 +54,16 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO / "scripts"
-BLENDER = Path("/Applications/Blender.app/Contents/MacOS/Blender")
+sys.path.insert(0, str(REPO))
+
+from image_to_3dlab.blender import MAC_APP, find_blender, missing_help  # noqa: E402
+from image_to_3dlab.host import APPLE, host_platform  # noqa: E402
+
+# Only a default for the command builders; main() finds the real one on every OS.
+BLENDER = MAC_APP
+REPAINT_OFF_MAC = ("The repaint runs on Apple Silicon only (it uses MLX). Pass --skip-paint: "
+                   "Pixel Match still keeps the front exact, and the sides and back keep "
+                   "the generator's own paint.")
 
 # The viewer's job API parses these to drive its progress panel. Same contract as
 # `scripts/blender_rebind.py`, so one parser serves both.
@@ -66,7 +75,8 @@ def emit_stage(phase: str, message: str) -> None:
     print(f"{STAGE_MARKER}::{phase}::{message}", flush=True)
 
 
-def stage_plan(skip_paint: bool, skip_compress: bool, skip_bake: bool = False) -> list[str]:
+def stage_plan(skip_paint: bool, skip_compress: bool, skip_bake: bool = False,
+               photo: bool = False) -> list[str]:
     """The stages this run will execute, in order.
 
     Named separately from the running of them so a caller — the viewer's job API, say —
@@ -75,6 +85,8 @@ def stage_plan(skip_paint: bool, skip_compress: bool, skip_bake: bool = False) -
     stages = ["retopologise"]
     if not skip_paint:
         stages.append("repaint")
+    if photo:
+        stages.append("photo")
     if not skip_bake:
         stages.append("bake")
     if not skip_compress:
@@ -132,6 +144,61 @@ def _run(command: list[str], log: Path, label: str) -> None:
         raise SystemExit(f"[{label}] failed (exit {process.returncode}); last lines:\n{tail}")
 
 
+def photo_stage(model: Path, views_dir: Path, output: Path, weights_png: Path) -> dict:
+    """Paint `model` with the real pixels of the photos in `views_dir`; see
+    image_to_3dlab/photo_paint.py. In-process: numpy only, seconds on a Finish mesh."""
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+    from PIL import Image
+
+    from image_to_3dlab import photo_paint as pp
+
+    positions, uvs, faces, texture = pp.read_glb(model)
+    views, mesh_scale = pp.load_views(views_dir)
+    painted, weight = pp.paint_texture(texture, positions, uvs, faces, views, mesh_scale)
+    output.write_bytes(pp.replace_base_colour(model.read_bytes(), pp.encode_png(painted)))
+    Image.fromarray(np.rint(weight * 255).astype(np.uint8)).save(weights_png)
+    share = round(float((weight > 0.5).mean()), 3)
+    print(f"[photo] {len(views)} view(s); {share:.0%} of the texture from the photo", flush=True)
+    return {"count": len(views), "texture_share": share}
+
+
+def step_paths(output: Path, steps_dir: Path | None = None) -> dict[str, Path]:
+    """Where each in-between file goes.
+
+    Without `steps_dir`, beside the output with a suffix (`out_retopo.glb`), as always.
+    With it, inside that folder and numbered by the order the stages run
+    (`1_retopo.glb`), so a finished run's folder shows the final model and nothing else
+    that looks like one. Numbers are fixed per stage, so a skipped stage leaves a gap
+    rather than renumbering what a resume looks for.
+    """
+    if steps_dir is None:
+        stem = str(output.with_suffix(""))
+        names = {"retopo": f"{stem}_retopo.glb", "retopo_log": f"{stem}_retopo.log",
+                 "painted": f"{stem}_painted.glb", "photo": f"{stem}_photo.glb",
+                 "photo_weights": f"{stem}_photo_weights.png",
+                 "baked": f"{stem}_baked.glb", "bake_log": f"{stem}_bake.log"}
+        return {key: Path(value) for key, value in names.items()}
+    return {
+        "retopo": steps_dir / "1_retopo.glb", "retopo_log": steps_dir / "1_retopo.log",
+        "painted": steps_dir / "2_painted.glb", "photo": steps_dir / "3_photo.glb",
+        "photo_weights": steps_dir / "3_photo_weights.png",
+        "baked": steps_dir / "4_baked.glb", "bake_log": steps_dir / "4_bake.log",
+    }
+
+
+def preflight(blender: Path | None, skip_paint: bool, platform: str | None = None,
+              find=find_blender) -> tuple[Path | None, str | None]:
+    """(Blender to use, why the run cannot start). Checked before any work: a missing
+    Blender or an off-Mac repaint used to fail minutes in, or with a bare exit code."""
+    blender = blender or find()
+    if blender is None or not blender.is_file():
+        return blender, missing_help()
+    if not skip_paint and (platform or host_platform()) != APPLE:
+        return blender, REPAINT_OFF_MAC
+    return blender, None
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The command-line surface, separately from running it.
 
@@ -167,13 +234,25 @@ def build_parser() -> argparse.ArgumentParser:
                              "original; the asset keeps flat surface settings")
     parser.add_argument("--skip-compress", action="store_true")
     parser.add_argument(
+        "--views", type=Path, default=None,
+        help="transforms.json directory holding the source photo(s) and their cameras "
+             "(a Pixal3D run's .svviews). Given, every surface a photo can see takes the "
+             "photo's real pixels after the repaint, which keeps text and logos exact",
+    )
+    parser.add_argument(
+        "--steps-dir", type=Path, default=None,
+        help="put the in-between files in this folder, numbered by stage "
+             "(1_retopo.glb, 2_painted.glb, ...), instead of beside the output",
+    )
+    parser.add_argument(
         "--resume", action="store_true",
         help="reuse any stage artifact already sitting beside the output instead of "
              "recomputing it. The repaint is five to six minutes of a six-minute run, so "
              "a run that died in compression must not pay for it twice. Only safe with "
              "the settings the intermediates were made with -- change one and start over",
     )
-    parser.add_argument("--blender", type=Path, default=BLENDER)
+    parser.add_argument("--blender", type=Path, default=None,
+                        help="Blender executable; found automatically when omitted")
     return parser
 
 
@@ -183,17 +262,26 @@ def main() -> int:
     for path in (args.source, args.image):
         if not path.is_file():
             raise SystemExit(f"not found: {path}")
+    args.blender, problem = preflight(args.blender, args.skip_paint)
+    if problem:
+        raise SystemExit(problem)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     stem = args.output.with_suffix("")
-    stages = stage_plan(args.skip_paint, args.skip_compress, args.skip_bake)
+    steps = step_paths(args.output, args.steps_dir)
+    if args.steps_dir is not None:
+        args.steps_dir.mkdir(parents=True, exist_ok=True)
+    if args.views is not None and not (args.views / "transforms.json").is_file():
+        raise SystemExit(f"--views has no transforms.json: {args.views}")
+    stages = stage_plan(args.skip_paint, args.skip_compress, args.skip_bake,
+                        photo=args.views is not None)
     print(f"[retopo-repaint] {args.source.name} -> {args.output.name}: "
           f"{' -> '.join(stages)}", flush=True)
 
     started = time.time()
     timings: dict[str, float] = {}
 
-    retopo_glb = Path(f"{stem}_retopo.glb")
+    retopo_glb = steps["retopo"]
     step = time.time()
     if reuse(retopo_glb, args.resume):
         emit_stage("retopologise", f"Reusing {retopo_glb.name}")
@@ -204,13 +292,13 @@ def main() -> int:
                 args.source, retopo_glb, args.faces, args.atlas, args.angle,
                 args.voxel, args.metallic, args.roughness, args.ior, args.blender,
             ),
-            Path(f"{stem}_retopo.log"), "retopologise",
+            steps["retopo_log"], "retopologise",
         )
     timings["retopologise"] = round(time.time() - step, 1)
 
     current = retopo_glb
     if not args.skip_paint:
-        painted = Path(f"{stem}_painted.glb")
+        painted = steps["painted"]
         step = time.time()
         if reuse(painted, args.resume):
             emit_stage("repaint", f"Reusing {painted.name}")
@@ -228,15 +316,28 @@ def main() -> int:
         timings["repaint"] = round(time.time() - step, 1)
         current = painted
 
+    photo_record = None
+    if args.views is not None:
+        photo_glb = steps["photo"]
+        step = time.time()
+        if reuse(photo_glb, args.resume):
+            emit_stage("photo", f"Reusing {photo_glb.name}")
+        else:
+            emit_stage("photo", "Pixel Match: keeping the photo's real pixels where it can see")
+            photo_record = photo_stage(current, args.views, photo_glb,
+                                       steps["photo_weights"])
+        timings["photo"] = round(time.time() - step, 1)
+        current = photo_glb
+
     if not args.skip_bake:
-        baked = Path(f"{stem}_baked.glb")
+        baked = steps["baked"]
         step = time.time()
         if reuse(baked, args.resume):
             emit_stage("bake", f"Reusing {baked.name}")
         else:
             emit_stage("bake", "Baking normal map and surface from the original")
             _run(bake_command(args.source, current, baked, args.atlas, args.blender),
-                 Path(f"{stem}_bake.log"), "bake")
+                 steps["bake_log"], "bake")
         timings["bake"] = round(time.time() - step, 1)
         current = baked
 
@@ -277,6 +378,9 @@ def main() -> int:
         "paint": None if args.skip_paint else {
             "seed": args.paint_seed, "res": args.paint_res,
             "steps": args.paint_steps, "texture": args.paint_tex,
+        },
+        "photo": None if args.views is None else {
+            "views": str(args.views), **(photo_record or {"reused": True}),
         },
         "textures": report,
         "size_bytes": args.output.stat().st_size,

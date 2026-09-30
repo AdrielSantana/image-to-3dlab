@@ -110,7 +110,12 @@ function backendCard(backend) {
   // A backend that cannot run here gets no button at all. Offering one would spend
   // gigabytes of someone's bandwidth on a build that fails partway through.
   if (backend.supported_here === false) {
-    action.innerHTML = `<span class="setup-unavailable">needs ${backend.requires}</span>`;
+    // A Mac port of an NVIDIA-first model says so, instead of implying the model itself
+    // needs a Mac: TRELLIS.2 and Hunyuan3D run on NVIDIA upstream.
+    action.innerHTML = backend.upstream
+      ? `<span class="setup-unavailable">Mac port here · <a href="${backend.upstream.url}"
+           target="_blank" rel="noopener">official ${backend.upstream.label} runs on NVIDIA</a></span>`
+      : `<span class="setup-unavailable">needs ${backend.requires}</span>`;
   } else if (backend.action === 'none') {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
   } else if (backend.action === 'manual') {
@@ -130,6 +135,15 @@ function backendCard(backend) {
     button.textContent = LABELS[backend.action];
     button.onclick = () => confirmDownload(backend, button);
     action.appendChild(button);
+  }
+  // An installed build that predates one of this repo's patches (Pixal3D's 8 steps).
+  // Recompiling downloads nothing, so it gets a short question, not the size dialog.
+  if (backend.rebuild_reason && backend.supported_here !== false) {
+    const rebuild = document.createElement('button');
+    rebuild.textContent = 'Rebuild';
+    rebuild.title = 'Recompile with this repo\'s latest fixes. Downloads nothing.';
+    rebuild.onclick = () => confirmRebuild(backend, rebuild);
+    action.appendChild(rebuild);
   }
   // Reclaiming is about bytes on disk, not about whether the backend works.
   if (backend.bytes_present > 0) action.appendChild(removeButton(backend));
@@ -227,6 +241,21 @@ function confirmDownload(backend, button) {
   startDownload(backend, button);
 }
 
+/** Recompile an installed build. Nothing is downloaded, so the question is short. */
+function confirmRebuild(backend, button) {
+  const lines = [
+    `Rebuild ${backend.label}?`,
+    '',
+    'This recompiles the copy you already have so it picks up this repo\'s latest fixes',
+    '(for Pixal3D: 8 sampling steps instead of 12, so runs are faster).',
+    '',
+    'It downloads nothing and takes a few minutes.',
+  ];
+  // eslint-disable-next-line no-alert -- same deliberate confirmation as a download
+  if (!window.confirm(lines.join('\n'))) return;
+  startDownload(backend, button, 'rebuild');
+}
+
 function formatBytes(value) {
   if (value <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -236,12 +265,13 @@ function formatBytes(value) {
   return `${size.toFixed(unit >= 3 ? 1 : 0)} ${units[unit]}`;
 }
 
-async function startDownload(backend, button) {
+async function startDownload(backend, button, action = 'download') {
   button.disabled = true;
   s('setup-run').hidden = false;
   s('setup-run-cancel').hidden = false;
-  s('setup-run-title').textContent =
-    `${backend.setup_fetches_weights ? 'Downloading' : 'Building'} ${backend.label}`;
+  const verb = action === 'rebuild' ? 'Rebuilding'
+    : backend.setup_fetches_weights ? 'Downloading' : 'Building';
+  s('setup-run-title').textContent = `${verb} ${backend.label}`;
   s('setup-run-detail').textContent = 'starting…';
   s('setup-log').textContent = '';
   s('setup-run-bar').style.width = '0%';
@@ -249,7 +279,7 @@ async function startDownload(backend, button) {
   placeRunPanel();
   s('setup-run').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   try {
-    const response = await fetch(`/api/setup/${encodeURIComponent(backend.id)}/download`, {
+    const response = await fetch(`/api/setup/${encodeURIComponent(backend.id)}/${action}`, {
       method: 'POST',
     });
     const payload = await response.json();
@@ -311,6 +341,39 @@ function summarise(catalog) {
     + ` · ${formatBytes(onDisk)} of model weights on disk`;
 }
 
+/* Blender is the one requirement the viewer never installs: it is a ~400 MB application
+ * people choose for themselves. Finish and the rig tools need it, so its state belongs on
+ * the page that owns install state, before anyone clicks Finish and finds out. */
+async function blenderCard() {
+  const card = document.createElement('div');
+  let caps = null;
+  try {
+    const response = await fetch('/api/finish/capabilities');
+    if (response.ok) caps = await response.json();
+  } catch { /* shown as unknown below */ }
+  const found = Boolean(caps && caps.blender && !caps.blender_problem);
+  card.className = `setup-card ${found ? 'ready' : 'missing'}`;
+  card.dataset.backend = 'blender';
+  const where = found
+    ? `found · Blender ${caps.blender_version || ''} at <code>${caps.blender}</code>`
+    : 'not found';
+  card.innerHTML = `
+    <div class="setup-card-head">
+      <span class="setup-dot ${found ? 'ok' : 'off'}">${found ? '●' : '○'}</span>
+      <div class="setup-card-title">
+        <strong>Blender (for Finish and rigging)</strong>
+        <div class="setup-card-state">${where}</div>
+      </div>
+      <div class="setup-card-action">${found
+        ? '<span class="setup-ready">✓ ready</span>'
+        : '<a href="https://www.blender.org/download/" target="_blank" rel="noopener">Get Blender</a>'}</div>
+    </div>
+    <p class="setup-card-best">Finish (low-poly clean-up and Pixel Match) runs Blender in the background. Installed by you, not by this page.</p>
+    ${!found && caps && caps.blender_problem
+      ? `<p class="setup-card-caveat">${caps.blender_problem}</p>` : ''}`;
+  return card;
+}
+
 export async function load() {
   const host = s('setup-backends');
   try {
@@ -321,6 +384,7 @@ export async function load() {
     host.after(s('setup-run')); // park it outside the cards before they are rebuilt
     host.innerHTML = '';
     for (const backend of state.catalog.backends) host.appendChild(backendCard(backend));
+    host.appendChild(await blenderCard());
     placeRunPanel();
     document.dispatchEvent(new CustomEvent('viewer:catalog', { detail: state.catalog }));
   } catch (error) {

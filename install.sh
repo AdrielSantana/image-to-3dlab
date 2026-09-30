@@ -125,7 +125,17 @@ say "Setting up Python 3.11 and the viewer's packages (a few hundred MB, mostly 
 run "$UV" venv --quiet --allow-existing --python 3.11 "$DIR/.venv"
 run "$UV" pip install --quiet --python "$DIR/.venv/bin/python" -r "$DIR/requirements.txt"
 
-# --- 5. Done ------------------------------------------------------------------------------
+# --- 5. Blender: Finish needs it, and it is the user's to install -----------------------
+# Checked with the same finder Finish uses. Missing is a note, not a failure: generating
+# models works without it.
+if [ "$DRY" != 1 ] && [ -x "$DIR/.venv/bin/python" ] && ! (cd "$DIR" && .venv/bin/python -c \
+    'import sys; from image_to_3dlab.blender import find_blender; sys.exit(0 if find_blender() else 1)') \
+    2>/dev/null; then
+  say "Blender was not found. Finish (the low-poly clean-up) needs Blender 4.2 or newer:"
+  say "  https://www.blender.org/download/  (Linux: or sudo snap install blender --classic)"
+fi
+
+# --- 6. Done ------------------------------------------------------------------------------
 say "Done. Start the lab with:"
 printf '\n    cd %s && .venv/bin/python viewer/serve.py\n\n' "$DIR"
 say "Then open Setup & Status to choose what to install. Nothing large downloads until you"
