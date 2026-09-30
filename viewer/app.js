@@ -11,6 +11,7 @@ import './modes/rig-review.js';
 import './modes/animate.js';
 import { subscribeRigEditState } from './core/rig-edit-state.js';
 import { isEmbedded, landingMode, linksAModel } from './core/embed.js';
+import { sidewaysScroll } from './core/sideways-wheel.js';
 
 const byId = (id) => document.getElementById(id);
 const modes = {
@@ -72,3 +73,12 @@ if (!embedded) {
   welcomeOnArrival({ linked });
   checkForUpdates();
 }
+
+// In a narrow window the menu scrolls sideways with no scrollbar; let a mouse wheel do it.
+const menu = byId('mode-switch');
+menu?.addEventListener('wheel', (event) => {
+  const next = sidewaysScroll(event, menu);
+  if (next === null) return;
+  event.preventDefault();
+  menu.scrollLeft = next;
+}, { passive: false });

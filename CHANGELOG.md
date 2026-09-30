@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a crash tried to delete that folder as a stale process file, and gave up with an error.
 - `serve.py --open` shows the models it was given again. Its link landed on Setup & Status
   (or on About, on the first visit after an update) instead of on Compare.
+- The menu bar stays on one row in a narrower window and scrolls sideways, instead of
+  wrapping its labels and cutting off About.
 
 ## [0.3.6] - 2026-10-01
 

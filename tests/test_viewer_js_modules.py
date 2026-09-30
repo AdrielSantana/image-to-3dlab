@@ -877,6 +877,29 @@ def test_a_link_to_a_model_lands_on_compare_with_the_app_around_it():
 
 
 @pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_a_mouse_wheel_scrolls_the_menu_sideways_only_while_it_has_more_to_show():
+    """The bar hides its scrollbar to stay one row; a plain wheel never reached About."""
+    module_url = (REPO / "viewer" / "core" / "sideways-wheel.js").as_uri()
+    program = f"""
+      import {{ sidewaysScroll }} from {json.dumps(module_url)};
+      const bar = (scrollLeft) => ({{ scrollLeft, scrollWidth: 900, clientWidth: 600 }});
+      console.log(JSON.stringify([
+        sidewaysScroll({{ deltaX: 0, deltaY: 120 }}, bar(0)),           // wheel down: right
+        sidewaysScroll({{ deltaX: 0, deltaY: -120 }}, bar(200)),        // wheel up: left
+        sidewaysScroll({{ deltaX: 0, deltaY: 500 }}, bar(250)),         // stops at the end
+        sidewaysScroll({{ deltaX: 0, deltaY: 120 }}, bar(300)),         // already there
+        sidewaysScroll({{ deltaX: 40, deltaY: 5 }}, bar(0)),            // a sideways swipe
+        sidewaysScroll({{ deltaX: 0, deltaY: 3, deltaMode: 1 }}, bar(0)),  // wheel in lines
+        sidewaysScroll({{ deltaX: 0, deltaY: 120 }},
+                       {{ scrollLeft: 0, scrollWidth: 600, clientWidth: 600 }}),  // it all fits
+      ]));
+    """
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [120, 80, 300, None, None, 48, None]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
 def test_any_pane_compare_loads_counts_as_a_link_and_an_empty_one_does_not():
     module_url = (REPO / "viewer" / "core" / "embed.js").as_uri()
     searches = ["?b=out.glb&lb=After", "?d=x.glb", "?a=", "?a=%20", "?la=Owl", "?e=x.glb"]
