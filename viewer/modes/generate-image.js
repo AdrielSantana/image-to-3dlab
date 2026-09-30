@@ -76,7 +76,7 @@ function applyEvent(event) {
     // exactly how it read the first time someone else used this.
     if (event.step >= event.total_steps) {
       setStatus('All steps done. Decoding the image now — this part is silent and takes '
-                + 'a couple of minutes at 768px, longer at 1024.');
+                + 'a while, longer at 1024 than at 768px.');
       setBar(92);
       return;
     }

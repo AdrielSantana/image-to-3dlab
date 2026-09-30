@@ -217,7 +217,7 @@ CATALOG: tuple[Backend, ...] = (
         id="pixal3d",
         label="Pixal3D (C++/GGML)",
         rank=1,
-        best_for="Best results we have. One pass, ~6 min, no repaint needed.",
+        best_for="Best results we have. One pass, no repaint needed.",
         tradeoff=(
             "On a Mac it compiles locally and needs full Xcode for the Metal compiler. "
             "On NVIDIA Linux with the CUDA toolkit it compiles for your card, which runs "

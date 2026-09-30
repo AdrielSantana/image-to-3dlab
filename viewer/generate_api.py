@@ -276,7 +276,7 @@ def setup_status() -> dict[str, Any]:
             "hint": (
                 "clean-port build missing — from the repo root run: "
                 "python scripts/bootstrap_trellis_space_macos.py "
-                "(requires uv, Python 3.11 and Xcode command-line tools; ~1h)"
+                "(requires uv, Python 3.11 and Xcode command-line tools)"
                 if not build_present else None
             ),
         },
@@ -565,7 +565,7 @@ def uncut_image_error(border_fraction: float) -> str:
     return (
         f"This image has an alpha channel, but {border_fraction:.0%} of its outer border is "
         "still opaque, so the subject was never cut out of its background. Generating from it "
-        "would rebuild the background as 3D geometry -- roughly 45 minutes at resolution 1024, "
+        "would rebuild the background as 3D geometry, "
         "ending in a slab behind the subject. Re-export it with a transparent background."
     )
 
@@ -1209,7 +1209,7 @@ def _hunyuan_validate_settings(raw: Any) -> dict[str, Any]:
     if settings["decimation_target"] > 600_000:
         raise ValueError(
             "decimation_target above ~500k hits a confirmed xatlas wall (500k-700k faces "
-            "took 37 min in testing on 2026-08-18, 1M never finished) — keep it at or "
+            "crawled in testing, 1M never finished) — keep it at or "
             "under 500,000"
         )
     return settings
@@ -1359,7 +1359,7 @@ def _hunyuan_xiong_validate_settings(raw: Any) -> dict[str, Any]:
     if settings["decimation_target"] > 600_000:
         raise ValueError(
             "decimation_target above ~500k hits a confirmed xatlas wall (500k-700k faces "
-            "took 37 min in testing on 2026-08-18, 1M never finished) — keep it at or "
+            "crawled in testing, 1M never finished) — keep it at or "
             "under 500,000"
         )
     return settings

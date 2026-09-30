@@ -290,7 +290,7 @@
           <small>512 is the evidence-backed default (2026-08-18 sweep); 1024 is smooth but very slow to remesh/paint.</small></div>
         <div class="field"><label for="hunyuan-seed">Shape seed</label><input id="hunyuan-seed" type="number" step="1" value="42"></div>
         <div class="field"><label for="hunyuan-decimation">Decimation target</label><input id="hunyuan-decimation" type="number" min="1" max="500000" step="1" value="300000">
-          <small>Hard ceiling ~500,000 — the paint stage's xatlas UV-unwrap step has a confirmed wall between 500k-700k faces (700k took 37 min; 1M never finished).</small></div>
+          <small>Hard ceiling ~500,000 — the paint stage's xatlas UV-unwrap step has a confirmed wall between 500k-700k faces (700k crawled; 1M never finished).</small></div>
         <div class="field"><label for="hunyuan-paint-seed">Paint seed</label><input id="hunyuan-paint-seed" type="number" step="1" value="0"></div>
         <div class="field"><label for="hunyuan-paint-res">Paint resolution</label>
           <select id="hunyuan-paint-res"><option>384</option><option selected>512</option></select></div>
@@ -303,7 +303,7 @@
         <div class="field"><label for="xiong-model">Shape model</label>
           <select id="xiong-model">
             <option value="2.0" selected>2.0 (recommended — cleanest shape)</option>
-            <option value="2.0-turbo">2.0-turbo (fast, ~60-105s, minor distillation dents)</option>
+            <option value="2.0-turbo">2.0-turbo (fastest, minor distillation dents)</option>
             <option value="2.1">2.1 (not Xiong's recommended pick — weaker conditioner)</option>
           </select>
           <small>2.0 is the default and the cleanest. 2.0-turbo is about twice as fast but
@@ -674,16 +674,8 @@
 
     <div class="generate-card">
       <h2>Speed</h2>
-      <p>Rough times for one run, as measured. Yours will differ with the machine and the picture.</p>
-      <table class="about-table">
-        <thead><tr><th>Step</th><th>M5 MacBook, 32 GB</th><th>RTX 4090</th></tr></thead>
-        <tbody>
-          <tr><td>Text to image (Qwen-Image)</td><td>~4.5 min</td><td>~20 s</td></tr>
-          <tr><td>Image to 3D (Pixal3D)</td><td>~6 min</td><td>~3 min</td></tr>
-          <tr><td>Image to 3D (Hunyuan3D-MLX)</td><td>~9 min</td><td>Mac only</td></tr>
-          <tr><td>Image to 3D (TRELLIS.2)</td><td>15&ndash;35 min</td><td>Mac only</td></tr>
-        </tbody>
-      </table>
+      <p>How long a run takes depends on your machine and the picture. The progress bar shows
+        each step as it happens; an NVIDIA card is usually faster than a Mac.</p>
       <p>On a Mac, TRELLIS.2 runs about twice as fast with <em>Attention backend</em> set to <code>mlx</code>.</p>
     </div>
 
