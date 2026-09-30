@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   normal map Finish bakes goes through the same step.
 - Finish now stops when one of its Blender stages crashes. Blender exited 0 on a Python
   error, so the retopology or detail bake read as done.
+- Finished models now pass the Khronos glTF validator with no warnings. The detail
+  bake ships the tangents its normal map was baked against, instead of leaving every
+  engine to make up its own, and gives the odd zero-length one a direction.
 
 ## [0.3.6] - 2026-10-01
 
