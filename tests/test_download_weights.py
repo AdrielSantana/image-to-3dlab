@@ -8,10 +8,13 @@ a disk audit on 2026-09-21.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "hunyuan_mlx" / "download_weights.py"
+REPO = Path(__file__).resolve().parents[1]
+SCRIPT = REPO / "hunyuan_mlx" / "download_weights.py"
+PAINT = REPO / "hunyuan_mlx" / "paint"
 
 
 def _load():
@@ -90,7 +93,7 @@ def test_the_default_route_costs_what_the_readme_says(capsys):
     total = dw.announce([dw.DEFAULT_MODEL], paint=True)
     assert 12.0 <= total <= 14.0, f"README promises ~13 GB, announce says {total}"
     printed = capsys.readouterr().out
-    assert "12.9 GB" in printed
+    assert "13.3 GB" in printed
     # The territorial restriction is stated before anything is fetched, not afterwards.
     assert "EU" in printed and "South Korea" in printed
 
@@ -111,3 +114,31 @@ def test_every_shape_model_has_a_stated_size():
     # A model that downloads silently because nobody gave it a number is the failure mode.
     for model in dw.SHAPE_HF_SOURCES:
         assert dw.APPROX_GB.get(model, 0) > 0, model
+
+
+def test_paint_comes_from_the_mlx_ready_repo_at_a_pinned_revision():
+    """Issue #65: Tencent's paint folder has no DINOv2, no v2-0 VAE and a .bin UNet, so
+    a fresh install could shape but not paint. A branch name instead of a commit would let
+    a re-upload change what new installs get without anyone noticing."""
+    assert dw.PAINT_HF_REPO == "zimengxiong/hunyuan3d-mlx-paint-large"
+    assert re.fullmatch(r"[0-9a-f]{40}", dw.PAINT_HF_REVISION)
+    assert dw.PAINT_LOCAL_DIR == "hunyuan3d-paintpbr-v2-1"
+
+
+def test_every_file_the_paint_script_opens_is_downloaded():
+    # Read from the real paint script and RealESRGAN loader, not a copy: the bug was the
+    # loader and the downloader drifting apart.
+    script = (PAINT / "scripts" / "run_paint_pbr.py").read_text()
+    assert 'PBR = "weights/hunyuan3d-paintpbr-v2-1"' in script
+    opened = set(re.findall(r'\{PBR\}/([\w./-]+)"', script))
+    assert opened, "the paint script no longer loads from {PBR}/; update this test"
+    loader = (PAINT / "hy3dpaint_mlx" / "realesrgan.py").read_text()
+    opened |= set(re.findall(r'"weights/hunyuan3d-paintpbr-v2-1/([\w./-]+)"', loader))
+    assert "realesrgan/rrdbnet_mlx.safetensors" in opened
+    missing = opened - set(dw.PAINT_FILES)
+    assert not missing, f"paint loads files the downloader never fetches: {missing}"
+
+
+def test_no_paint_weight_lives_outside_the_downloaded_folder():
+    script = (PAINT / "scripts" / "run_paint_pbr.py").read_text()
+    assert "hunyuan3d-paint-v2-0" not in script

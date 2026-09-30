@@ -10,11 +10,12 @@ uv sync --project hunyuan_mlx/paint
 hunyuan_mlx/shape/.venv/bin/python hunyuan_mlx/download_weights.py
 ```
 `download_weights.py` pulls shape weights (2.1, 2.0, 2.0-turbo) and paint weights from
-Hugging Face. RealESRGAN super-res weights
-(`hunyuan_mlx/paint/weights/realesrgan/rrdbnet.npz`) aren't part of the official Tencent
-HF repos, so they're separate: `hunyuan_mlx/paint/scripts/convert_realesrgan.py` downloads
-the official `xinntao/Real-ESRGAN` release and converts it (needs a torch venv, dev-time
-only — matches the paint module's other oracle/convert scripts; not a runtime dependency).
+Hugging Face. Paint comes from Xiong's MLX-ready repo
+(`zimengxiong/hunyuan3d-mlx-paint-large`, pinned), which carries the UNet, VAE, DINOv2 and
+RealESRGAN super-res weights together. Tencent's own paint folder ships the UNet as a
+torch `.bin` and has no DINOv2, so it cannot be used directly.
+`hunyuan_mlx/paint/scripts/convert_realesrgan.py` still exists for converting RealESRGAN
+from the original release yourself; the paint code only falls back to its output.
 
 CLI: `python -m hy3dmlx.pipeline --weights <dir> [flags] --out out.glb`, or the full
 end-to-end wrapper: `hunyuan_mlx/shape/.venv/bin/python scripts/hunyuan_mlx_xiong_generate.py
