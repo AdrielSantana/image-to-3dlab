@@ -11,10 +11,11 @@ are directly reachable.
 2.1 ships only a .ckpt on HF; this converts it to the .safetensors format the shape
 pipeline actually loads, via shape/scripts/convert_v21_ckpt.py.
 
-RealESRGAN super-res weights (paint/weights/realesrgan/rrdbnet.npz) aren't part of the
-official Tencent HF repos and aren't fetched by this script -- run (needs a torch venv,
-dev-time only): `paint/scripts/convert_realesrgan.py`. It downloads the official
-xinntao/Real-ESRGAN release and converts it; see that script's docstring.
+Paint weights come from Xiong's own MLX-ready repo, not Tencent's. Tencent's
+hunyuan3d-paintpbr-v2-1 ships the UNet as a torch .bin and has no DINOv2 or VAE, so a
+fresh install from it could not paint (issue #65). Xiong's repo is the same Tencent
+weights, converted: UNet, VAE, DINOv2-giant and RealESRGAN, in the layout the paint
+code loads.
 
 Usage:
     shape/.venv/bin/python download_weights.py [--model 2.0] [--skip-paint]
@@ -37,7 +38,7 @@ PAINT_WEIGHTS = REPO / "paint" / "weights"
 # Roughly what each piece costs on disk, measured 2026-09-21. Approximate on purpose and
 # only ever printed, never checked: the point is that nobody starts a 13 GB fetch without
 # being told it is 13 GB.
-APPROX_GB = {"2.1": 6.9, "2.0": 4.6, "2.0-turbo": 4.6, "paint": 8.3}
+APPROX_GB = {"2.1": 6.9, "2.0": 4.6, "2.0-turbo": 4.6, "paint": 8.7}
 
 DEFAULT_MODEL = "2.0"
 
@@ -46,6 +47,24 @@ SHAPE_HF_SOURCES = {
     "2.0": ("tencent/Hunyuan3D-2", "hunyuan3d-dit-v2-0", "Hunyuan3D-2"),
     "2.0-turbo": ("tencent/Hunyuan3D-2", "hunyuan3d-dit-v2-0-turbo", "Hunyuan3D-2"),
 }
+
+# Pinned, so a re-upload upstream cannot change what a fresh install gets. This revision
+# is the one every working local install was fetched from.
+PAINT_HF_REPO = "zimengxiong/hunyuan3d-mlx-paint-large"
+PAINT_HF_REVISION = "b56e8b86b4d1e62b0bb3bbef7e2070d6ec22620e"
+PAINT_LOCAL_DIR = "hunyuan3d-paintpbr-v2-1"
+# Everything paint/scripts/run_paint_pbr.py and hy3dpaint_mlx/realesrgan.py open.
+PAINT_FILES = (
+    "unet/config.json",
+    "unet/diffusion_pytorch_model.safetensors",
+    "vae/config.json",
+    "vae/diffusion_pytorch_model.safetensors",
+    "dinov2/config.json",
+    "dinov2/model.safetensors",
+    "dinov2/preprocessor_config.json",
+    "scheduler/scheduler_config.json",
+    "realesrgan/rrdbnet_mlx.safetensors",
+)
 
 
 def download_shape(model: str) -> None:
@@ -108,7 +127,7 @@ def announce(models: list[str], *, paint: bool) -> float:
              for m in models]
     total = sum(APPROX_GB.get(m, 0) for m in models)
     if paint:
-        lines.append(f"  {'paint':<10} {APPROX_GB['paint']:>5.1f} GB  (tencent/Hunyuan3D-2.1)")
+        lines.append(f"  {'paint':<10} {APPROX_GB['paint']:>5.1f} GB  ({PAINT_HF_REPO})")
         total += APPROX_GB["paint"]
     print("Downloading Hunyuan3D weights from Hugging Face:", flush=True)
     print("\n".join(lines), flush=True)
@@ -121,18 +140,14 @@ def announce(models: list[str], *, paint: bool) -> float:
 def download_paint() -> None:
     from huggingface_hub import snapshot_download
 
+    dest = PAINT_WEIGHTS / PAINT_LOCAL_DIR
     snapshot_download(
-        "tencent/Hunyuan3D-2.1",
-        allow_patterns=["hunyuan3d-paintpbr-v2-1/*"],
-        local_dir=PAINT_WEIGHTS,
+        PAINT_HF_REPO,
+        revision=PAINT_HF_REVISION,
+        allow_patterns=list(PAINT_FILES),
+        local_dir=dest,
     )
-    # dinov2-giant ships inside paintpbr-v2-1/dinov2/ -- the paint code (run_paint_pbr.py,
-    # test_pbr_parity.py) loads it from there directly, no symlink needed.
-    print(f"paint weights: ready at {PAINT_WEIGHTS}")
-    print(
-        "NOTE: RealESRGAN weights (weights/realesrgan/rrdbnet.npz) are NOT covered by "
-        "this script -- run paint/scripts/convert_realesrgan.py separately (needs torch)."
-    )
+    print(f"paint weights: ready at {dest}")
 
 
 def build_parser() -> argparse.ArgumentParser:

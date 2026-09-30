@@ -71,12 +71,35 @@ class RRDBNet(nn.Module):
         return self.conv_last(_lrelu(self.conv_hr(feat)))
 
 
-def load_rrdbnet(npz_path="weights/realesrgan/rrdbnet.npz"):
+# Xiong's MLX-ready copy ships with the paint weights (download_weights.py fetches it);
+# the .npz is the older hand-converted route (scripts/convert_realesrgan.py), kept as a
+# fallback so existing installs still load. Same 702 tensors, verified equal 2026-09-30.
+RRDBNET_MLX = "weights/hunyuan3d-paintpbr-v2-1/realesrgan/rrdbnet_mlx.safetensors"
+RRDBNET_NPZ = "weights/realesrgan/rrdbnet.npz"
+
+
+def pick_rrdbnet_weights(root="."):
+    """The RealESRGAN weights file to load, or None if neither is on disk."""
+    import os
+    for rel in (RRDBNET_MLX, RRDBNET_NPZ):
+        if os.path.isfile(os.path.join(root, rel)):
+            return os.path.join(root, rel)
+    return None
+
+
+def load_rrdbnet(path=None):
     import numpy as np
     from mlx.utils import tree_unflatten
+    path = path or pick_rrdbnet_weights()
+    if path is None:
+        raise FileNotFoundError(f"no RealESRGAN weights: expected {RRDBNET_MLX} "
+                                "(run download_weights.py) or " + RRDBNET_NPZ)
     m = RRDBNet()
-    sd = dict(np.load(npz_path))
-    flat = [(k, (mx.array(v).transpose(0, 2, 3, 1) if v.ndim == 4 else mx.array(v))) for k, v in sd.items()]
+    if path.endswith(".safetensors"):
+        flat = list(mx.load(path).items())      # already NHWC
+    else:
+        sd = dict(np.load(path))
+        flat = [(k, (mx.array(v).transpose(0, 2, 3, 1) if v.ndim == 4 else mx.array(v))) for k, v in sd.items()]
     m.update(tree_unflatten(flat)); mx.eval(m.parameters())
     return m
 

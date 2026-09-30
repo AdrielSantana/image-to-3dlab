@@ -250,7 +250,7 @@ CATALOG: tuple[Backend, ...] = (
         label="Hunyuan3D-MLX (Xiong, full pipeline)",
         rank=2,
         best_for="Fast, clean results, and the quickest to run from a fresh clone.",
-        tradeoff="Shape and paint are separate venvs; RealESRGAN super-res is a manual step.",
+        tradeoff="Shape and paint are separate venvs, each set up on its own.",
         license_name="MIT (code); Tencent Hunyuan Community License (weights)",
         license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
         install="uv sync + hunyuan_mlx/download_weights.py",
@@ -262,14 +262,11 @@ CATALOG: tuple[Backend, ...] = (
             "The Hunyuan weights are not licensed for use in the EU, the UK or South Korea. "
             "Check the licence before downloading."
         ),
-        extra_steps=(
-            "RealESRGAN super-res weights are a separate conversion step; see "
-            "docs/hunyuan-mlx-recipes.md.",
-        ),
         weights=(
             WeightSet("Hunyuan3D-2 shape (default route)", "tencent/Hunyuan3D-2",
                       int(5.0 * GB), REPO / "hunyuan_mlx" / "shape" / "weights" / "Hunyuan3D-2"),
-            WeightSet("Hunyuan3D-2.1 paint (PBR)", "tencent/Hunyuan3D-2.1", int(8.3 * GB),
+            WeightSet("Hunyuan3D-2.1 paint (PBR), MLX port",
+                      "zimengxiong/hunyuan3d-mlx-paint-large", int(8.7 * GB),
                       REPO / "hunyuan_mlx" / "paint" / "weights"),
         ),
     ),
@@ -302,7 +299,8 @@ CATALOG: tuple[Backend, ...] = (
             WeightSet("Hunyuan3D-2.1 shape, MLX port", "dgrauet/hunyuan3d-2.1-mlx",
                       int(13.0 * GB),
                       HF_HUB_DIR / "models--dgrauet--hunyuan3d-2.1-mlx"),
-            WeightSet("Hunyuan3D-2.1 paint (PBR)", "tencent/Hunyuan3D-2.1", int(8.3 * GB),
+            WeightSet("Hunyuan3D-2.1 paint (PBR), MLX port",
+                      "zimengxiong/hunyuan3d-mlx-paint-large", int(8.7 * GB),
                       REPO / "hunyuan_mlx" / "paint" / "weights",
                       note="The same paint weights the Xiong route uses. Downloading it "
                            "for one route installs it for both."),

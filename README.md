@@ -89,8 +89,7 @@ status telling you exactly what's missing:
   Downloads the 2.0 shape model plus the paint weights from Hugging Face, about 13 GB,
   and prints the sizes before it starts. `--model 2.1` or `--model 2.0-turbo` fetches a
   different one; `--all` fetches every shape model, which is about 24 GB and more than
-  the default route uses. Full detail, including the one extra manual step for RealESRGAN super-res
-  weights: [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md).
+  the default route uses. Full detail: [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md).
 - **Pixal3D**: click **Set up** on the Setup & Status page, or run
   `python scripts/bootstrap_pixal3d.py`. It says what it will download and asks first. On a
   Mac it compiles with Metal (needs full Xcode). On NVIDIA Linux with the CUDA toolkit it
