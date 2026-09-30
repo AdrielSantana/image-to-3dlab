@@ -144,6 +144,10 @@ class Backend:
     # people who do not have a source image yet. The page groups on this rather than
     # guessing from the label.
     kind: str = "3d"
+    # The official project behind a Mac port, as (label, url). TRELLIS.2 and Hunyuan3D are
+    # NVIDIA-first upstream; only our wrappers are Apple-only. Without this, a Linux user
+    # read "needs Apple Silicon" as if the model itself could not run on their card.
+    upstream: tuple[str, str] | None = None
 
     @property
     def bytes_expected(self) -> int:
@@ -157,6 +161,14 @@ class Backend:
     def runs_here(self, host: str | None = None) -> bool:
         return (host or host_platform()) in self.runs_on
 
+    def _platform_note(self) -> str:
+        if self.upstream:
+            return (f"This lab runs the Apple Silicon port. {self.upstream[0]} itself is "
+                    f"built for NVIDIA: on an NVIDIA machine, use the official version "
+                    f"for now. Built into this lab later.")
+        return (f"Needs {runs_on_phrase(self)}. Setting it up on this machine would "
+                f"download gigabytes and then fail, so the button is off.")
+
     def describe(self, host: str | None = None) -> dict[str, Any]:
         weights = [w.describe() for w in self.weights]
         present = sum(w["bytes_present"] for w in weights)
@@ -167,10 +179,9 @@ class Backend:
             "supported_here": supported,
             "requires": runs_on_phrase(self),
             # Said once, in words, so the screen can explain instead of a button failing.
-            "platform_note": None if supported else (
-                f"Needs {runs_on_phrase(self)}. Setting it up on this machine would "
-                f"download gigabytes and then fail, so the button is off."
-            ),
+            "platform_note": None if supported else self._platform_note(),
+            "upstream": ({"label": self.upstream[0], "url": self.upstream[1]}
+                         if self.upstream else None),
             "id": self.id,
             "label": self.label,
             "kind": self.kind,
@@ -226,6 +237,12 @@ CATALOG: tuple[Backend, ...] = (
                       REPO / "vendor" / "pixal3d-cpp" / "models" / "pixal3d-sv",
                       note="Includes the BiRefNet matting model (ilintar/trellis2-gguf), "
                            "used to cut out a subject when the image has no alpha."),
+            # Installed with Pixal3D since 0.3.5: without it the cut-out falls back to
+            # u2net, which ate a white robot's upper arms on a fresh Linux install.
+            WeightSet("BiRefNet-lite background remover", _matte.LITE_URL, _matte.LITE_BYTES,
+                      _matte.model_file(_matte.LITE_MODEL),
+                      note="Cuts the subject out before generation, keeping thin and "
+                           "light-coloured parts. Shared with the other routes."),
         ),
     ),
     Backend(
@@ -237,6 +254,7 @@ CATALOG: tuple[Backend, ...] = (
         license_name="MIT (code); Tencent Hunyuan Community License (weights)",
         license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
         install="uv sync + hunyuan_mlx/download_weights.py",
+        upstream=("Hunyuan3D-2.1", "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1"),
         setup_minutes=25,
         build_probes=(venv_python(REPO / "hunyuan_mlx" / "shape"),
                       venv_python(REPO / "hunyuan_mlx" / "paint")),
@@ -267,6 +285,7 @@ CATALOG: tuple[Backend, ...] = (
         license_name="MIT (Xiong paint code); Tencent Hunyuan Community License (weights)",
         license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
         install="Manual: clone dgrauet's port into vendor/hunyuan-mlx, then uv sync",
+        upstream=("Hunyuan3D-2.1", "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1"),
         automated_setup=False,
         setup_minutes=40,
         build_probes=(REPO / "vendor" / "hunyuan-mlx" / ".venv" / "bin" / "python",
@@ -326,12 +345,23 @@ CATALOG: tuple[Backend, ...] = (
         license_name="MIT (code + weights); DINOv3 License (image encoder)",
         license_url="https://huggingface.co/microsoft/TRELLIS.2-4B",
         install="viewer",
+        upstream=("TRELLIS.2", "https://github.com/microsoft/TRELLIS.2"),
+        caveat=(
+            "Its DINOv3 image encoder is gated: request access to "
+            "facebook/dinov3-vitl16-pretrain-lvd1689m on Hugging Face (Meta approves by "
+            "hand) and run `hf auth login` before setting it up, or the first run stops "
+            "after the 14 GB download."
+        ),
         setup_minutes=60,
         setup_fetches_weights=False,
         build_probes=(venv_python(REPO / "vendor" / "trellis-space-mac"),),
         weights=(
             WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(14.0 * GB),
                       HF_HUB_DIR / "models--microsoft--TRELLIS.2-4B"),
+            WeightSet("TRELLIS image-large decoder", "microsoft/TRELLIS-image-large",
+                      148 * 1024 ** 2,
+                      HF_HUB_DIR / "models--microsoft--TRELLIS-image-large",
+                      note="One decoder file TRELLIS.2's config pulls in on the first run."),
             WeightSet("DINOv3 image encoder", "facebook/dinov3-vitl16-pretrain-lvd1689m",
                       int(1.1 * GB),
                       HF_HUB_DIR / "models--facebook--dinov3-vitl16-pretrain-lvd1689m"),

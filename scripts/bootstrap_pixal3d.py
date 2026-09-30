@@ -13,7 +13,9 @@ machine:
   `--prebuilt` picks it even when a compiler is present. With neither, it says which
   driver to install and stops.
 
-The **weights** are the single-view Q8_0 set plus the BiRefNet matting model, 8.4 GB.
+The **weights** are the single-view Q8_0 set plus the BiRefNet matting model, 8.4 GB, and
+BiRefNet-lite (224 MB), the background remover Pixal3D's cut-out uses. Without lite the
+cut-out falls back to u2net, which ate a white robot's upper arms on a fresh install.
 
 `AGENTS.md`: a download path must name the backend, name the route, state the size, and
 require an affirmative answer. This prints all of that and stops, unless `--yes` is given
@@ -43,7 +45,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from image_to_3dlab import host
+from image_to_3dlab import host, matte
 
 VENDOR = REPO / "vendor" / "pixal3d-cpp"
 BUILD = VENDOR / "build"
@@ -151,6 +153,8 @@ def announcement(build: bool = True, weights: bool = True,
     if weights:
         lines.append(f"  weights: {WEIGHTS_GB:.1f} GB -> vendor/pixal3d-cpp/models/pixal3d-sv/")
         lines.append(f"             {WEIGHTS_REPO}, plus BiRefNet matting ({MATTE_REPO})")
+        lines.append(f"  and:     BiRefNet-lite background remover, "
+                     f"{matte.LITE_BYTES / 1e6:.0f} MB -> {matte.model_file(matte.LITE_MODEL)}")
     lines += ["", "  licence: " + LICENCE, ""]
     return "\n".join(lines)
 
@@ -333,6 +337,19 @@ def install_weights(models: Path = MODELS) -> None:
     hf_hub_download(MATTE_REPO, "q8/birefnet.gguf", local_dir=models)
     flatten_matte(models)
     print(f"  weights in {models}")
+    install_background_remover()
+
+
+def install_background_remover(target: Path | None = None, download=None) -> None:
+    """BiRefNet-lite, unless it is already there. Same file bootstrap_matte.py installs."""
+    target = target or matte.model_file(matte.LITE_MODEL)
+    if target.is_file():
+        return
+    if download is None:
+        from bootstrap_matte import download
+    print(f"\nFetching BiRefNet-lite ({matte.LITE_BYTES / 1e6:.0f} MB)...", flush=True)
+    download(target)
+    print(f"  background remover in {target}")
 
 
 def rebuild_existing(runner=subprocess.run) -> Path:

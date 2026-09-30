@@ -19,8 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rebuild button for Pixal3D** in Setup & Status. It shows when your install predates
   this repo's latest fixes (such as the 8-step default) and recompiles it in a few
   minutes, downloading nothing. No Terminal needed.
+- **Blender shows in Setup & Status**, found or not, with where to get it. Finish and the
+  rig tools need it; the viewer never installs it for you.
 
 ### Changed
+- **Pixal3D setup brings BiRefNet-lite** (224 MB), the background remover. Without it the
+  cut-out fell back to u2net, which eats thin and light-coloured parts; on a fresh Linux
+  install it took a white robot's upper arms. The download is listed before you agree.
+- **Mac-only routes point NVIDIA users somewhere.** TRELLIS.2 and Hunyuan3D say "Mac port
+  here" and link the official NVIDIA version, instead of a bare "needs Apple Silicon".
+- **TRELLIS.2 warns about its gated DINOv3 encoder up front** (Hugging Face login plus
+  Meta's approval), so nobody waits out a 14 GB download to hit a login error.
 - **Finish runs are easier to read.** The finished model is the only GLB at the top of
   the run folder, named after the asset and its face count (`vanguard_5k.glb`). The
   in-between models sit in `steps/`, numbered in the order they were made

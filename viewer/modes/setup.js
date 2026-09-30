@@ -110,7 +110,12 @@ function backendCard(backend) {
   // A backend that cannot run here gets no button at all. Offering one would spend
   // gigabytes of someone's bandwidth on a build that fails partway through.
   if (backend.supported_here === false) {
-    action.innerHTML = `<span class="setup-unavailable">needs ${backend.requires}</span>`;
+    // A Mac port of an NVIDIA-first model says so, instead of implying the model itself
+    // needs a Mac: TRELLIS.2 and Hunyuan3D run on NVIDIA upstream.
+    action.innerHTML = backend.upstream
+      ? `<span class="setup-unavailable">Mac port here · <a href="${backend.upstream.url}"
+           target="_blank" rel="noopener">official ${backend.upstream.label} runs on NVIDIA</a></span>`
+      : `<span class="setup-unavailable">needs ${backend.requires}</span>`;
   } else if (backend.action === 'none') {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
   } else if (backend.action === 'manual') {
@@ -336,6 +341,39 @@ function summarise(catalog) {
     + ` · ${formatBytes(onDisk)} of model weights on disk`;
 }
 
+/* Blender is the one requirement the viewer never installs: it is a ~400 MB application
+ * people choose for themselves. Finish and the rig tools need it, so its state belongs on
+ * the page that owns install state, before anyone clicks Finish and finds out. */
+async function blenderCard() {
+  const card = document.createElement('div');
+  let caps = null;
+  try {
+    const response = await fetch('/api/finish/capabilities');
+    if (response.ok) caps = await response.json();
+  } catch { /* shown as unknown below */ }
+  const found = Boolean(caps && caps.blender && !caps.blender_problem);
+  card.className = `setup-card ${found ? 'ready' : 'missing'}`;
+  card.dataset.backend = 'blender';
+  const where = found
+    ? `found · Blender ${caps.blender_version || ''} at <code>${caps.blender}</code>`
+    : 'not found';
+  card.innerHTML = `
+    <div class="setup-card-head">
+      <span class="setup-dot ${found ? 'ok' : 'off'}">${found ? '●' : '○'}</span>
+      <div class="setup-card-title">
+        <strong>Blender (for Finish and rigging)</strong>
+        <div class="setup-card-state">${where}</div>
+      </div>
+      <div class="setup-card-action">${found
+        ? '<span class="setup-ready">✓ ready</span>'
+        : '<a href="https://www.blender.org/download/" target="_blank" rel="noopener">Get Blender</a>'}</div>
+    </div>
+    <p class="setup-card-best">Finish (low-poly clean-up and the photo layer) runs Blender in the background. Installed by you, not by this page.</p>
+    ${!found && caps && caps.blender_problem
+      ? `<p class="setup-card-caveat">${caps.blender_problem}</p>` : ''}`;
+  return card;
+}
+
 export async function load() {
   const host = s('setup-backends');
   try {
@@ -346,6 +384,7 @@ export async function load() {
     host.after(s('setup-run')); // park it outside the cards before they are rebuilt
     host.innerHTML = '';
     for (const backend of state.catalog.backends) host.appendChild(backendCard(backend));
+    host.appendChild(await blenderCard());
     placeRunPanel();
     document.dispatchEvent(new CustomEvent('viewer:catalog', { detail: state.catalog }));
   } catch (error) {

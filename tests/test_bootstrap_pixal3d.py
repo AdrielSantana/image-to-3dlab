@@ -18,7 +18,7 @@ def test_weight_size_matches_the_catalogue():
     """The Setup page and this script must not quote different numbers for one download."""
     pixal = next(b for b in backend_catalog.CATALOG if b.id == "pixal3d")
     assert sum(w.bytes_expected for w in pixal.weights) == pytest.approx(
-        boot.WEIGHTS_GB * backend_catalog.GB, rel=0.01)
+        boot.WEIGHTS_GB * backend_catalog.GB + boot.matte.LITE_BYTES, rel=0.01)
 
 
 @pytest.fixture
@@ -318,3 +318,18 @@ def test_a_rebuild_patches_then_compiles_without_the_fresh_install_checks(monkey
     assert ran[0][-1].endswith("patch_pixal3d_steps.py")
     assert ran[1][:2] == ["cmake", "--build"]
     assert not any("xcrun" in part for command in ran for part in command)
+
+
+def test_announcement_names_the_background_remover_it_brings(monkeypatch, new_driver):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    assert "BiRefNet-lite" in boot.announcement()
+
+
+def test_background_remover_is_fetched_once_and_only_when_missing(tmp_path):
+    """A fresh install fell back to u2net and lost a robot's arms (2026-09-30)."""
+    target = tmp_path / "birefnet-general-lite.onnx"
+    fetched = []
+    boot.install_background_remover(target, download=lambda t: fetched.append(t))
+    assert fetched == [target]
+    target.write_bytes(b"x")
+    boot.install_background_remover(target, download=lambda t: pytest.fail("refetched"))
