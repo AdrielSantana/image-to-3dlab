@@ -29,7 +29,7 @@ from hy3dpaint_mlx.raster import cr_raster
 from hy3dpaint_mlx.convert import load_torch_weights
 
 PBR = "weights/hunyuan3d-paintpbr-v2-1"
-VAEW = "weights/hunyuan3d-paint-v2-0/vae/diffusion_pytorch_model.safetensors"  # same SD2.1 VAE
+VAEW = f"{PBR}/vae/diffusion_pytorch_model.safetensors"  # SD2.1 VAE, ships with the PBR weights
 R = int(os.environ.get("PAINT_RES", "512"))      # native-res generation (crisp); set 384 for a faster/softer run
 SCHED = os.environ.get("PAINT_SCHED", "unipc")   # UniPC (15 steps) — reference solver, ~25% fewer steps than DDIM
 STEPS = int(os.environ.get("PAINT_STEPS", "15" if SCHED == "unipc" else "20"))

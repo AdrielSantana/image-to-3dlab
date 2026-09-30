@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Hunyuan3D-MLX paint now works on a fresh install.** The weight downloader fetched
+  paint from Tencent's repo, which is missing two files paint needs and ships a third in
+  the wrong format, so a new install could make shapes but not paint them. It now fetches
+  Xiong's MLX-ready copy of the same weights (8.7 GB, was listed as 8.3 GB), which also
+  includes the RealESRGAN super-res weights, so that manual step is gone.
+  Thanks @gabelul for the report (#65).
+
 ## [0.3.4] - 2026-09-28
 
 ### Added
