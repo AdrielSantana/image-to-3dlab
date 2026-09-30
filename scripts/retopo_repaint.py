@@ -62,7 +62,7 @@ from image_to_3dlab.host import APPLE, host_platform  # noqa: E402
 # Only a default for the command builders; main() finds the real one on every OS.
 BLENDER = MAC_APP
 REPAINT_OFF_MAC = ("The repaint runs on Apple Silicon only (it uses MLX). Pass --skip-paint: "
-                   "the photo layer still keeps the front exact, and the sides and back keep "
+                   "Pixel Match still keeps the front exact, and the sides and back keep "
                    "the generator's own paint.")
 
 # The viewer's job API parses these to drive its progress panel. Same contract as
@@ -323,7 +323,7 @@ def main() -> int:
         if reuse(photo_glb, args.resume):
             emit_stage("photo", f"Reusing {photo_glb.name}")
         else:
-            emit_stage("photo", "Keeping the source photo's pixels where it can see")
+            emit_stage("photo", "Pixel Match: keeping the photo's real pixels where it can see")
             photo_record = photo_stage(current, args.views, photo_glb,
                                        steps["photo_weights"])
         timings["photo"] = round(time.time() - step, 1)

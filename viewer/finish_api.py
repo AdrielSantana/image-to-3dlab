@@ -72,7 +72,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "faces": 40000, "atlas": 2048, "angle": 89.0, "voxel": 0.004,
     "metallic": 0.25, "roughness": 0.65, "ior": 1.45,
     "paint_seed": 0, "paint_res": 512, "paint_steps": 15, "paint_tex": 4096,
-    "texture_size": 2048, "skip_paint": False, "skip_compress": False, "skip_bake": False,
+    "texture_size": 2048, "skip_paint": True, "skip_compress": False, "skip_bake": False,
     "skip_photo": False,
 }
 
@@ -137,7 +137,7 @@ def normalise_settings(raw: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
-REPAINT_NOTE = ("Repaint runs on Apple Silicon only for now. Here the photo layer still keeps "
+REPAINT_NOTE = ("Repaint runs on Apple Silicon only for now. Here Pixel Match still keeps "
                 "the front exact; the sides and back keep the generator's own paint.")
 
 
@@ -524,10 +524,10 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
         if job.resume:
             message = "Resuming from what is already on disk"
         elif "photo" in stages:
-            message = "Starting: found the source camera, so the photo's pixels will be kept"
+            message = "Starting: found the source camera, so Pixel Match will keep the photo's pixels"
         elif not job.settings.get("skip_photo", False):
             message = ("Starting: no source camera for this model (only Pixal3D runs made "
-                       "here have one), so the photo stage is skipped")
+                       "here have one), so Pixel Match is skipped")
         else:
             message = "Starting"
         job.emit({"phase": "queued", "overall_pct": 0, "stages": stages, "message": message})

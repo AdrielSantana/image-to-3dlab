@@ -97,7 +97,7 @@ def test_the_command_carries_every_setting():
 
 def test_skip_flags_appear_only_when_asked():
     job = finish.FinishJob("0" * 32, Path("/tmp/finish-job"))
-    plain = finish.build_command(job, finish.normalise_settings({}))
+    plain = finish.build_command(job, finish.normalise_settings({"skip_paint": False}))
     assert "--skip-paint" not in plain
     assert "--skip-compress" not in plain
 
@@ -513,3 +513,18 @@ def test_an_nvidia_run_never_asks_the_worker_for_a_repaint(tmp_path, monkeypatch
     job = manager.create("fox.glb", b"glb", b"png", {"skip_paint": False})
     assert job.settings["skip_paint"] is True
     assert "--skip-paint" in finish.build_command(job, job.settings)
+
+
+def test_repaint_is_opt_in_so_finish_never_needs_the_hunyuan_paint_weights():
+    """Quick finish by default (0.3.5): Pixal3D models arrive painted, Pixel Match keeps the
+    front exact, and nobody should download 8.7 GB of Hunyuan paint to finish one."""
+    assert finish.DEFAULT_SETTINGS["skip_paint"] is True
+    assert finish.normalise_settings({})["skip_paint"] is True
+    assert finish.normalise_settings({"skip_paint": False})["skip_paint"] is False
+
+
+def test_the_finish_page_calls_it_pixel_match():
+    from pathlib import Path
+    html = Path("viewer/index.html").read_text()
+    assert "Pixel Match" in html
+    assert 'id="finish-repaint" type="checkbox" checked' not in html

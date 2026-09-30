@@ -368,7 +368,7 @@ async function blenderCard() {
         ? '<span class="setup-ready">✓ ready</span>'
         : '<a href="https://www.blender.org/download/" target="_blank" rel="noopener">Get Blender</a>'}</div>
     </div>
-    <p class="setup-card-best">Finish (low-poly clean-up and the photo layer) runs Blender in the background. Installed by you, not by this page.</p>
+    <p class="setup-card-best">Finish (low-poly clean-up and Pixel Match) runs Blender in the background. Installed by you, not by this page.</p>
     ${!found && caps && caps.blender_problem
       ? `<p class="setup-card-caveat">${caps.blender_problem}</p>` : ''}`;
   return card;

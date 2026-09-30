@@ -3,9 +3,9 @@
 // (viewer/finish_api.py), which is a sibling of the rig rebind job, so the SSE-with-polling
 // -fallback shape here matches modes/rig-review.js rather than inventing a second one.
 //
-// Repaint is optional on purpose. A Pixal3D asset arrives with usable colour already, so
-// finishing it is retopologise + compress and takes seconds; a bleached TRELLIS.2 asset
-// needs the paint stage and takes ~6 minutes.
+// Repaint is opt-in (off by default since 0.3.5). A Pixal3D asset arrives painted and Pixel
+// Match (the photo stage) keeps its front exact, so finishing takes seconds and needs no
+// Hunyuan paint weights; the repaint is there for whoever wants the sides redrawn.
 //
 // Every run lives in its own directory under output/finish/ and every stage leaves its
 // artifact there, so the run list below is the recovery path: the job registry is in the
@@ -18,7 +18,7 @@ const STAGE_META = {
   stage_labels: {
     retopologise: 'Retopologise',
     repaint: 'Repaint',
-    photo: 'Keep source photo',
+    photo: 'Pixel Match',
 
     bake: 'Bake detail',
     compress: 'Compress textures',
@@ -194,7 +194,8 @@ function watch(payload) {
 function runRow(run) {
   const row = document.createElement('div');
   row.className = 'stage-row';
-  const done = run.stages_complete.join(' → ') || 'nothing yet';
+  const done = run.stages_complete
+    .map((stage) => (stage === 'photo' ? 'Pixel Match' : stage)).join(' → ') || 'nothing yet';
   const size = run.size_bytes == null ? '' : ` · ${(run.size_bytes / 1048576).toFixed(1)} MB`;
   row.innerHTML =
     `<span class="stage-dot">${run.finished ? '✓' : '·'}</span>` +

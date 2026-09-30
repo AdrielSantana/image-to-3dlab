@@ -8,11 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Finish keeps the source photo's real pixels.** Text, logos, numbers and faces that a
-  repaint redraws as lookalikes now come through exactly: every surface the photo can see
-  takes its real pixel, and the repaint fills the sides and back. On by default for
-  Pixal3D models made on this machine (their camera is found automatically); tick
-  **skip source photo** to turn it off. Also available as `scripts/photo_paint.py`.
+- **Pixel Match: Finish keeps your picture's real pixels.** Text, logos, numbers and faces
+  that a generator or a repaint redraws as lookalikes now come through exactly: every
+  surface the picture can see takes its real pixel. On by default for Pixal3D models made
+  on this machine (their camera is found automatically); untick **Pixel Match** to turn it
+  off. Also available as `scripts/photo_paint.py`.
 - **Before and after in Finish.** A finished run opens side by side with the model you
   started from, cameras locked together; every finished run on disk has a **Compare**
   button too.
@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rig tools need it; the viewer never installs it for you.
 
 ### Changed
+- **Finish no longer repaints by default.** Pixal3D models arrive painted and Pixel Match
+  keeps the front exact, so a finish takes seconds instead of minutes and needs no extra
+  download. **Also repaint the sides and back** is still there (Apple Silicon, needs the
+  8.7 GB Hunyuan paint weights).
 - **Pixal3D setup brings BiRefNet-lite** (224 MB), the background remover. Without it the
   cut-out fell back to u2net, which eats thin and light-coloured parts; on a fresh Linux
   install it took a white robot's upper arms. The download is listed before you agree.

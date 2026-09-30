@@ -213,7 +213,7 @@ character with them.
 | Apple Silicon Mac (M-series), 32 GB recommended | Every route |
 | **or** Linux with an NVIDIA card (24 GB VRAM tested) | Pixal3D, Stable Fast 3D, Generate Image |
 | macOS: full Xcode | compiles the Metal kernels for Pixal3D and TRELLIS |
-| Blender 4.2+ | Finish (low-poly clean-up, photo layer) and rigging. Install it yourself from [blender.org](https://www.blender.org/download/); Setup & Status shows whether it was found |
+| Blender 4.2+ | Finish (low-poly clean-up, Pixel Match) and rigging. Install it yourself from [blender.org](https://www.blender.org/download/); Setup & Status shows whether it was found |
 | `uv` | builds the reproducible Python environments |
 | Python 3.11 (TRELLIS) / 3.12 (Hunyuan3D-MLX) | pinned by each backend's own setup |
 | ~13 GB disk | Hunyuan3D-MLX 2.0 shape + paint weights (auto-downloaded once) |
