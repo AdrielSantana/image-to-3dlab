@@ -49,13 +49,6 @@ const STATE_META = {
   unsupported: { dot: '–', cls: 'off', text: 'not available on this machine' },
 };
 
-/** A setup time a person would say out loud: "about 20 min", "about an hour". */
-function roughly(minutes) {
-  if (minutes < 60) return `about ${minutes} min`;
-  const hours = minutes / 60;
-  return hours === 1 ? 'about an hour' : `about ${Number(hours.toFixed(1))} hours`;
-}
-
 function backendCard(backend) {
   const meta = STATE_META[backend.state] || STATE_META.missing;
   const card = document.createElement('div');
@@ -68,7 +61,6 @@ function backendCard(backend) {
   // Say where the weights are when they are not here yet but the backend still works.
   const later = backend.action === 'none' && backend.bytes_present === 0
     ? ' · weights download on your first run' : '';
-  const minutes = backend.setup_minutes ? ` · ${roughly(backend.setup_minutes)} to set up` : '';
 
   card.innerHTML = `
     <div class="setup-card-head">
@@ -76,7 +68,7 @@ function backendCard(backend) {
       <div class="setup-card-title">
         <strong>${backend.label}</strong>
         ${backend.recommended ? '<span class="setup-pill">start here</span>' : ''}
-        <div class="setup-card-state">${meta.text} · ${size}${minutes}${later}</div>
+        <div class="setup-card-state">${meta.text} · ${size}${later}</div>
       </div>
       <div class="setup-card-action"></div>
     </div>
@@ -178,7 +170,7 @@ function removeButton(backend) {
         ? 'These live in the shared Hugging Face cache, so other tools on this machine'
           + ' may be using them.'
         : 'This cannot be undone from here.',
-      `They can be downloaded again, which takes ${roughly(backend.setup_minutes)}.`,
+      'They can be downloaded again.',
       '',
       `Type  ${backend.id}  to confirm:`,
     ].join('\n'), '');
@@ -218,7 +210,7 @@ function confirmDownload(backend, button) {
       'terms; the log will say so if the download is refused.',
     ]
     : [
-      `This builds the Metal port first, which takes ${roughly(backend.setup_minutes)}`,
+      'This builds the Metal port first'
       'and downloads no weights.',
       '',
       `The ${backend.human_expected} of weights are fetched on your first generation run,`,
