@@ -10,7 +10,7 @@ import './modes/props.js';
 import './modes/rig-review.js';
 import './modes/animate.js';
 import { subscribeRigEditState } from './core/rig-edit-state.js';
-import { isEmbedded, landingMode } from './core/embed.js';
+import { isEmbedded, landingMode, linksAModel } from './core/embed.js';
 
 const byId = (id) => document.getElementById(id);
 const modes = {
@@ -65,9 +65,10 @@ subscribeRigEditState(({ pendingCount }) => {
 // Inside the Generate tab's preview iframe the page is just a 3D view: hide the app chrome
 // and skip the About/update checks, which would otherwise navigate the iframe elsewhere.
 const embedded = isEmbedded(location.search);
+const linked = linksAModel(location.search);
 document.documentElement.classList.toggle('embedded', embedded);
-setMode(landingMode({ embedded, skipSetup: skipRequested() }));
+setMode(landingMode({ embedded, linked, skipSetup: skipRequested() }));
 if (!embedded) {
-  welcomeOnArrival();
+  welcomeOnArrival({ linked });
   checkForUpdates();
 }

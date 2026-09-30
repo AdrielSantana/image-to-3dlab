@@ -858,6 +858,46 @@ def test_cancel_works_before_the_job_exists_and_never_reaches_an_older_one():
     }
 
 
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_a_link_to_a_model_lands_on_compare_with_the_app_around_it():
+    """`serve.py --open a.glb` writes ?a=... without restricted=1; it used to land on Setup."""
+    module_url = (REPO / "viewer" / "core" / "embed.js").as_uri()
+    program = f"""
+      import {{ isEmbedded, landingMode, linksAModel }} from {json.dumps(module_url)};
+      const search = '?a=output%2Fowl.glb&la=Owl';
+      console.log(JSON.stringify([
+        isEmbedded(search), linksAModel(search), linksAModel(''),
+        landingMode({{ embedded: false, linked: true, skipSetup: false }}),
+        landingMode({{ embedded: false, linked: false, skipSetup: false }}),
+      ]));
+    """
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [False, True, False, "compare", "setup"]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_any_pane_compare_loads_counts_as_a_link_and_an_empty_one_does_not():
+    module_url = (REPO / "viewer" / "core" / "embed.js").as_uri()
+    searches = ["?b=out.glb&lb=After", "?d=x.glb", "?a=", "?a=%20", "?la=Owl", "?e=x.glb"]
+    program = f"""
+      import {{ linksAModel }} from {json.dumps(module_url)};
+      console.log(JSON.stringify({json.dumps(searches)}.map(linksAModel)));
+    """
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [True, True, False, False, False, False]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_a_linked_visit_keeps_the_model_and_the_welcome_waits():
+    payload = json.dumps(WELCOME)
+    assert _run_welcome(
+        f"[w.shouldShow(null, {payload}, true), w.shouldShow('0.2.0', {payload}, true),"
+        f" w.shouldShow(null, {payload}, false)]"
+    ) == [False, False, True]
+
+
 def test_generate_preview_iframe_asks_for_the_embedded_view():
     generate = (REPO / "viewer" / "modes" / "generate.js").read_text()
     app = (REPO / "viewer" / "app.js").read_text()
