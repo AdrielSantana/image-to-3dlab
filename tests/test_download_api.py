@@ -397,3 +397,9 @@ def test_finished_nvidia_trellis_setup_does_not_promise_a_later_download(monkeyp
     assert dl.done_detail(dl.BY_ID["trellis"], present=16 * 1024 ** 3).startswith("done ·")
     monkeypatch.setattr(dl, "_this_host", lambda: "apple")
     assert "first generation run" in dl.done_detail(dl.BY_ID["trellis"], present=0)
+
+
+def test_hunyuan_cuda_sets_up_with_its_own_bootstrap_and_says_cuda():
+    command = dl.command_for("hunyuan-cuda", host=dl.NVIDIA)
+    assert command[1].endswith("bootstrap_hunyuan_cuda.py") and command[-1] == "--yes"
+    assert dl.building_label("hunyuan-cuda", host=dl.NVIDIA) == "building the CUDA version"
