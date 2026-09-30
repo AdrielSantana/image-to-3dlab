@@ -162,8 +162,8 @@
         <div class="field"><label for="image-cfg">Guidance (cfg)</label>
           <input id="image-cfg" type="number" min="0" max="20" step="0.5" value="1">
           <small><strong>Leave this at 1.</strong> This model does not use guidance, so
-            anything above 1 makes it do two passes per step for no benefit. Measured: 17
-            minutes at cfg 6 against 11 at cfg 1, for the same picture.</small></div>
+            anything above 1 makes it do two passes per step for no benefit. In our test, cfg 6
+            took about half as long again as cfg 1, for the same picture.</small></div>
         <div class="field"><label for="image-sampler">Sampler</label>
           <select id="image-sampler"><option value="euler" selected>euler</option>
             <option value="euler_a">euler_a</option><option value="heun">heun</option>
@@ -383,7 +383,7 @@
         <small>keeps your picture's real pixels: sharp text, logos and faces &middot; Pixal3D models made here</small></span></label>
       <label class="check"><input id="finish-repaint" type="checkbox">
         <span>Also repaint the sides and back
-        <small id="finish-repaint-note">optional &middot; needs the Hunyuan paint weights (8.7 GB) &middot; about 6 minutes</small></span></label>
+        <small id="finish-repaint-note">optional &middot; needs the Hunyuan paint weights (8.7 GB) &middot; the slow step</small></span></label>
 
       <details class="image-advanced">
         <summary>Advanced</summary>
