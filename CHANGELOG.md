@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `blender_bake_normals.py` no longer knocks normal-map values from 1 to 63 down a
   step when it fixes the map's sign. It truncated where it should have rounded. The
   normal map Finish bakes goes through the same step.
+- Finish now stops when one of its Blender stages crashes. Blender exited 0 on a Python
+  error, so the retopology or detail bake read as done.
 
 ## [0.3.6] - 2026-10-01
 
