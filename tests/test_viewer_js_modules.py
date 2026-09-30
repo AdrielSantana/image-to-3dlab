@@ -839,3 +839,24 @@ def test_generate_preview_iframe_asks_for_the_embedded_view():
     assert "restricted=1" in generate
     assert "isEmbedded(location.search)" in app
     assert ".embedded #mode-switch" in css
+
+
+def viewer_scripts() -> list[Path]:
+    """Every first-party viewer script; vendored libraries are someone else's to parse."""
+    viewer = REPO / "viewer"
+    return sorted(p for p in viewer.rglob("*.js")
+                  if "vendor" not in p.relative_to(viewer).parts
+                  and "node_modules" not in p.parts)
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required to parse browser ES modules")
+@pytest.mark.parametrize("script", viewer_scripts(), ids=lambda p: str(p.relative_to(REPO)))
+def test_every_viewer_script_parses(script):
+    # One syntax error in any module stops the whole app loading: no tabs, no drop, no
+    # browse, and dropped files download instead. 0.3.5 shipped exactly that.
+    result = subprocess.run(
+        [NODE, "--input-type=module", "--check"],
+        stdin=script.open("rb"),
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode()

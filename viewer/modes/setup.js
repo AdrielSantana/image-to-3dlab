@@ -210,7 +210,7 @@ function confirmDownload(backend, button) {
       'terms; the log will say so if the download is refused.',
     ]
     : [
-      'This builds the Metal port first'
+      'This builds the Metal port first',
       'and downloads no weights.',
       '',
       `The ${backend.human_expected} of weights are fetched on your first generation run,`,
