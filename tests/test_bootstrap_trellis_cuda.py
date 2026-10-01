@@ -225,3 +225,10 @@ def test_build_is_present_only_after_the_marker(monkeypatch, tmp_path):
     assert boot.build_present() is False
     (tmp_path / ".done").write_text("{}")
     assert boot.build_present() is True
+
+
+def test_every_route_installs_with_patient_downloads(monkeypatch):
+    monkeypatch.setattr(boot.host, "compute_capability", lambda: "86")
+    monkeypatch.setattr(boot.host, "find_nvcc", lambda: "/usr/local/cuda/bin/nvcc")
+    for route in ("pinned", "source"):
+        assert "UV_HTTP_TIMEOUT" in boot.install_env(route, {"PATH": "/usr/bin"})

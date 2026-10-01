@@ -379,3 +379,14 @@ def test_a_page_loaded_mid_setup_can_find_the_run_again(monkeypatch):
     }
     run.status = "done"
     assert dl.running_payload() is None
+
+
+def test_a_download_timeout_buried_above_a_traceback_is_still_explained():
+    # Seen on a real pod: uv's "Failed to download ... operation timed out" sat above a
+    # 20-line Python traceback, so the user got the traceback's last line instead.
+    log = ["  x Failed to download `nvidia-cudnn-cu12==9.10.2.21`",
+           "  |-> Request failed after 3 retries", "  `-> operation timed out",
+           "Traceback (most recent call last):"] + [f"  frame {i}" for i in range(20)] + [
+           "subprocess.CalledProcessError: Command '[uv, pip, install]' returned 1."]
+    message = dl._explain(1, log)
+    assert "network" in message and "Set up again" in message

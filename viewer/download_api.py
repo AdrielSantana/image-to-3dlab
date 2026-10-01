@@ -449,13 +449,16 @@ def _explain(code: int, log: list[str]) -> str:
     A bare "exited with code 1" sends someone to the log to work out whether they are
     offline, unauthorised or out of disk. These three cover what actually happens.
     """
-    tail = "\n".join(log[-12:]).lower()
+    # Wide enough to see past a Python traceback to the error that caused it.
+    tail = "\n".join(log[-60:]).lower()
     if "401" in tail or "gated" in tail or "authenticate" in tail or "token" in tail:
         return ("refused: this model needs a Hugging Face login and its terms accepted. "
                 "Run `huggingface-cli login`, accept the terms on the model page, and retry.")
     if "no space left" in tail or "enospc" in tail:
         return "ran out of disk space. Free some room and retry; what downloaded is kept."
-    if "temporary failure in name resolution" in tail or "connection" in tail:
-        return "network error. Check the connection and retry; what downloaded is kept."
+    if ("temporary failure in name resolution" in tail or "connection" in tail
+            or "timed out" in tail or "failed to download" in tail):
+        return ("network error: a download failed or timed out. Check the connection and "
+                "press Set up again; it picks up where it left off.")
     last = next((line for line in reversed(log) if line.strip()), "")
     return f"setup exited with code {code}. Last line: {last}"

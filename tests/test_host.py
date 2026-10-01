@@ -229,3 +229,11 @@ def test_torch_has_cuda_is_false_when_torch_is_missing_or_cpu_only(capsys):
 
 def test_an_unknown_command_is_an_error():
     assert host.main(["nonsense"]) == 2
+
+
+def test_patient_downloads_lengthen_uv_timeouts_without_overriding_the_user():
+    # A 700 MB cuDNN wheel timed out at uv's 30 s default on a slow pod and killed setup.
+    env = host.patient_downloads({"PATH": "/usr/bin"})
+    assert int(env["UV_HTTP_TIMEOUT"]) >= 300 and int(env["UV_HTTP_RETRIES"]) >= 5
+    mine = host.patient_downloads({"UV_HTTP_TIMEOUT": "30"})
+    assert mine["UV_HTTP_TIMEOUT"] == "30"

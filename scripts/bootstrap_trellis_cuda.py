@@ -226,6 +226,15 @@ def build_env(capability: str | None, nvcc: str | None,
     return env
 
 
+def install_env(route: str, base: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment for the package installs: compile settings on the source route, and
+    patient downloads on both, since torch alone is gigabytes."""
+    base = dict(os.environ if base is None else base)
+    if route == "source":
+        base = build_env(host.compute_capability(), host.find_nvcc(), base)
+    return host.patient_downloads(base)
+
+
 def pip_commands(route: str, uv: str, python: Path, torch_tag: str | None = None,
                  checkout: Path = CHECKOUT,
                  extensions: Path = EXTENSIONS) -> list[list[str]]:
@@ -291,11 +300,10 @@ def install_code(route: str, torch_tag: str | None) -> None:
     python_version = "3.12" if route == "pinned" else SOURCE_PYTHON
     if not venv_python().is_file():
         run([uv, "venv", str(VENDOR / ".venv"), "--python", python_version])
-    env = dict(os.environ)
     if route == "source":
         for name, url, ref, recursive in SOURCE_EXTENSIONS:
             clone(url, EXTENSIONS / name, ref, recursive)
-        env = build_env(host.compute_capability(), host.find_nvcc())
+    env = install_env(route)
     for command in pip_commands(route, uv, venv_python(), torch_tag):
         run(command, env=env)
     BUILT_MARKER.write_text(json.dumps({"route": route, "torch": torch_tag,
