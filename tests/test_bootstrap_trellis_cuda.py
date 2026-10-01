@@ -124,6 +124,17 @@ def test_cuda_13_has_no_flash_wheel_and_compiles_it():
     assert any(c[-1] == boot.FLASH_ATTN and "--no-build-isolation" in c for c in commands)
 
 
+def test_o_voxel_does_not_rebuild_the_extensions_just_built():
+    # o-voxel names CuMesh and FlexGEMM as git dependencies, so a plain install fetched and
+    # compiled both a second time over the ones built just before it; on a test pod that
+    # hidden rebuild is where setup failed. Its small dependencies come from BASIC instead.
+    commands = boot.pip_commands("source", "uv", boot.venv_python(), "cu128")
+    o_voxel = next(c for c in commands if c[-1] == str(boot.CHECKOUT / "o-voxel"))
+    assert "--no-deps" in o_voxel
+    for package in ("numpy", "plyfile", "trimesh", "tqdm", "zstandard", "easydict"):
+        assert package in boot.BASIC
+
+
 def test_source_plan_needs_a_torch_tag():
     with pytest.raises(ValueError):
         boot.pip_commands("source", "uv", boot.venv_python(), None)

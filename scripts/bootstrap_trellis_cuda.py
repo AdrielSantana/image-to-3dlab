@@ -65,9 +65,10 @@ UTILS3D = ("git+https://github.com/EasternJournalist/utils3d.git"
 # Upstream's --basic list, minus what only training or the Gradio demo uses, plus rembg
 # for our own cut-out (image_to_3dlab/matte.py). transformers is pinned to the version
 # that ran DINOv3 on RunPod; older ones do not know the model.
+# numpy and plyfile are o-voxel's, which installs with --no-deps (see pip_commands).
 BASIC = ["imageio", "imageio-ffmpeg", "tqdm", "easydict", "opencv-python-headless",
          "ninja", "trimesh", "transformers==4.57.3", "zstandard", "kornia", "timm",
-         "pillow", "huggingface_hub", "rembg", "onnxruntime"]
+         "pillow", "huggingface_hub", "rembg", "onnxruntime", "numpy", "plyfile"]
 FLASH_ATTN = "flash-attn"
 # flash-attn publishes Linux wheels for CUDA 12 up to torch 2.8 only. An unpinned torch
 # outran them, and pip then compiled flash-attn: one to two hours on an 8-CPU machine.
@@ -250,7 +251,9 @@ def pip_commands(route: str, uv: str, python: Path, torch_tag: str | None = None
         commands.append([*pip, "--no-build-isolation", FLASH_ATTN])
     for name, *_ in SOURCE_EXTENSIONS:
         commands.append([*pip, "--no-build-isolation", str(extensions / name)])
-    commands.append([*pip, "--no-build-isolation", str(checkout / "o-voxel")])
+    # --no-deps: o-voxel names CuMesh and FlexGEMM as git dependencies, and would fetch
+    # and compile both again over the ones just built.
+    commands.append([*pip, "--no-build-isolation", "--no-deps", str(checkout / "o-voxel")])
     return commands
 
 
