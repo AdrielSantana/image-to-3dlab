@@ -398,5 +398,17 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def finish(code: int) -> None:
+    """Exit with `code` once output is flushed, skipping interpreter teardown.
+
+    A finished run (GLB, manifest and provenance written) segfaulted during Python's
+    shutdown on a real NVIDIA pod, as bpy and open3d tore down, and the viewer then read
+    the run as failed. Nothing is left to clean up by then, so skip the teardown.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    finish(main())

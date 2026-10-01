@@ -163,3 +163,13 @@ def test_main_requires_a_glb(tmp_path):
     with pytest.raises(SystemExit, match=".glb"):
         gen.main([str(image), str(tmp_path / "out.obj")])
 
+
+
+def test_a_finished_run_exits_without_interpreter_teardown(monkeypatch):
+    # Seen on a real pod: the GLB, manifest and provenance were written, then the process
+    # segfaulted during Python's shutdown (bpy/open3d teardown), so the viewer read a
+    # finished run as failed and showed no model. Exit straight after flushing.
+    exits = []
+    monkeypatch.setattr(gen.os, "_exit", exits.append)
+    gen.finish(0)
+    assert exits == [0]
