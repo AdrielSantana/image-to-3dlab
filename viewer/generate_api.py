@@ -41,6 +41,7 @@ from rig_api import (
     run_job as run_rig_job,
     status_payload as rig_status_payload,
 )
+import backend_catalog  # noqa: E402
 from backend_catalog import (
     APPLE,
     NVIDIA,
@@ -277,6 +278,22 @@ def mlx_attention_status(vendor: Path | None = None, dispatch: Path | None = Non
         "ready": patched and package,
         "hint": "; ".join(hints) or None,
     }
+
+
+def backends_payload() -> dict:
+    """The Generate tab's routes. `runs_here` lets the page drop a route this machine cannot
+    run: an NVIDIA pod was offered the two Mac-only Hunyuan-MLX routes."""
+    def runs_here(spec_id: str) -> bool:
+        entry = backend_catalog.resolve(spec_id)
+        return True if entry is None else entry.runs_here(backend_catalog.host_platform())
+
+    return {"backends": [
+        {"id": spec.id, "label": spec.label, "requires_alpha": spec.requires_alpha,
+         "default_settings": spec.default_settings, "stages": spec.stages,
+         "stage_labels": spec.stage_labels, "hidden_fields": list(spec.hidden_fields),
+         "runs_here": runs_here(spec.id)}
+        for spec in BACKENDS.values()
+    ]}
 
 
 def catalog_payload() -> dict:
@@ -2089,15 +2106,7 @@ class Handler(SimpleHTTPRequestHandler):
             })
             return
         if parts == ["api", "backends"]:
-            self._send_json(200, {
-                "backends": [
-                    {"id": spec.id, "label": spec.label, "requires_alpha": spec.requires_alpha,
-                     "default_settings": spec.default_settings, "stages": spec.stages,
-                     "stage_labels": spec.stage_labels,
-                     "hidden_fields": list(spec.hidden_fields)}
-                    for spec in BACKENDS.values()
-                ]
-            })
+            self._send_json(200, backends_payload())
             return
         if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"events", "status"}:
             run = DOWNLOADS.get(parts[2])
