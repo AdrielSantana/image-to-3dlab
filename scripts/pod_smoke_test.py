@@ -11,9 +11,9 @@ is timed; models, records and a summary land in output/pod-smoke-<time>/.
 
 Money and downloads are only spent after one "yes": the script names the GPU, its hourly
 price cap, every route and its download size first (AGENTS.md). The pod is rented on
-Secure cloud unless --cloud community, checked for download speed (a slow host turns a 40-minute test into three
-hours), and **always deleted at the end**, pass or fail. RunPod also terminates it by
-itself after --max-hours, in case this machine dies first.
+Secure cloud unless --cloud community, checked for download speed (a slow host turns a
+40-minute test into three hours), and **always deleted at the end**, pass or fail. RunPod
+also terminates it by itself after --max-hours, in case this machine dies first.
 
 Needs `runpodctl` with an API key (`runpodctl doctor`) and an SSH key RunPod knows
 (`runpodctl ssh add-key`). The Hugging Face token is read from HF_TOKEN or asked for,
