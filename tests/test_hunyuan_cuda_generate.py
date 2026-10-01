@@ -173,3 +173,26 @@ def test_a_finished_run_exits_without_interpreter_teardown(monkeypatch):
     monkeypatch.setattr(gen.os, "_exit", exits.append)
     gen.finish(0)
     assert exits == [0]
+
+
+def test_the_model_load_is_announced_before_it_starts(monkeypatch, capsys, tmp_path):
+    # Seen on a real pod: loading the shape model took ~2.5 min and the page showed nothing,
+    # so the run looked stuck. A line goes out before each slow load.
+    import sys
+    import types
+
+    class Loaded(Exception):
+        pass
+
+    def from_pretrained(*_args, **_kwargs):
+        raise Loaded
+
+    pipelines = types.SimpleNamespace(
+        Hunyuan3DDiTFlowMatchingPipeline=types.SimpleNamespace(from_pretrained=from_pretrained))
+    monkeypatch.setitem(sys.modules, "hy3dshape", types.ModuleType("hy3dshape"))
+    monkeypatch.setitem(sys.modules, "hy3dshape.pipelines", pipelines)
+    monkeypatch.setitem(sys.modules, "torch", types.ModuleType("torch"))
+    with pytest.raises(Loaded):
+        gen.generate_shape(tmp_path / "in.png", tmp_path / "m.glb", {})
+    assert gen.LOADING_SHAPE in capsys.readouterr().out
+    assert "minute" in gen.LOADING_SHAPE and "minute" in gen.LOADING_PAINT

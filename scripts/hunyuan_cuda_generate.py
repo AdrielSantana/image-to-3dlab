@@ -269,12 +269,19 @@ def check_environment(vendor_root: Path) -> int:
     return 0
 
 
+# Said before each slow load: on a real pod the shape model took ~2.5 min to come off disk
+# with nothing on screen, and the run looked stuck.
+LOADING_SHAPE = "loading the shape model (about 7 GB from disk, 1-3 minutes)..."
+LOADING_PAINT = "loading the paint models (about 2 minutes)..."
+
+
 def generate_shape(image: Path, mesh_path: Path, settings: dict[str, Any]) -> float:
     import torch
     from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
     from PIL import Image
 
     started = time.time()
+    print(LOADING_SHAPE, flush=True)
     pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(bootstrap.HUNYUAN_REPO)
     print(f"loaded shape pipeline in {time.time() - started:.1f}s", flush=True)
     with Image.open(image) as opened:
@@ -303,6 +310,7 @@ def generate_paint(image: Path, mesh_path: Path, output: Path, settings: dict[st
     config = Hunyuan3DPaintConfig(settings["max_num_view"], settings["paint_resolution"])
     for name, value in paint_config_overrides(vendor_root).items():
         setattr(config, name, value)
+    print(LOADING_PAINT, flush=True)
     pipeline = Hunyuan3DPaintPipeline(config)
     print(f"mesh loaded; paint models ready in {time.time() - started:.1f}s", flush=True)
     obj = work_dir(output) / "textured_mesh.obj"
