@@ -94,6 +94,9 @@ WEIGHTS = [
     ("microsoft/TRELLIS.2-4B", None, 14.0),
     ("microsoft/TRELLIS-image-large", ["ckpts/ss_dec_conv3d_16l8_fp16.*"], 0.145),
     (GATED, None, 1.1),
+    # The Generate tab's input advisor. Advisory only, but the Setup card counts it, so a
+    # setup that skipped it read as unfinished.
+    ("wkcn/TinyCLIP-ViT-8M-16-Text-3M-YFCC15M", None, 0.09),
 ]
 
 LICENCE = (

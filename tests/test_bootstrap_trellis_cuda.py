@@ -232,3 +232,11 @@ def test_every_route_installs_with_patient_downloads(monkeypatch):
     monkeypatch.setattr(boot.host, "find_nvcc", lambda: "/usr/local/cuda/bin/nvcc")
     for route in ("pinned", "source"):
         assert "UV_HTTP_TIMEOUT" in boot.install_env(route, {"PATH": "/usr/bin"})
+
+
+def test_setup_fetches_every_weight_the_setup_card_counts():
+    # On a real NVIDIA pod the card counted TinyCLIP but setup never fetched it, so a
+    # finished setup read "partial" and Generate said TRELLIS was not installed.
+    fetched = {repo for repo, _, _ in boot.WEIGHTS}
+    listed = {w.source for w in backend_catalog.BY_ID["trellis"].weights}
+    assert fetched == listed
