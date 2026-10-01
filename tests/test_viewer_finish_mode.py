@@ -221,3 +221,15 @@ def test_the_finished_line_shows_the_pixel_match_note():
 
 def test_remove_button_counts_only_what_it_would_free():
     assert "backend.bytes_removable" in SETUP
+
+
+def test_generate_hands_a_model_straight_to_finish():
+    # On a remote machine, finishing a fresh model meant downloading it to a laptop and
+    # uploading it again. Generate's result has a button that hands both files over.
+    index = (VIEWER / "index.html").read_text()
+    generate = (VIEWER / "modes" / "generate.js").read_text()
+    finish_js = (VIEWER / "modes" / "finish.js").read_text()
+    assert 'id="generate-finish"' in index
+    assert "'viewer:finish-this'" in generate and "mode: 'finish'" in generate
+    listener = finish_js[finish_js.index("addEventListener('viewer:finish-this'"):]
+    assert "state.asset" in listener and "state.image" in listener and "updateSubmit()" in listener

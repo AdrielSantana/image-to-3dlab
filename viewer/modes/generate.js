@@ -170,6 +170,15 @@ function applyGenerateProgress(event) {
     // screen.
     g('generate-frame').src = `/viewer/index.html?a=${encodeURIComponent(src)}&la=Generated&restricted=1`;
     g('generate-glb').href = event.result_url;
+    // Straight to Finish with both files, instead of a download and a re-upload (which on
+    // a remote machine means a round trip through someone's laptop).
+    g('generate-finish').onclick = () => {
+      document.dispatchEvent(new CustomEvent('viewer:finish-this', {
+        detail: { glbUrl: event.result_url, image: gen.file,
+          name: gen.file ? `${gen.file.name.replace(/\.[^.]+$/, '')}.glb` : null },
+      }));
+      document.dispatchEvent(new CustomEvent('viewer:navigate', { detail: { mode: 'finish' } }));
+    };
     const savedNote = g('generate-saved-note');
     if (gen.outputDir) {
       savedNote.style.display = 'block';
