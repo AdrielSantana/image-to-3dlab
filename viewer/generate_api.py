@@ -1968,11 +1968,7 @@ class Handler(SimpleHTTPRequestHandler):
         if job is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
+        self._start_event_stream()
         index = 0
         try:
             while True:
@@ -2511,13 +2507,19 @@ class Handler(SimpleHTTPRequestHandler):
         job.emit({"phase": "error", "message": "Cancellation requested"})
         self._send_json(202, {"job_id": job.id, "status": "cancelling"})
 
-    def _stream_events(self, run: Job | SetupRun) -> None:
-        """SSE pump shared by generation jobs and setup runs."""
+    def _start_event_stream(self) -> None:
+        """Headers for a server-sent event stream. X-Accel-Buffering stops proxies (nginx,
+        Cloudflare, RunPod's) from holding progress back and delivering it minutes late."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+
+    def _stream_events(self, run: Job | SetupRun) -> None:
+        """SSE pump shared by generation jobs and setup runs."""
+        self._start_event_stream()
         index = 0
         try:
             while True:

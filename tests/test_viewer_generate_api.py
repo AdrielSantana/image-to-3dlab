@@ -1311,3 +1311,23 @@ def test_hunyuan_cuda_fields_exist_in_the_page():
     for field in ("hycuda-seed", "hycuda-steps", "hycuda-octree", "hycuda-views",
                   "hycuda-paint-res"):
         assert f'id="{field}"' in html, field
+
+
+def test_progress_streams_tell_proxies_not_to_buffer():
+    # Seen through RunPod's proxy: progress arrived in batches, minutes behind, because
+    # proxies (nginx, Cloudflare, RunPod) hold event streams back unless told not to.
+    sent = []
+
+    class Fake:
+        def send_response(self, code):
+            sent.append(("status", code))
+
+        def send_header(self, name, value):
+            sent.append((name, value))
+
+        def end_headers(self):
+            sent.append(("end",))
+
+    api.Handler._start_event_stream(Fake())
+    assert ("Content-Type", "text/event-stream") in sent
+    assert ("X-Accel-Buffering", "no") in sent and sent[-1] == ("end",)
