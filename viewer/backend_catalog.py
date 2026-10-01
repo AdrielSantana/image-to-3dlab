@@ -426,7 +426,7 @@ CATALOG: tuple[Backend, ...] = (
         build_probes=(REPO / "vendor" / "stable-fast-3d" / "sf3d" / "system.py",),
         caveat=(
             "The SF3D weights are gated: accept Stability's licence on Hugging Face and "
-            "run `hf auth login` before setting it up."
+            "sign in under Hugging Face sign-in at the top of this page before setting it up."
         ),
         weights=(
             WeightSet("Stable Fast 3D", "stabilityai/stable-fast-3d", int(3.75 * GB),
@@ -461,7 +461,7 @@ CATALOG: tuple[Backend, ...] = (
         caveat=(
             "Its DINOv3 image encoder is gated: request access to "
             "facebook/dinov3-vitl16-pretrain-lvd1689m on Hugging Face (Meta approves by "
-            "hand) and run `hf auth login` before setting it up, or the first run stops "
+            "hand) and sign in under Hugging Face sign-in at the top of this page, or the first run stops "
             "after the 14 GB download."
         ),
         setup_minutes=60,
@@ -473,7 +473,7 @@ CATALOG: tuple[Backend, ...] = (
                          "or softly lit 3D-style references."),
             "caveat": ("Its DINOv3 image encoder is gated: request access to "
                        "facebook/dinov3-vitl16-pretrain-lvd1689m on Hugging Face (Meta "
-                       "approves by hand) and run `hf auth login` first. Setup checks "
+                       "approves by hand) and sign in under Hugging Face sign-in at the top of this page. Setup checks "
                        "access before downloading anything."),
             # The CUDA bootstrap fetches the weights once the build is done.
             "setup_fetches_weights": True,

@@ -469,7 +469,8 @@ def _explain(code: int, log: list[str]) -> str:
     tail = "\n".join(log[-60:]).lower()
     if "401" in tail or "gated" in tail or "authenticate" in tail or "token" in tail:
         return ("refused: this model needs a Hugging Face login and its terms accepted. "
-                "Run `huggingface-cli login`, accept the terms on the model page, and retry.")
+                "Sign in under Hugging Face sign-in at the top of this page, accept the "
+                "terms on the model page, and retry.")
     if "no space left" in tail or "enospc" in tail:
         return "ran out of disk space. Free some room and retry; what downloaded is kept."
     if ("temporary failure in name resolution" in tail or "connection" in tail

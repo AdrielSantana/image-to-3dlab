@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one with buttons; the others show what that machine gets. AMD says support is coming.
 - **Finish this model**, straight from a Generate result, with its source picture: no
   download and re-upload.
+- **The installer starts the lab.** Run the install command and the viewer opens. On a
+  RunPod pod it prints the pod's link; over plain SSH, the tunnel command. Start it again
+  any time with `./lab`.
+- **Sign in to Hugging Face from Setup & Status.** Paste a Read token; the page checks it
+  and shows, per gated model, whether your account has access, with a link to request it.
+  No terminal needed.
+- **Install Blender from Setup & Status on Linux.** Blender 4.2 LTS from blender.org, into
+  `~/blender-lts`, no admin rights. Finish finds it.
 
 ### Changed
 - Generate 3D only offers the routes your machine can run.

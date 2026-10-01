@@ -446,7 +446,7 @@ def test_a_route_with_no_official_elsewhere_keeps_the_plain_note():
 
 def test_trellis_warns_about_the_gated_dinov3_before_setup():
     caveat = bc.BY_ID["trellis"].caveat or ""
-    assert "dinov3" in caveat.lower() and "hf auth login" in caveat
+    assert "dinov3" in caveat.lower() and "Hugging Face sign-in" in caveat
 
 
 def test_pixal3d_setup_counts_the_background_remover_it_now_installs():
@@ -463,7 +463,7 @@ def test_trellis_on_nvidia_is_described_as_what_it_is():
     assert entry["label"] == "TRELLIS.2 (NVIDIA)"
     assert "port" not in entry["label"] and "Slowest" not in entry["tradeoff"]
     assert entry["setup_fetches_weights"] is True
-    assert "hf auth login" in entry["caveat"] and "stops after" not in entry["caveat"]
+    assert "Hugging Face sign-in" in entry["caveat"] and "stops after" not in entry["caveat"]
 
 
 def test_trellis_on_nvidia_needs_its_weights_to_be_ready():
