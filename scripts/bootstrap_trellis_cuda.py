@@ -48,7 +48,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 import patch_trellis_cuda_no_bria as bria_patch  # noqa: E402, RUF100
 
-from image_to_3dlab import host  # noqa: E402, RUF100
+from image_to_3dlab import host, matte  # noqa: E402, RUF100
 
 VENDOR = REPO / "vendor" / "trellis-cuda"
 CHECKOUT = VENDOR / "TRELLIS.2"
@@ -91,7 +91,7 @@ GATED = "facebook/dinov3-vitl16-pretrain-lvd1689m"
 # (repo, allow_patterns or None for the whole repo, approximate gigabytes). Must match the
 # TRELLIS entry in viewer/backend_catalog.py; a test holds them together.
 WEIGHTS = [
-    ("microsoft/TRELLIS.2-4B", None, 14.0),
+    ("microsoft/TRELLIS.2-4B", None, 15.15),
     ("microsoft/TRELLIS-image-large", ["ckpts/ss_dec_conv3d_16l8_fp16.*"], 0.145),
     (GATED, None, 1.1),
     # The Generate tab's input advisor. Advisory only, but the Setup card counts it, so a
@@ -193,8 +193,18 @@ def announcement(route: str | None, why: str, code: bool = True,
         for repo, _, size in WEIGHTS:
             lines.append(f"             {size:>6.2f} GB  {repo}")
         lines.append(f"           {GATED} is gated (see licence below)")
+        lines.append(f"  and:     BiRefNet-lite background remover, "
+                     f"{matte.LITE_BYTES / 1e6:.0f} MB -> {matte.model_file(matte.LITE_MODEL)}")
     lines += ["", "  licence: " + LICENCE, ""]
     return "\n".join(lines)
+
+
+def install_background_remover(target: Path | None = None, download=None) -> None:
+    """The cut-out every upload without alpha goes through; without it the first
+    generation fetched u2net (176 MB) unannounced."""
+    from bootstrap_matte import install_if_missing
+
+    install_if_missing(target, download)
 
 
 def has_flash_wheel(torch_tag: str) -> bool:
@@ -389,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
             install_code(route, torch_tag)
         if weights:
             install_weights()
+            install_background_remover()
     except GatedAccess as exc:
         print(gated_help(str(exc)))
         return 1

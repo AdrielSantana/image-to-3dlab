@@ -342,14 +342,9 @@ def install_weights(models: Path = MODELS) -> None:
 
 def install_background_remover(target: Path | None = None, download=None) -> None:
     """BiRefNet-lite, unless it is already there. Same file bootstrap_matte.py installs."""
-    target = target or matte.model_file(matte.LITE_MODEL)
-    if target.is_file():
-        return
-    if download is None:
-        from bootstrap_matte import download
-    print(f"\nFetching BiRefNet-lite ({matte.LITE_BYTES / 1e6:.0f} MB)...", flush=True)
-    download(target)
-    print(f"  background remover in {target}")
+    from bootstrap_matte import install_if_missing
+
+    install_if_missing(target, download)
 
 
 def rebuild_existing(runner=subprocess.run) -> Path:

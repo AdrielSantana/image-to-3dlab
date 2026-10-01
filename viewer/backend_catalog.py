@@ -412,7 +412,9 @@ CATALOG: tuple[Backend, ...] = (
         }},
         build_probes=(venv_python(REPO / "vendor" / "trellis-space-mac"),),
         weights=(
-            WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(14.0 * GB),
+            # Measured on a real download, 2026-10-01: 15.1 GiB (14.0 undercounted by a
+            # gigabyte, so the card read "16.4 GB of 15.3 GB").
+            WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(15.15 * GB),
                       HF_HUB_DIR / "models--microsoft--TRELLIS.2-4B"),
             WeightSet("TRELLIS image-large decoder", "microsoft/TRELLIS-image-large",
                       148 * 1024 ** 2,
@@ -425,6 +427,10 @@ CATALOG: tuple[Backend, ...] = (
                       92 * 1024 ** 2,
                       HF_HUB_DIR / "models--wkcn--TinyCLIP-ViT-8M-16-Text-3M-YFCC15M",
                       note="Advisory only. Generation works without it."),
+            WeightSet("BiRefNet-lite background remover", _matte.LITE_URL, _matte.LITE_BYTES,
+                      _matte.model_file(_matte.LITE_MODEL),
+                      note="Cuts out pictures without alpha on NVIDIA. Fetched by the "
+                           "NVIDIA setup; the Mac port wants pre-masked images."),
         ),
     ),
     Backend(

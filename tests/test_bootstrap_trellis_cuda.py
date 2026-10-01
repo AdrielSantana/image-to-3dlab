@@ -239,4 +239,12 @@ def test_setup_fetches_every_weight_the_setup_card_counts():
     # finished setup read "partial" and Generate said TRELLIS was not installed.
     fetched = {repo for repo, _, _ in boot.WEIGHTS}
     listed = {w.source for w in backend_catalog.BY_ID["trellis"].weights}
-    assert fetched == listed
+    assert fetched | {boot.matte.LITE_URL} == listed  # the remover comes from GitHub
+
+
+def test_nvidia_setup_installs_the_background_remover(tmp_path):
+    # Without it, the first generation fetched u2net (176 MB) unannounced.
+    fetched = []
+    boot.install_background_remover(tmp_path / "lite.onnx", download=fetched.append)
+    assert fetched == [tmp_path / "lite.onnx"]
+    assert "BiRefNet-lite" in boot.announcement("source", "test")
