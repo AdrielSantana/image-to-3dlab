@@ -129,7 +129,7 @@ status telling you exactly what's missing:
 - **Hunyuan3D-2.1 on Linux + NVIDIA** (new, not yet tested on real hardware): click
   **Set up** on the Setup & Status page, or run `python scripts/bootstrap_hunyuan_cuda.py`.
   It says what it will fetch (~19.5 GB of weights) and asks first. It clones Tencent's
-  Hunyuan3D-2.1 into `vendor/hunyuan-cuda/` with its own Python 3.10 venv and compiles the
+  Hunyuan3D-2.1 into `vendor/hunyuan-cuda/` with its own Python 3.11 venv and compiles the
   paint stage's rasterizer for your card, so it needs the CUDA 12 toolkit (`nvcc`). Paint
   needs about 21 GB of GPU memory, so a 24 GB card or bigger. The Hunyuan weights are not
   licensed in the EU, the UK or South Korea. Windows is not supported yet.

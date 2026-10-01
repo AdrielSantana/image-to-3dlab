@@ -68,9 +68,18 @@ def test_demo_and_training_packages_are_dropped():
 
 def test_the_inference_path_is_kept_pinned():
     kept = boot.filter_requirements(UPSTREAM_REQUIREMENTS)
-    for line in ("transformers==4.46.0", "rembg==2.0.65", "basicsr==1.4.2", "bpy==4.0",
+    for line in ("transformers==4.46.0", "rembg==2.0.65", "basicsr==1.4.2",
                  "timm", "ninja==1.11.1.1"):
         assert line in kept, line
+
+
+def test_bpy_is_one_pypi_still_has():
+    # Seen on a real pod: bpy 4.0 is gone from PyPI (oldest left is 4.2.0, Python 3.11
+    # only), so upstream's pin made setup unsatisfiable. The paint stage only uses bpy to
+    # turn its OBJ into a GLB, with operators 4.2 still has.
+    kept = boot.filter_requirements(UPSTREAM_REQUIREMENTS)
+    assert "bpy==4.0" not in kept and boot.BPY_PIN in kept
+    assert boot.BPY_PIN == "bpy==4.2.0" and boot.PYTHON_VERSION == "3.11"
 
 
 @pytest.mark.parametrize("driver,cap,nvcc,route", [
@@ -218,3 +227,14 @@ def test_setup_installs_and_announces_the_background_remover(tmp_path):
     assert "BiRefNet-lite" in boot.announcement("source", "test")
     sources = {w.label for w in backend_catalog.BY_ID["hunyuan-cuda"].weights}
     assert REMOVER in sources
+
+
+def test_a_venv_on_the_wrong_python_is_rebuilt(tmp_path):
+    # Installs whose setup failed on bpy 4.0 were left with a Python 3.10 venv.
+    venv = tmp_path / ".venv"
+    venv.mkdir()
+    (venv / "pyvenv.cfg").write_text("home = /usr/bin\nversion_info = 3.10.18\n")
+    assert boot.venv_needs_rebuild(venv) is True
+    (venv / "pyvenv.cfg").write_text("home = /usr/bin\nversion_info = 3.11.13\n")
+    assert boot.venv_needs_rebuild(venv) is False
+    assert boot.venv_needs_rebuild(tmp_path / "missing") is True

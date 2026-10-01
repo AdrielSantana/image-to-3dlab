@@ -3,8 +3,9 @@
 
 The Mac routes run MLX ports of Hunyuan (`hunyuan_mlx/`). On NVIDIA there is no port:
 this clones `Tencent-Hunyuan/Hunyuan3D-2.1` at a pinned commit into
-`vendor/hunyuan-cuda/`, makes a Python 3.10 venv there (Blender's `bpy` 4.0, which the
-paint stage imports, only ships for 3.10) and installs what upstream's README installs:
+`vendor/hunyuan-cuda/`, makes a Python 3.11 venv there and installs what upstream's
+README installs (upstream tests 3.10 with `bpy` 4.0, but bpy 4.0 is gone from PyPI; the
+oldest left is 4.2.0, for 3.11 only):
 
 - PyTorch. Upstream tests 2.5.1 + CUDA 12.4, and that is what most cards get. RTX 50-series
   / RTX PRO 6000 cards (compute capability 12.0) are too new for it and get 2.7.1 + CUDA
@@ -63,7 +64,10 @@ BUILT_MARKER = VENDOR / ".i2l-build-complete"
 UPSTREAM = "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git"
 # The commit this route was written against (upstream main, 2025-10-17).
 COMMIT = "82920d643c0dc2f7bfd7255f45f62d386edfe60c"
-PYTHON_VERSION = "3.10"
+PYTHON_VERSION = "3.11"
+# Upstream pins bpy==4.0, which PyPI no longer has. The paint stage uses bpy only to turn
+# its OBJ into a GLB (wm.obj_import, shade_smooth_by_angle, export_scene.gltf), all in 4.2.
+BPY_PIN = "bpy==4.2.0"
 
 # (route, torch, torchvision, index tag, minimum driver CUDA). "tested" is upstream's own
 # pairing; "blackwell" exists only because 2.5.1 has no kernels for compute capability 12.0.
@@ -177,7 +181,7 @@ def filter_requirements(text: str) -> list[str]:
         name = re.split(r"[<>=!~\[; ]", line, maxsplit=1)[0].lower().replace("_", "-")
         if name in SKIP_REQUIREMENTS:
             continue
-        kept.append(line)
+        kept.append(BPY_PIN if name == "bpy" else line)
     return kept
 
 
@@ -273,12 +277,24 @@ def compile_mesh_painter(python: Path) -> None:
         cwd=CHECKOUT / "hy3dpaint" / "DifferentiableRenderer")
 
 
+def venv_needs_rebuild(venv: Path) -> bool:
+    """True when there is no venv, or one on another Python: a setup that failed on the
+    old bpy 4.0 pin left a 3.10 venv behind, and this route now needs PYTHON_VERSION."""
+    try:
+        cfg = (venv / "pyvenv.cfg").read_text()
+    except OSError:
+        return True
+    match = re.search(r"^version_info\s*=\s*(\d+\.\d+)", cfg, re.MULTILINE)
+    return match is None or match.group(1) != PYTHON_VERSION
+
+
 def install_code(route: str) -> None:
     uv = shutil.which("uv")
     if uv is None:
         raise SystemExit("uv is required: https://docs.astral.sh/uv/")
     fetch_checkout()
-    if not venv_python().is_file():
+    if venv_needs_rebuild(VENDOR / ".venv"):
+        shutil.rmtree(VENDOR / ".venv", ignore_errors=True)
         run([uv, "venv", str(VENDOR / ".venv"), "--python", PYTHON_VERSION])
     requirements = filter_requirements((CHECKOUT / "requirements.txt").read_text())
     env = install_env()
