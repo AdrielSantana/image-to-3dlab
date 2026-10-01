@@ -363,3 +363,19 @@ def test_the_catalog_carries_a_rebuild_reason_only_where_the_backend_runs():
     out = generate_api.with_rebuild_reasons(catalog, reason=lambda backend_id: "stale")
     assert out["backends"][0]["rebuild_reason"] == "stale"
     assert out["backends"][1]["rebuild_reason"] is None
+
+
+def test_a_page_loaded_mid_setup_can_find_the_run_again(monkeypatch):
+    # A setup runs 30-60 minutes; a refreshed or reopened Setup page must reattach to it
+    # instead of showing idle "Set up" buttons that refuse with "already running".
+    monkeypatch.setattr(dl, "DOWNLOADS", {})
+    assert dl.running_payload() is None
+    run = dl.DownloadRun(dl.BY_ID["pixal3d"])
+    run.status = "running"
+    dl.DOWNLOADS["pixal3d"] = run
+    assert dl.running_payload() == {
+        "backend": "pixal3d", "rebuild": False,
+        "events_url": "/api/setup/pixal3d/events",
+    }
+    run.status = "done"
+    assert dl.running_payload() is None

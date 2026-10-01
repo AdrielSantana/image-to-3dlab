@@ -226,6 +226,15 @@ def active() -> DownloadRun | None:
     return next((r for r in DOWNLOADS.values() if r.status not in TERMINAL), None)
 
 
+def running_payload() -> dict[str, Any] | None:
+    """The setup in progress, so a Setup page loaded mid-run can reattach to it."""
+    run = active()
+    if run is None:
+        return None
+    return {"backend": run.backend.id, "rebuild": run.rebuild,
+            "events_url": f"/api/setup/{run.backend.id}/events"}
+
+
 def start(backend_id: str, rebuild: bool = False) -> DownloadRun:
     backend = BY_ID.get(backend_id)
     if backend is None:

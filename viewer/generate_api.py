@@ -53,6 +53,7 @@ from welcome_api import payload as welcome_payload
 from update_api import check as update_check
 from download_api import (
     DOWNLOADS,
+    running_payload,
     cancel as cancel_download,
     remove as remove_weights,
     rebuild_reason,
@@ -267,6 +268,13 @@ def mlx_attention_status(vendor: Path | None = None, dispatch: Path | None = Non
         "ready": patched and package,
         "hint": "; ".join(hints) or None,
     }
+
+
+def catalog_payload() -> dict:
+    """The Setup page's catalogue, plus any setup already running so it can reattach."""
+    payload = with_rebuild_reasons(catalog_status())
+    payload["running_setup"] = running_payload()
+    return payload
 
 
 def with_rebuild_reasons(catalog: dict[str, Any],
@@ -1916,7 +1924,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parts = self._path_parts()
         if parts == ["api", "catalog"]:
-            self._send_json(200, with_rebuild_reasons(catalog_status()))
+            self._send_json(200, catalog_payload())
             return
         if parts == ["api", "update-check"]:
             self._send_json(200, update_check())

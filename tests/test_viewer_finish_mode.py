@@ -169,3 +169,10 @@ def test_the_finish_page_reads_what_the_machine_can_do():
     assert "f('finish-repaint').disabled = true;" in FINISH
     assert "!state.ready" in FINISH
     assert 'id="finish-machine-note"' in INDEX
+
+
+def test_setup_page_reattaches_to_a_run_already_in_progress():
+    # The catalog names the running setup; load() must watch it, or a refresh mid-setup
+    # loses the progress bar for the rest of a 30-60 minute build.
+    assert "state.catalog.running_setup" in SETUP
+    assert "resume(state.catalog.running_setup)" in SETUP

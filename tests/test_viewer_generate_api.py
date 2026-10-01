@@ -1175,3 +1175,10 @@ def test_hidden_fields_name_real_generate_controls():
     html = (Path(api.__file__).parent / "index.html").read_text()
     for field in api.trellis_spec(api.NVIDIA).hidden_fields:
         assert f'id="{field}"' in html
+
+
+def test_catalog_names_the_setup_already_running(monkeypatch):
+    monkeypatch.setattr(api, "running_payload", lambda: {"backend": "trellis"})
+    assert api.catalog_payload()["running_setup"] == {"backend": "trellis"}
+    monkeypatch.setattr(api, "running_payload", lambda: None)
+    assert api.catalog_payload()["running_setup"] is None

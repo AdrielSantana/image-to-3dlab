@@ -284,6 +284,22 @@ async function startDownload(backend, button, action = 'download') {
   }
 }
 
+function resume(run) {
+  const backend = state.catalog.backends.find((b) => b.id === run.backend);
+  const label = backend ? backend.label : run.backend;
+  const verb = run.rebuild ? 'Rebuilding'
+    : backend && backend.setup_fetches_weights ? 'Downloading' : 'Building';
+  s('setup-run').hidden = false;
+  s('setup-run-cancel').hidden = false;
+  s('setup-run-title').textContent = `${verb} ${label}`;
+  s('setup-run-detail').textContent = 'reconnecting…';
+  s('setup-log').textContent = '';
+  state.running = run.backend;
+  state.panelFor = run.backend;
+  placeRunPanel();
+  watch(run);
+}
+
 function watch(payload) {
   state.source?.close();
   state.source = new EventSource(payload.events_url);
@@ -378,6 +394,9 @@ export async function load() {
     for (const backend of state.catalog.backends) host.appendChild(backendCard(backend));
     host.appendChild(await blenderCard());
     placeRunPanel();
+    // A setup runs for up to an hour. Reloaded or reopened mid-run, pick it back up; the
+    // event stream replays from the start, so the bar and the log come back whole.
+    if (state.catalog.running_setup && !state.source) resume(state.catalog.running_setup);
     document.dispatchEvent(new CustomEvent('viewer:catalog', { detail: state.catalog }));
   } catch (error) {
     s('setup-summary').textContent = `Could not read machine status: ${error.message}`;
