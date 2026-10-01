@@ -39,6 +39,12 @@ function applyHiddenFields() {
     if (row && (el.tagName === 'SELECT' || el.tagName === 'INPUT')) row.hidden = hidden.has(el.id);
   }
 }
+// Only routes that need a cut-out ask for one; the rest matte the image themselves.
+function updateDropPrompt() {
+  g('generate-prompt').innerHTML = backendRequiresAlpha()
+    ? 'Drop a pre-masked PNG here<br>or click to choose an image'
+    : 'Drop an image here<br>or click to choose one';
+}
 function backendRequiresAlpha() {
   const meta = backendMeta[currentBackend()];
   return meta ? meta.requires_alpha : true; // fail conservative if metadata hasn't loaded yet
@@ -396,6 +402,7 @@ async function loadBackendMeta() {
   } catch (e) { /* keep the trellis-only placeholder; page stays usable */ }
   buildStageRows(currentBackend());
   applyHiddenFields();
+  updateDropPrompt();
   refreshSetup();
 }
 g('generate-backend').onchange = () => {
@@ -405,6 +412,7 @@ g('generate-backend').onchange = () => {
   }
   buildStageRows(backendId);
   applyHiddenFields();
+  updateDropPrompt();
   jobProgress.reset();
   if (gen.file) renderAlphaBadge(); // the image is unchanged; only the wording depends on the backend
   updateGenerateButton();

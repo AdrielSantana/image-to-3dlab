@@ -1177,6 +1177,20 @@ def test_hidden_fields_name_real_generate_controls():
         assert f'id="{field}"' in html
 
 
+def test_hidden_rows_are_not_shown_anyway_by_their_own_display_rule():
+    # `.field { display: grid }` beat the hidden attribute, so the Mac-only controls the
+    # page had correctly marked hidden still showed on NVIDIA. Each row class used for a
+    # hidden field needs an explicit [hidden] rule.
+    css = (Path(api.__file__).parent / "styles" / "generate.css").read_text()
+    assert ".field[hidden]" in css and ".check[hidden]" in css
+
+
+def test_drop_prompt_follows_whether_the_route_needs_a_cut_out():
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    assert "function updateDropPrompt()" in js
+    assert js.count("updateDropPrompt();") >= 2  # on metadata load and on backend change
+
+
 def test_catalog_names_the_setup_already_running(monkeypatch):
     monkeypatch.setattr(api, "running_payload", lambda: {"backend": "trellis"})
     assert api.catalog_payload()["running_setup"] == {"backend": "trellis"}

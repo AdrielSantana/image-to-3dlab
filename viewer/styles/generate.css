@@ -29,6 +29,8 @@
 .field input, .field select { width: 100%; background: #12151a; color: #d8dee9; border: 1px solid #39404b;
                               border-radius: 4px; padding: 6px; font: inherit; }
 .check { display: flex; gap: 7px; align-items: center; margin-top: 14px; }
+/* Their display rules would otherwise beat the hidden attribute (applyHiddenFields). */
+.field[hidden], .check[hidden] { display: none; }
 .check small { opacity: .58; }
 #generate-submit, #generate-cancel { margin-top: 16px; width: 100%; padding: 9px; }
 #generate-submit { background: #2f5233; border-color: #3f6d45; }
