@@ -66,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default; `scripts/patch_trellis_cuda_no_bria.py` removes it, and the route refuses to run
   without that patch. Pictures are cut out by our own background remover instead.
 
+### Removed
+- **Stable Fast 3D on NVIDIA.** It is Mac only again. Its pinned packages (an old
+  huggingface-hub and rembg) replaced the lab's own, which breaks the Hugging Face access
+  check and the background remover, and TRELLIS.2, Hunyuan3D-2.1 and Pixal3D all beat it
+  on NVIDIA. An existing SF3D install there is no longer offered in Generate 3D.
+
 ## [0.3.6] - 2026-10-01
 
 ### Fixed

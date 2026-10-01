@@ -44,7 +44,7 @@ import backend_catalog  # noqa: E402
 # Ampere like the 3090 the routes were proven on; the 4090 is the fallback.
 GPUS = ("NVIDIA A40", "NVIDIA GeForce RTX 4090")
 IMAGE = "runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404"
-ROUTES = ("trellis", "hunyuan-cuda", "pixal3d", "sf3d")
+ROUTES = ("trellis", "hunyuan-cuda", "pixal3d")
 PORT = 8777
 # The installer of the ref under test: main's may not know flags the branch added.
 INSTALL_URL = "https://raw.githubusercontent.com/Bingeljell/image-to-3dlab/{ref}/install.sh"

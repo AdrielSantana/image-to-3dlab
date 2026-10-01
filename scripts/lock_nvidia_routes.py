@@ -28,10 +28,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
 import bootstrap_hunyuan_cuda as hunyuan  # noqa: E402
-import bootstrap_sf3d as sf3d  # noqa: E402
 import bootstrap_trellis_cuda as trellis  # noqa: E402
 
-ROUTES = ("trellis", "hunyuan", "sf3d")
+ROUTES = ("trellis", "hunyuan")
 
 LOCKS = REPO / "scripts" / "locks"
 TORCH_INDEX = "https://download.pytorch.org/whl/"
@@ -46,20 +45,6 @@ def keep_line(line: str) -> bool:
 
 def hunyuan_inputs(upstream: str) -> list[str]:
     return [*hunyuan.filter_requirements(upstream), hunyuan.SETUPTOOLS_PIN]
-
-
-def sf3d_inputs(upstream: str) -> list[str]:
-    """SF3D's own list minus its two local extensions, which the bootstrap builds."""
-    return [line.strip() for line in upstream.splitlines()
-            if line.strip() and not line.startswith("#") and not line.startswith("./")]
-
-
-def viewer_torch_pins(lock: Path = REPO / "requirements.lock") -> list[str]:
-    """SF3D installs into the viewer's own environment, so it resolves against the
-    PyTorch the viewer's lock already installed (PyPI's, CUDA-enabled on Linux)."""
-    pins = [line.split(";")[0].strip() for line in lock.read_text().splitlines()
-            if line.startswith(("torch==", "torchvision=="))]
-    return sorted(pins)
 
 
 def compile_lock(inputs: list[str], torch_pins: list[str], tag: str | None,
@@ -104,12 +89,6 @@ def main(argv: list[str] | None = None) -> int:
         compile_lock(hunyuan_inputs(upstream),
                      [f"torch=={torch_version}", f"torchvision=={vision_version}"],
                      tag, hunyuan.PACKAGE_LOCK)
-    if "sf3d" in args.routes:
-        url = (f"https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/"
-               f"{sf3d.COMMIT}/requirements.txt")
-        with urllib.request.urlopen(url) as response:
-            upstream = response.read().decode()
-        compile_lock(sf3d_inputs(upstream), viewer_torch_pins(), None, sf3d.PACKAGE_LOCK)
     return 0
 
 

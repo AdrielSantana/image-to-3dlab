@@ -69,7 +69,7 @@ Six backends, one Generate 3D page. Sadly life is full of trade-offs, so pick th
 | **Hunyuan3D-MLX (dgrauet shape + Xiong paint)** | The cleanest shapes, at the cost of manual setup | Mac (NVIDIA: the row below) | Cloned separately, manual | Tencent Community License (code + weights) |
 | **Hunyuan3D-2.1 (NVIDIA)** | Tencent's own shape + PBR paint, one run | NVIDIA (Linux; not Windows yet), 24 GB+ | Setup & Status, or `scripts/bootstrap_hunyuan_cuda.py` (~19.5 GB weights) | Tencent Community License (code + weights) |
 | **TRELLIS.2** | Highest fidelity, closest to the official demo | Mac, NVIDIA (Linux; not Windows yet) | Setup & Status (~1h), or `scripts/bootstrap_trellis_cuda.py` on NVIDIA (~15 GB weights) | MIT + DINOv3 License |
-| **Stable Fast 3D** | Fastest, lower fidelity | Mac, NVIDIA (Linux) | Setup & Status, or `scripts/bootstrap_sf3d.py` (gated weights) | Stability AI Community License |
+| **Stable Fast 3D** | Fastest, lower fidelity | Mac | Setup & Status, or `scripts/bootstrap_sf3d.py` (gated weights) | Stability AI Community License |
 
 ⭐ Start with **Pixal3D**. It keeps flat, saturated colours in a single pass, where
 TRELLIS.2 often needs a separate repaint.
@@ -115,7 +115,7 @@ status telling you exactly what's missing:
   compiles for your card (a few minutes, once, and about twice as fast to run); otherwise
   it fetches a ready-made CUDA build (driver 575+). It also installs BiRefNet-lite, the
   background remover (224 MB), so thin and light-coloured parts survive the cut-out.
-- **Stable Fast 3D**: accept Stability's licence at
+- **Stable Fast 3D** (Mac only): accept Stability's licence at
   [huggingface.co/stabilityai/stable-fast-3d](https://huggingface.co/stabilityai/stable-fast-3d),
   run `hf auth login`, then set it up from Setup & Status or run
   `python scripts/bootstrap_sf3d.py`.
@@ -256,7 +256,7 @@ character with them.
 | Thing | Why |
 |---|---|
 | Apple Silicon Mac (M-series), 32 GB recommended | Every route |
-| **or** Linux with an NVIDIA card (24 GB VRAM tested; Pixal3D's authors run it on 16 GB) | Pixal3D, Stable Fast 3D, Generate Image, TRELLIS.2, Hunyuan3D-2.1 |
+| **or** Linux with an NVIDIA card (24 GB VRAM tested; Pixal3D's authors run it on 16 GB) | Pixal3D, Generate Image, TRELLIS.2, Hunyuan3D-2.1 |
 | Linux + NVIDIA: CUDA toolkit matching PyTorch's CUDA | compiles TRELLIS.2's CUDA extensions (not needed on RTX 50-series) and Hunyuan3D-2.1's rasterizer (CUDA 12) |
 | macOS: full Xcode | compiles the Metal kernels for Pixal3D and TRELLIS |
 | Blender 4.2+ | Finish (low-poly clean-up, Pixel Match) and rigging. Install it yourself from [blender.org](https://www.blender.org/download/); Setup & Status shows whether it was found |

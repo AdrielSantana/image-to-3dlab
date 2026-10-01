@@ -55,10 +55,6 @@ NON_PYTHON = {
         "In `locks/`. Every package but PyTorch for the NVIDIA Hunyuan3D-2.1 route, "
         "pinned; regenerate with `lock_nvidia_routes.py`."
     ),
-    "sf3d-cuda.txt": (
-        "In `locks/`. Every package but PyTorch that Stable Fast 3D installs on NVIDIA, "
-        "pinned; regenerate with `lock_nvidia_routes.py`."
-    ),
     "runpod_trellis2_cuda_requirements.txt": (
         "Pinned CUDA 13 wheels from the RunPod control run; `bootstrap_trellis_cuda.py` "
         "installs them on compute-capability 12.0 cards."

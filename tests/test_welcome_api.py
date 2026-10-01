@@ -93,7 +93,8 @@ def test_payload_names_this_machine_and_its_routes(monkeypatch):
     assert data["brand"]["name"] == "Bingeljell's Image-to-3D Lab"
     assert data["host"]["id"] == "nvidia"
     runs_here = {r["id"] for r in data["routes"]}
-    assert {"pixal3d", "sf3d", "qwen-image"} <= runs_here
+    assert {"pixal3d", "qwen-image"} <= runs_here
+    assert "sf3d" not in runs_here  # Mac only: its pins broke the shared environment
     assert "hunyuan_xiong" not in runs_here  # Mac-only for now
     # TRELLIS.2 runs on NVIDIA under Linux, not yet under Windows.
     linux_ok = backend_catalog.BY_ID["trellis"].excluded_os(backend_catalog.NVIDIA) is None

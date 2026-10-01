@@ -421,7 +421,9 @@ CATALOG: tuple[Backend, ...] = (
         license_name="Stability AI Community License (non-commercial under $1M revenue)",
         license_url="https://huggingface.co/stabilityai/stable-fast-3d",
         install="scripts/bootstrap_sf3d.py",
-        runs_on=(APPLE, NVIDIA),
+        # Not NVIDIA: SF3D's pins (old huggingface-hub, rembg) broke the lab's shared
+        # environment there, and TRELLIS.2, Hunyuan3D-2.1 and Pixal3D beat it anyway.
+        runs_on=(APPLE,),
         setup_minutes=20,
         build_probes=(REPO / "vendor" / "stable-fast-3d" / "sf3d" / "system.py",),
         caveat=(

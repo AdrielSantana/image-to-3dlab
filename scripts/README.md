@@ -49,7 +49,6 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `runpod_trellis2_cuda_probe.py` | Run a frozen-shape TRELLIS.2 Stage-3 material probe on CUDA. |
 | `trellis-cuda.txt` | In `locks/`. Every package but PyTorch for the NVIDIA TRELLIS.2 route, pinned; regenerate with `lock_nvidia_routes.py`. |
 | `hunyuan-cuda.txt` | In `locks/`. Every package but PyTorch for the NVIDIA Hunyuan3D-2.1 route, pinned; regenerate with `lock_nvidia_routes.py`. |
-| `sf3d-cuda.txt` | In `locks/`. Every package but PyTorch that Stable Fast 3D installs on NVIDIA, pinned; regenerate with `lock_nvidia_routes.py`. |
 | `lock_nvidia_routes.py` | Regenerate the NVIDIA routes' lock files (scripts/locks/*.txt) with uv. |
 | `pod_smoke_test.py` | Run the NVIDIA one-shot on a fresh RunPod pod, through the viewer's own web API. |
 | `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA 13 wheels from the RunPod control run; `bootstrap_trellis_cuda.py` installs them on compute-capability 12.0 cards. |
@@ -201,7 +200,6 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `patch_pixal3d_low_vram.py` | Make Pixal3D's low-VRAM mode reachable, via `PIXAL3D_LOW_VRAM=1`. |
 | `patch_pixal3d_steps.py` | Let Pixal3D (pixal3d.cpp) run fewer sampling steps, via `PIXAL3D_STEPS=N`. |
 | `photo_paint.py` | Paint a finished model with the real pixels of its source photos, where they can see. |
-| `patch_sf3d_cpu_baker.py` | Let SF3D's texture baker run on the CPU while the model runs on an NVIDIA GPU. |
 | `patch_trellis_no_bria.py` | Disable TRELLIS' configured background model for license-controlled runs. |
 | `patch_trellis_cuda_no_bria.py` | Stop the NVIDIA TRELLIS.2 checkout loading BRIA RMBG-2.0, before it ever downloads it. |
 | `patch_trellis_mlx_attention.py` | Add an `mlx` sparse-attention backend to a vendored TRELLIS.2 checkout. |
