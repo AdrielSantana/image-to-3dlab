@@ -186,6 +186,13 @@ def arch_list(capability: str | None) -> str | None:
     return f"{capability[:-1]}.{capability[-1]}"
 
 
+def install_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Compile settings plus patient downloads: torch and its CUDA libraries are
+    gigabytes, and uv's default timeout gave up on them over a slow connection."""
+    return host.patient_downloads(
+        build_env(host.compute_capability(), host.find_nvcc(), base))
+
+
 def build_env(capability: str | None, nvcc: str | None,
               base: dict[str, str] | None = None) -> dict[str, str]:
     """Environment for compiling the rasterizer on this machine."""
@@ -264,7 +271,7 @@ def install_code(route: str) -> None:
     if not venv_python().is_file():
         run([uv, "venv", str(VENDOR / ".venv"), "--python", PYTHON_VERSION])
     requirements = filter_requirements((CHECKOUT / "requirements.txt").read_text())
-    env = build_env(host.compute_capability(), host.find_nvcc())
+    env = install_env()
     for command in pip_commands(route, uv, venv_python(), requirements):
         run(command, env=env)
     compile_mesh_painter(venv_python())
