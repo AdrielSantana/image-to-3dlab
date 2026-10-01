@@ -209,3 +209,26 @@ def test_both_installers_look_for_blender_with_finishs_own_finder_and_never_inst
         assert "from image_to_3dlab.blender import find_blender" in text
         assert "blender.org/download" in text
         assert "apt install blender" not in text and "winget install" not in text
+
+
+def test_update_moves_learned_timings_aside_instead_of_refusing(tmp_path, upstream, fake_bin):
+    # Seen on a real pod: viewer releases up to 0.3.6 rewrote the tracked
+    # viewer/generate_baseline.json after every generation, so every user who had generated
+    # once was refused an update. Their timings move to output/ and the update goes on.
+    (upstream / "viewer").mkdir()
+    (upstream / "viewer" / "generate_baseline.json").write_text('{"seconds": {}}\n')
+    _git(upstream, "add", ".")
+    _git(upstream, "commit", "-q", "-m", "baseline")
+    _git(upstream, "tag", "v0.2.1")
+    target = tmp_path / "lab"
+    run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(target))
+    learned = '{"seconds": {"decode": 42.0}}\n'
+    (target / "viewer" / "generate_baseline.json").write_text(learned)
+    (upstream / "VERSION").write_text("0.3.0\n")
+    _git(upstream, "commit", "-q", "-am", "four")
+    _git(upstream, "tag", "v0.3.0")
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(target))
+    assert done.returncode == 0, done.stderr
+    assert (target / "VERSION").read_text() == "0.3.0\n"
+    assert (target / "output" / ".generate_baseline.json").read_text() == learned
+    assert (target / "viewer" / "generate_baseline.json").read_text() == '{"seconds": {}}\n'

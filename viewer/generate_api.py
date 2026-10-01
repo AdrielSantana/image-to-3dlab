@@ -85,7 +85,10 @@ TRELLIS_CUDA_WRAPPER = REPO / "scripts" / "trellis_cuda_generate.py"
 TRELLIS_CUDA_PYTHON = TRELLIS_CUDA_VENDOR / ".venv" / "bin" / "python"
 TRELLIS_CUDA_MARKER = TRELLIS_CUDA_VENDOR / ".i2l-build-complete"
 OUTPUT_ROOT = REPO / "output"
-BASELINE_PATH = REPO / "viewer" / "generate_baseline.json"
+BASELINE_PATH = REPO / "viewer" / "generate_baseline.json"  # shipped default, never written
+# Timings learned on this machine. Under output/ (git-ignored): writing the tracked file
+# above left every install with a local edit, and the installer then refused to update.
+LEARNED_BASELINE_PATH = REPO / "output" / ".generate_baseline.json"
 TINYCLIP_ADVISOR = REPO / "scripts" / "classify_trellis_input.py"
 TINYCLIP_TIMEOUT_SECONDS = 300
 
@@ -640,27 +643,30 @@ def uncut_image_error(border_fraction: float) -> str:
     )
 
 
-def _baseline() -> dict[str, float]:
+def _read_seconds(path: Path) -> dict[str, float]:
     try:
-        data = json.loads(BASELINE_PATH.read_text())
+        data = json.loads(path.read_text())
         seconds = data.get("seconds", data.get("stages", {}))
         return {str(k): float(v) for k, v in seconds.items() if v is not None}
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         return {}
+
+
+def _baseline() -> dict[str, float]:
+    """Stage durations for the ETA: the shipped defaults, overlaid by this machine's own."""
+    return {**_read_seconds(BASELINE_PATH), **_read_seconds(LEARNED_BASELINE_PATH)}
 
 
 def _update_baseline(job: Job) -> None:
     """Learn real stage durations after a successful job for the next ETA estimate."""
     if not job.stage_durations:
         return
-    try:
-        data = json.loads(BASELINE_PATH.read_text())
-    except (OSError, ValueError, TypeError):
-        data = {"schema_version": 1}
-    seconds = data.setdefault("seconds", {})
+    seconds = _read_seconds(LEARNED_BASELINE_PATH)
     seconds.update({name: round(value, 1) for name, value in job.stage_durations.items()})
-    data["source"] = "learned from completed clean-port Generate jobs"
-    BASELINE_PATH.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    data = {"schema_version": 1, "seconds": seconds,
+            "source": "learned from completed Generate jobs on this machine"}
+    LEARNED_BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LEARNED_BASELINE_PATH.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
 def _slugify(value: str) -> str:

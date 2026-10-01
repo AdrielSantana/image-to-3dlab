@@ -1202,3 +1202,24 @@ def test_backend_dropdown_takes_its_names_from_the_server():
     # The option text was fixed in index.html, so NVIDIA showed "TRELLIS.2 (clean port)".
     js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
     assert "function applyBackendLabels()" in js and "applyBackendLabels();" in js
+
+
+def test_learned_timings_never_dirty_a_tracked_file(tmp_path, monkeypatch):
+    # Seen on a real pod: the viewer rewrote the tracked viewer/generate_baseline.json after
+    # a generation, and the curl installer then refused every update ("local edits to
+    # tracked files"). Learned timings go to a git-ignored file; the shipped one is read-only.
+    shipped = tmp_path / "shipped.json"
+    shipped.write_text('{"seconds": {"decode": 100.0, "load": 10.0}}')
+    learned = tmp_path / "output" / ".generate_baseline.json"
+    monkeypatch.setattr(api, "BASELINE_PATH", shipped)
+    monkeypatch.setattr(api, "LEARNED_BASELINE_PATH", learned)
+    assert api._baseline() == {"decode": 100.0, "load": 10.0}
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", {}, "trellis")
+    job.stage_durations = {"decode": 42.0}
+    api._update_baseline(job)
+    assert shipped.read_text() == '{"seconds": {"decode": 100.0, "load": 10.0}}'
+    assert api._baseline() == {"decode": 42.0, "load": 10.0}
+
+
+def test_learned_baseline_lives_under_the_ignored_output_folder():
+    assert api.LEARNED_BASELINE_PATH.parent == api.REPO / "output"

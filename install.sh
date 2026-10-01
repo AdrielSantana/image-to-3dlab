@@ -90,6 +90,14 @@ UV="$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")"
 # --- 3. Code: clone, or update an existing install ---------------------------------------
 if [ -d "$DIR/.git" ]; then
   say "Updating the install in $DIR"
+  # Viewers up to 0.3.6 wrote learned ETA timings into this tracked file, which then
+  # blocked every update. Keep the timings where newer viewers look, and restore the file.
+  BASELINE="viewer/generate_baseline.json"
+  if [ "$DRY" != 1 ] && [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no -- "$BASELINE")" ]; then
+    mkdir -p "$DIR/output"
+    [ -e "$DIR/output/.generate_baseline.json" ] || cat "$DIR/$BASELINE" > "$DIR/output/.generate_baseline.json"
+    git -C "$DIR" checkout --quiet -- "$BASELINE"
+  fi
   # Tracked edits would be overwritten by a checkout; untracked files (outputs, weights,
   # vendor/) are git-ignored or left alone.
   if [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no)" ]; then
