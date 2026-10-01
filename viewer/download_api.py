@@ -175,13 +175,15 @@ def is_stalled(present: int, idle_seconds: float) -> bool:
 
 def describe_progress(
     backend: Backend, present: int, rate: float | None, eta: float | None, stalled: bool,
-    step: str | None = None,
+    step: str | None = None, fetched: int | None = None,
 ) -> dict[str, Any]:
-    """The progress line. `step` is setup's latest log line, shown until weights arrive,
-    because "0 B of 8.4 GB" during a build download reads as stuck."""
+    """The progress line. `step` is setup's latest log line, shown until this setup has
+    fetched something, because "0 B of 8.4 GB" during a build download reads as stuck.
+    `fetched` is what this run downloaded; files another route left (the shared background
+    remover) are counted in `present` but say nothing about this setup's progress."""
     expected = backend.bytes_expected
     percent = 0 if expected <= 0 else max(0, min(99, round(present / expected * 100)))
-    if present == 0 and step:
+    if (present if fetched is None else fetched) == 0 and step:
         detail = step
     elif stalled:
         detail = f"stalled — no new data for {int(STALL_SECONDS)}s ({human_bytes(present)} so far)"
@@ -416,7 +418,7 @@ def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
     """Poll the target directories and report growth, rate and stalls."""
     samples: list[tuple[float, int]] = []
     last_growth = time.monotonic()
-    last_bytes = run.bytes_present()
+    last_bytes = started = run.bytes_present()
     while not stop.wait(POLL_SECONDS):
         now = time.monotonic()
         present = run.bytes_present()
@@ -427,9 +429,10 @@ def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
             last_bytes = present
         remaining = max(0, run.backend.bytes_expected - present)
         rate, eta = rate_and_eta(samples, remaining)
+        fetched = max(0, present - started)
         run.emit(describe_progress(
-            run.backend, present, rate, eta, stalled=is_stalled(present, now - last_growth),
-            step=run.log[-1] if run.log else None,
+            run.backend, present, rate, eta, stalled=is_stalled(fetched, now - last_growth),
+            step=run.log[-1] if run.log else None, fetched=fetched,
         ))
 
 

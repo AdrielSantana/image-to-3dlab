@@ -403,3 +403,14 @@ def test_hunyuan_cuda_sets_up_with_its_own_bootstrap_and_says_cuda():
     command = dl.command_for("hunyuan-cuda", host=dl.NVIDIA)
     assert command[1].endswith("bootstrap_hunyuan_cuda.py") and command[-1] == "--yes"
     assert dl.building_label("hunyuan-cuda", host=dl.NVIDIA) == "building the CUDA version"
+
+
+def test_files_already_on_disk_do_not_make_a_build_look_stalled():
+    # Seen on a real pod: the shared background remover (214 MB) was already there from
+    # another route, so Hunyuan's rasterizer compile read "stalled" after 90 s. Only bytes
+    # this setup has fetched count, and until there are some the step is shown.
+    backend = dl.BY_ID["hunyuan-cuda"]
+    line = dl.describe_progress(backend, present=214 * 1024 ** 2, rate=None, eta=None,
+                                stalled=dl.is_stalled(0, 10 * dl.STALL_SECONDS),
+                                step="Building custom-rasterizer", fetched=0)
+    assert line["detail"] == "Building custom-rasterizer" and line["stalled"] is False
