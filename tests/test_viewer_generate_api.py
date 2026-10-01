@@ -1383,3 +1383,18 @@ def test_sign_in_answers_with_status_or_a_plain_error(monkeypatch):
     code, body = api.hf_sign_in_response({"token": "nope"})
     assert code == 422 and "error" in body
     assert api.hf_sign_in_response("not a dict")[0] == 400
+
+
+def test_blender_install_is_refused_when_it_cannot_or_should_not_run():
+    ok = {"blender_installable": True}
+    assert api.blender_install_refusal(ok, generating=False, setting_up=False) is None
+    assert api.blender_install_refusal(ok, generating=True, setting_up=False)[0] == 409
+    assert api.blender_install_refusal(ok, generating=False, setting_up=True)[0] == 409
+    code, message = api.blender_install_refusal(
+        {"blender_installable": False}, generating=False, setting_up=False)
+    assert code == 409 and "blender.org" in message
+
+
+def test_blender_install_runs_the_bootstrap_with_yes():
+    command = api.blender_install_command()
+    assert command[-2].endswith("bootstrap_blender.py") and command[-1] == "--yes"

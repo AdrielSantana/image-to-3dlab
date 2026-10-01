@@ -144,8 +144,12 @@ run "$UV" pip install --quiet --python "$DIR/.venv/bin/python" -r "$DIR/requirem
 if [ "$DRY" != 1 ] && [ -x "$DIR/.venv/bin/python" ] && ! (cd "$DIR" && .venv/bin/python -c \
     'import sys; from image_to_3dlab.blender import find_blender; sys.exit(0 if find_blender() else 1)') \
     2>/dev/null; then
-  say "Blender was not found. Finish (the low-poly clean-up) needs Blender 4.2 or newer:"
-  say "  https://www.blender.org/download/  (Linux: or sudo snap install blender --classic)"
+  say "Blender was not found. Finish (the low-poly clean-up) needs Blender 4.2 or newer."
+  if [ "$OS" = Linux ]; then
+    say "  Press Install Blender in the viewer's Setup & Status (no admin rights needed)."
+  else
+    say "  https://www.blender.org/download/"
+  fi
 fi
 
 # --- 6. Done: start the lab, so the next thing a new user sees is the viewer -------------

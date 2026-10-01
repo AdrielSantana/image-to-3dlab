@@ -55,6 +55,7 @@ from welcome_api import payload as welcome_payload
 from update_api import check as update_check
 from download_api import (
     DOWNLOADS,
+    active as download_active,
     running_payload,
     cancel as cancel_download,
     remove as remove_weights,
@@ -463,12 +464,29 @@ def setup_available(host: str | None = None) -> tuple[bool, str | None]:
     return True, None
 
 
-def _start_setup_run(run_id: str) -> SetupRun:
-    """Spawn the bootstrap and stream its output into the run's events (SSE)."""
+def blender_install_command() -> list[str]:
+    return [sys.executable, str(REPO / "scripts" / "bootstrap_blender.py"), "--yes"]
+
+
+def blender_install_refusal(caps: dict[str, Any], generating: bool,
+                            setting_up: bool) -> tuple[int, str] | None:
+    """Why Setup's Install Blender cannot start now, or None when it can."""
+    if generating:
+        return 409, "a generation is running; wait for it to finish"
+    if setting_up:
+        return 409, "another setup is running; wait for it to finish"
+    if not caps.get("blender_installable"):
+        return 409, ("Blender is already found, or this machine needs the app from "
+                     "https://www.blender.org/download/")
+    return None
+
+
+def _start_setup_run(run_id: str, command: list[str] | None = None) -> SetupRun:
+    """Spawn a setup script and stream its output into the run's events (SSE)."""
     run = SetupRun(run_id)
     bootstrap = REPO / "scripts" / "bootstrap_trellis_space_macos.py"
     proc = subprocess.Popen(
-        [sys.executable, str(bootstrap)],
+        command or [sys.executable, str(bootstrap)],
         cwd=str(REPO),
         env=_job_env(),
         stdout=subprocess.PIPE,
@@ -1903,6 +1921,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parts = self._path_parts()
+        if parts == ["api", "blender", "install"]:
+            self._start_blender_install()
+            return
         if parts == ["api", "hf", "sign-in"]:
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -2602,6 +2623,24 @@ class Handler(SimpleHTTPRequestHandler):
             "events_url": f"/api/setup/{backend_id}/events",
             "status_url": f"/api/setup/{backend_id}/status",
         })
+
+    def _start_blender_install(self) -> None:
+        global SETUP_ACTIVE
+        with SETUP_LOCK:
+            active = JOBS.get(JOBS.active)
+            refusal = blender_install_refusal(
+                finish_capabilities(),
+                generating=active is not None
+                and active.status in {"queued", "running", "cancelling"},
+                setting_up=SETUP_ACTIVE is not None or download_active() is not None)
+            if refusal:
+                self._send_json(refusal[0], {"error": refusal[1]})
+                return
+            setup_id = uuid.uuid4().hex
+            SETUP_ACTIVE = setup_id
+            SETUP_RUNS[setup_id] = _start_setup_run(setup_id, blender_install_command())
+        self._send_json(202, {"setup_run_id": setup_id,
+                              "events_url": f"/api/setup/run/{setup_id}/events"})
 
     def _start_setup(self) -> None:
         global SETUP_ACTIVE

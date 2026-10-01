@@ -251,3 +251,7 @@ def test_setup_has_a_hugging_face_sign_in_card():
     assert "type=\"password\"" in SETUP or "type = 'password'" in SETUP
     body = SETUP[SETUP.index("async function renderBackends"):]
     assert "await hfCard()" in body[:body.index("\n}\n")]
+
+
+def test_blender_card_offers_an_install_on_linux():
+    assert "/api/blender/install" in SETUP and "blender_installable" in SETUP

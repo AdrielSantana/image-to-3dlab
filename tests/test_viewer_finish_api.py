@@ -546,3 +546,21 @@ def test_no_note_when_the_camera_is_found(tmp_path):
     manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
     job = manager.create("robot.glb", b"glb-bytes", b"png", {})
     assert finish.photo_note(job, job.settings) is None
+
+
+def test_capabilities_offer_a_blender_install_only_where_one_can_run():
+    # Linux x86_64 with no Blender: the Setup card gets an Install Blender button.
+    linux = finish.capabilities("nvidia", find=lambda: None, version=lambda _: None,
+                                installable=lambda: True)
+    assert linux["blender_installable"] is True
+    mac = finish.capabilities("apple-silicon", find=lambda: None, version=lambda _: None,
+                              installable=lambda: False)
+    assert mac["blender_installable"] is False
+
+
+def test_no_install_offered_once_blender_is_found(tmp_path):
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    found = finish.capabilities("nvidia", find=lambda: exe, version=lambda _: (4, 2),
+                                installable=lambda: True)
+    assert found["blender_installable"] is False

@@ -142,7 +142,8 @@ REPAINT_NOTE = ("Repaint runs on Apple Silicon only for now. Here Pixel Match st
 
 
 def capabilities(platform: str | None = None, find=blender_lookup.find_blender,
-                 version=blender_lookup.blender_version) -> dict[str, Any]:
+                 version=blender_lookup.blender_version,
+                 installable=blender_lookup.can_install) -> dict[str, Any]:
     """What Finish can do on this machine, for the page to say before anyone clicks."""
     repaint = (platform or host_platform()) == APPLE
     found = find()
@@ -155,6 +156,8 @@ def capabilities(platform: str | None = None, find=blender_lookup.find_blender,
         "blender_problem": (blender_lookup.missing_help() if found is None
                             else blender_lookup.version_problem(found_version)),
         "ready": found is not None,
+        # Setup's Blender card offers Install Blender (scripts/bootstrap_blender.py).
+        "blender_installable": found is None and installable(),
     }
 
 

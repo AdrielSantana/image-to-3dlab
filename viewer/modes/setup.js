@@ -529,9 +529,42 @@ async function blenderCard() {
         ? '<span class="setup-ready">✓ ready</span>'
         : '<a href="https://www.blender.org/download/" target="_blank" rel="noopener">Get Blender</a>'}</div>
     </div>
-    <p class="setup-card-best">Finish (low-poly clean-up and Pixel Match) runs Blender in the background. Installed by you, not by this page.</p>
-    ${!found && caps && caps.blender_problem
+    <p class="setup-card-best">Finish (low-poly clean-up and Pixel Match) runs Blender in the background.</p>
+    ${!found && caps && caps.blender_problem && !caps.blender_installable
       ? `<p class="setup-card-caveat">${caps.blender_problem}</p>` : ''}`;
+  // Linux: install blender.org's LTS build from here, instead of leaving the viewer to
+  // download and unpack it by hand (scripts/bootstrap_blender.py).
+  if (caps && caps.blender_installable) {
+    const action = card.querySelector('.setup-card-action');
+    const button = document.createElement('button');
+    button.textContent = 'Install Blender';
+    const progress = document.createElement('p');
+    progress.className = 'setup-card-trade';
+    progress.textContent = 'Blender 4.2 LTS from blender.org: about 380 MB to download, '
+      + 'about 1 GB unpacked in your home folder (~/blender-lts). No admin rights needed.';
+    button.onclick = async () => {
+      // eslint-disable-next-line no-alert -- same deliberate confirmation as a download
+      if (!window.confirm('Install Blender 4.2 LTS (GPL) from blender.org?\n\n'
+        + 'About 380 MB to download, about 1 GB unpacked into ~/blender-lts.')) return;
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/blender/install', { method: 'POST' });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        const source = new EventSource(payload.events_url);
+        source.onmessage = (message) => {
+          const event = JSON.parse(message.data);
+          if (event.message) progress.textContent = event.message;
+          if (event.phase === 'setup_done') { source.close(); load(); }
+        };
+      } catch (error) {
+        progress.textContent = `Could not start: ${error.message}`;
+        button.disabled = false;
+      }
+    };
+    action.replaceChildren(button);
+    card.appendChild(progress);
+  }
   return card;
 }
 
