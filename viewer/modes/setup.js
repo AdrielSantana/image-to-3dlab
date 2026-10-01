@@ -412,8 +412,16 @@ function summarise(catalog) {
   if (catalog.host && !catalog.host.any_backend_runs_here) {
     return `<strong>This machine is ${catalog.host.label}.</strong> `
       + `Every backend here needs ${catalog.host.supported.join(' or ')}, so there is `
-      + `nothing to install yet. NVIDIA support is on the way — the backends below `
-      + `are listed so you can see what is coming.`;
+      + `nothing to install yet. AMD support is coming (see the AMD tab); the other `
+      + `tabs show what each machine gets.`;
+  }
+  // A route that only needs a top-up (a newer release added a small file) is not
+  // "nothing installed": that read as losing a working setup after an update.
+  const partial = mine.filter((b) => b.state === 'partial');
+  if (!ready.length && partial.length) {
+    return `<strong>Nearly ready.</strong> ${partial.map((b) => b.label).join(', ')} `
+      + `${partial.length === 1 ? 'is' : 'are'} partly downloaded: press `
+      + `<em>Resume download</em> on ${partial.length === 1 ? 'its card' : 'their cards'}.`;
   }
   if (!ready.length) {
     return `<strong>No backend installed yet.</strong> Pick one below. `

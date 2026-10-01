@@ -233,3 +233,12 @@ def test_generate_hands_a_model_straight_to_finish():
     assert "'viewer:finish-this'" in generate and "mode: 'finish'" in generate
     listener = finish_js[finish_js.index("addEventListener('viewer:finish-this'"):]
     assert "state.asset" in listener and "state.image" in listener and "updateSubmit()" in listener
+
+
+def test_a_route_needing_a_top_up_is_not_called_nothing_installed():
+    # An upgrader whose TRELLIS worked yesterday saw "No backend installed yet" because one
+    # new small file (the background remover) was missing. Partial routes are named.
+    body = SETUP[SETUP.index("function summarise"):]
+    body = body[:body.index("\n}\n")]
+    assert "state === 'partial'" in body and "Resume download" in body
+    assert "NVIDIA support is on the way" not in SETUP
