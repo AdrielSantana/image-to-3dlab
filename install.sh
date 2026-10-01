@@ -136,7 +136,11 @@ fi
 # --- 4. Python ----------------------------------------------------------------------------
 say "Setting up Python 3.11 and the viewer's packages (a few hundred MB, mostly PyTorch)"
 run "$UV" venv --quiet --allow-existing --python 3.11 "$DIR/.venv"
-run "$UV" pip install --quiet --python "$DIR/.venv/bin/python" -r "$DIR/requirements.txt"
+# The lock pins every package to versions tested together; requirements.txt only bounds
+# them, so installing from it gave each install whatever PyPI had that day.
+REQS="$DIR/requirements.lock"
+[ -f "$REQS" ] || REQS="$DIR/requirements.txt"
+run "$UV" pip install --quiet --python "$DIR/.venv/bin/python" -r "$REQS"
 
 # --- 5. Blender: Finish needs it, and it is the user's to install -----------------------
 # Checked with the same finder Finish uses. Missing is a note, not a failure: generating

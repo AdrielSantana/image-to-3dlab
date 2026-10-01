@@ -264,3 +264,36 @@ def test_the_real_launcher_is_executable_and_uses_auto():
     lab = SCRIPT.parent / "lab"
     assert lab.is_file() and lab.stat().st_mode & 0o111
     assert "serve.py --auto" in lab.read_text()
+
+
+def test_installs_from_the_lock_file_when_there_is_one(tmp_path, upstream, fake_bin):
+    # Unpinned requirements meant every fresh install got whatever PyPI had that day: on
+    # 2026-10-01 huggingface-hub jumped to 2.x between two installs.
+    (upstream / "requirements.lock").write_text("Pillow==10.4.0\n")
+    _git(upstream, "add", ".")
+    _git(upstream, "commit", "-q", "-m", "lock")
+    _git(upstream, "tag", "v0.2.3")
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(tmp_path / "lab"))
+    assert done.returncode == 0, done.stderr
+    uv_calls = (tmp_path / "uv.log").read_text()
+    assert "requirements.lock" in uv_calls and "requirements.txt" not in uv_calls
+
+
+def test_the_shipped_lock_pins_what_broke_before():
+    lock = (SCRIPT.parent / "requirements.lock").read_text()
+    for line in ("numpy==1.", "rembg==2.0.69", "huggingface-hub=="):
+        assert line in lock, line
+
+
+def test_the_lock_covers_every_requirement():
+    # Regenerate with: uv pip compile --universal --python-version 3.11 requirements.txt
+    #                  -o requirements.lock
+    import re
+
+    lock = (SCRIPT.parent / "requirements.lock").read_text().lower().replace("_", "-")
+    for raw in (SCRIPT.parent / "requirements.txt").read_text().splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name = re.split(r"[<>=!~\[; ]", line, maxsplit=1)[0].lower().replace("_", "-")
+        assert f"\n{name}==" in lock, f"{name} is in requirements.txt but not the lock"
