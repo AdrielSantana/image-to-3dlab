@@ -390,3 +390,10 @@ def test_a_download_timeout_buried_above_a_traceback_is_still_explained():
            "subprocess.CalledProcessError: Command '[uv, pip, install]' returned 1."]
     message = dl._explain(1, log)
     assert "network" in message and "Set up again" in message
+
+
+def test_finished_nvidia_trellis_setup_does_not_promise_a_later_download(monkeypatch):
+    monkeypatch.setattr(dl, "_this_host", lambda: dl.NVIDIA)
+    assert dl.done_detail(dl.BY_ID["trellis"], present=16 * 1024 ** 3).startswith("done ·")
+    monkeypatch.setattr(dl, "_this_host", lambda: "apple")
+    assert "first generation run" in dl.done_detail(dl.BY_ID["trellis"], present=0)

@@ -205,13 +205,18 @@ class Backend:
         return (f"Needs {runs_on_phrase(self)}. Setting it up on this machine would "
                 f"download gigabytes and then fail, so the button is off.")
 
+    def setup_fetches_on(self, host: str | None = None) -> bool:
+        """Whether this machine's setup downloads the weights (vs. the first run doing so)."""
+        said = self.overrides_by_host.get(host or host_platform(), {})
+        return said.get("setup_fetches_weights", self.setup_fetches_weights)
+
     def describe(self, host: str | None = None) -> dict[str, Any]:
         weights = [w.describe() for w in self.weights]
         present = sum(w["bytes_present"] for w in weights)
         built = self.built_on(host)
         supported = self.runs_here(host)
         said = self.overrides_by_host.get(host or host_platform(), {})
-        fetches = said.get("setup_fetches_weights", self.setup_fetches_weights)
+        fetches = self.setup_fetches_on(host)
         return {
             "build_present": built,
             "supported_here": supported,

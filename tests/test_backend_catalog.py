@@ -465,3 +465,10 @@ def test_host_overrides_only_name_fields_describe_knows():
     for backend in bc.CATALOG:
         for overrides in backend.overrides_by_host.values():
             assert set(overrides) <= bc.HOST_OVERRIDABLE, backend.id
+
+
+def test_setup_fetch_flag_is_answered_per_machine():
+    trellis = bc.BY_ID["trellis"]
+    assert trellis.setup_fetches_on(bc.NVIDIA) is True
+    assert trellis.setup_fetches_on(bc.APPLE) is False
+    assert bc.BY_ID["pixal3d"].setup_fetches_on(bc.NVIDIA) is True

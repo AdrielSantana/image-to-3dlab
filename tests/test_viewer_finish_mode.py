@@ -180,3 +180,8 @@ def test_setup_page_reattaches_to_a_run_already_in_progress():
 
 def test_setup_confirmation_mentions_the_build_before_the_download():
     assert "This builds the code for this machine first, then:" in SETUP
+
+
+def test_setup_title_says_setting_up_until_the_build_exists():
+    # NVIDIA TRELLIS.2 compiles for half an hour before downloading; "Downloading" misled.
+    assert "'Setting up'" in SETUP

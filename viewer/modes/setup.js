@@ -264,7 +264,9 @@ async function startDownload(backend, button, action = 'download') {
   button.disabled = true;
   s('setup-run').hidden = false;
   s('setup-run-cancel').hidden = false;
+  // A route with no build yet compiles before it downloads anything.
   const verb = action === 'rebuild' ? 'Rebuilding'
+    : !backend.build_present ? 'Setting up'
     : backend.setup_fetches_weights ? 'Downloading' : 'Building';
   s('setup-run-title').textContent = `${verb} ${backend.label}`;
   s('setup-run-detail').textContent = 'starting…';
@@ -291,6 +293,7 @@ function resume(run) {
   const backend = state.catalog.backends.find((b) => b.id === run.backend);
   const label = backend ? backend.label : run.backend;
   const verb = run.rebuild ? 'Rebuilding'
+    : backend && !backend.build_present ? 'Setting up'
     : backend && backend.setup_fetches_weights ? 'Downloading' : 'Building';
   s('setup-run').hidden = false;
   s('setup-run-cancel').hidden = false;

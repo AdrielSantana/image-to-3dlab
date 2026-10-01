@@ -396,11 +396,16 @@ def _run(run: DownloadRun) -> None:
                   "detail": _explain(code, list(run.log))})
     else:
         run.status = "done"
-        fetched = run.backend.setup_fetches_weights
         run.emit({"phase": "done", "overall_pct": 100,
                   "detail": "rebuilt · the next run uses this repo's patches" if run.rebuild
-                  else f"done · {human_bytes(present)} on disk" if fetched else
-                  "built · weights download on the first generation run"})
+                  else done_detail(run.backend, present)})
+
+
+def done_detail(backend: Backend, present: int) -> str:
+    """The last line of a finished setup, true for this machine's route."""
+    if backend.setup_fetches_on(_this_host()):
+        return f"done · {human_bytes(present)} on disk"
+    return "built · weights download on the first generation run"
 
 
 def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
