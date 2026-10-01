@@ -1331,3 +1331,28 @@ def test_progress_streams_tell_proxies_not_to_buffer():
     api.Handler._start_event_stream(Fake())
     assert ("Content-Type", "text/event-stream") in sent
     assert ("X-Accel-Buffering", "no") in sent and sent[-1] == ("end",)
+
+
+def test_generate_tab_rechecks_readiness_when_opened():
+    # Seen on a real pod: setup finished, the user opened Generate 3D, and it still said
+    # "not installed yet" with Generate greyed out until a reload, because readiness was
+    # only checked on page load and on a model change.
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    listener = js[js.index("addEventListener('viewer:modechange'"):]
+    listener = listener[:listener.index("});")]
+    assert "'generate'" in listener and "refreshSetup()" in listener
+
+
+def test_backends_say_whether_they_run_on_this_machine(monkeypatch):
+    # The Generate dropdown offered the Mac-only Hunyuan-MLX routes on an NVIDIA pod.
+    monkeypatch.setattr(api.backend_catalog, "host_platform", lambda: api.NVIDIA)
+    here = {b["id"]: b["runs_here"] for b in api.backends_payload()["backends"]}
+    assert here["hunyuan-cuda"] is True and here["hunyuan-mlx-xiong"] is False
+    monkeypatch.setattr(api.backend_catalog, "host_platform", lambda: api.APPLE)
+    here = {b["id"]: b["runs_here"] for b in api.backends_payload()["backends"]}
+    assert here["hunyuan-mlx-xiong"] is True and here["hunyuan-cuda"] is False
+
+
+def test_dropdown_hides_routes_that_do_not_run_here():
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    assert "option.hidden = meta.runs_here === false" in js

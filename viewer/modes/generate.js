@@ -41,9 +41,17 @@ function applyHiddenFields() {
 }
 // The server names each route for this machine (TRELLIS.2 is "(NVIDIA)" there).
 function applyBackendLabels() {
-  for (const option of g('generate-backend').options) {
-    const label = backendMeta[option.value]?.label;
-    if (label) option.textContent = label;
+  const select = g('generate-backend');
+  for (const option of select.options) {
+    const meta = backendMeta[option.value];
+    if (!meta) continue;
+    if (meta.label) option.textContent = meta.label;
+    // Only routes this machine can run: no Mac-only MLX routes on an NVIDIA box.
+    option.hidden = meta.runs_here === false;
+  }
+  if (select.selectedOptions[0]?.hidden) {
+    const first = [...select.options].find((o) => !o.hidden);
+    if (first) { select.value = first.value; select.onchange?.(); }
   }
 }
 // Only routes that need a cut-out ask for one; the rest matte the image themselves.
@@ -439,3 +447,9 @@ g('generate-backend').onchange = () => {
 g('health-goto').onclick = () => document.getElementById('mode-setup').click();
 
 loadBackendMeta();
+
+// Opening the tab re-asks whether the route is ready: a setup that finished while the page
+// sat on Setup & Status would otherwise leave "not installed yet" and a dead button here.
+document.addEventListener('viewer:modechange', (event) => {
+  if (event.detail.mode === 'generate') refreshSetup();
+});
