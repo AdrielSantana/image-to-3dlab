@@ -69,6 +69,8 @@ UTILS3D = ("git+https://github.com/EasternJournalist/utils3d.git"
 BASIC = ["imageio", "imageio-ffmpeg", "tqdm", "easydict", "opencv-python-headless",
          "ninja", "trimesh", "transformers==4.57.3", "zstandard", "kornia", "timm",
          "pillow", "huggingface_hub", "rembg", "onnxruntime", "numpy", "plyfile"]
+# Everything but PyTorch, pinned (scripts/lock_nvidia_routes.py regenerates it).
+PACKAGE_LOCK = REPO / "scripts" / "locks" / "trellis-cuda.txt"
 FLASH_ATTN = "flash-attn"
 # flash-attn publishes Linux wheels for CUDA 12 up to torch 2.8 only. An unpinned torch
 # outran them, and pip then compiled flash-attn: one to two hours on an 8-CPU machine.
@@ -79,12 +81,17 @@ TORCHVISION_FOR_FLASH_WHEEL = "0.23.0"
 SOURCE_PYTHON = "3.11"
 FLASH_WHEEL = ("https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3.post1/"
                "flash_attn-2.8.3.post1%2Bcu12torch2.8cxx11abiTRUE-cp311-cp311-linux_x86_64.whl")
-# (name, git url, ref or None, recursive), as upstream's setup.sh clones them.
+# (name, git url, tag or commit, recursive), as upstream's setup.sh clones them. The
+# commits are what built and ran on an RTX 3090 on 2026-10-01; upstream's own script takes
+# whatever HEAD is that day.
 SOURCE_EXTENSIONS = (
     ("nvdiffrast", "https://github.com/NVlabs/nvdiffrast.git", "v0.4.0", False),
-    ("nvdiffrec", "https://github.com/JeffreyXiang/nvdiffrec.git", "renderutils", False),
-    ("CuMesh", "https://github.com/JeffreyXiang/CuMesh.git", None, True),
-    ("FlexGEMM", "https://github.com/JeffreyXiang/FlexGEMM.git", None, True),
+    ("nvdiffrec", "https://github.com/JeffreyXiang/nvdiffrec.git",
+     "b296927cc7fd01c2ac1087c8065c4d7248f72da4", False),  # the renderutils branch
+    ("CuMesh", "https://github.com/JeffreyXiang/CuMesh.git",
+     "12289e1062f0603f2f0d0771b02e1395d247f26f", True),
+    ("FlexGEMM", "https://github.com/JeffreyXiang/FlexGEMM.git",
+     "6dd94a859c26ee8246888502eada3dd8ad85532e", True),
 )
 
 GATED = "facebook/dinov3-vitl16-pretrain-lvd1689m"
@@ -248,6 +255,11 @@ def install_env(route: str, base: dict[str, str] | None = None) -> dict[str, str
     return host.patient_downloads(base)
 
 
+def basic_args(lock: Path = PACKAGE_LOCK) -> list[str]:
+    """Everything but PyTorch and the compiled extensions, from the lock when it exists."""
+    return ["-r", str(lock)] if lock.is_file() else list(BASIC)
+
+
 def pip_commands(route: str, uv: str, python: Path, torch_tag: str | None = None,
                  checkout: Path = CHECKOUT,
                  extensions: Path = EXTENSIONS) -> list[list[str]]:
@@ -263,7 +275,7 @@ def pip_commands(route: str, uv: str, python: Path, torch_tag: str | None = None
     torch = ([f"torch=={TORCH_FOR_FLASH_WHEEL}", f"torchvision=={TORCHVISION_FOR_FLASH_WHEEL}"]
              if has_flash_wheel(torch_tag) else ["torch", "torchvision"])
     commands.append([*pip, *torch, "--index-url", host.TORCH_INDEX + torch_tag])
-    commands.append([*pip, *BASIC])
+    commands.append([*pip, *basic_args()])
     commands.append([*pip, UTILS3D])
     # --no-build-isolation throughout: the extensions must compile against the torch just
     # installed, not a fresh one pip would fetch into a throwaway build environment.
@@ -284,12 +296,22 @@ def run(command: list[str], **kwargs) -> None:
     subprocess.run(command, check=True, **kwargs)
 
 
+def is_commit(ref: str | None) -> bool:
+    return bool(ref) and len(ref) == 40 and all(c in "0123456789abcdef" for c in ref)
+
+
 def clone(url: str, target: Path, ref: str | None = None, recursive: bool = False) -> None:
+    """Clone at a tag or branch (`--branch`) or at an exact commit (checkout after)."""
     if (target / ".git").is_dir():
         return
     target.parent.mkdir(parents=True, exist_ok=True)
+    named = ref if ref and not is_commit(ref) else None
     run(["git", "clone", *(["--recursive"] if recursive else []),
-         *(["--branch", ref] if ref else []), url, str(target)])
+         *(["--branch", named] if named else []), url, str(target)])
+    if is_commit(ref):
+        run(["git", "checkout", "--detach", ref], cwd=target)
+        if recursive:
+            run(["git", "submodule", "update", "--init", "--recursive"], cwd=target)
 
 
 def fetch_checkout(commit: str) -> None:

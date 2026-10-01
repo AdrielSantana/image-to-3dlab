@@ -256,3 +256,25 @@ def test_setuptools_keeps_pkg_resources():
     # The requirements install must not float it back up either.
     reqs = boot.pip_commands("tested", "uv", boot.venv_python(), ["timm"])[2]
     assert boot.SETUPTOOLS_PIN in reqs
+
+
+def test_installs_everything_but_torch_from_the_lock():
+    # Unpinned installs broke on a real pod as upstreams moved (bpy, setuptools, open3d).
+    assert boot.requirement_args() == ["-r", str(boot.PACKAGE_LOCK)] and boot.PACKAGE_LOCK.is_file()
+
+
+def test_the_lock_holds_the_pins_that_broke():
+    lock = boot.PACKAGE_LOCK.read_text()
+    for pin in ("bpy==4.2.0", "open3d==0.18.0", "numpy==1.24.4", "transformers==4.46.0"):
+        assert f"\n{pin}\n" in lock, pin
+    setuptools = next(line for line in lock.splitlines() if line.startswith("setuptools=="))
+    assert int(setuptools.split("==")[1].split(".")[0]) < 81
+    assert not any(line.startswith(("torch==", "torchvision==", "nvidia-"))
+                   for line in lock.splitlines())
+
+
+def test_the_lock_covers_what_we_install_from_upstream():
+    lock = boot.PACKAGE_LOCK.read_text().lower().replace("_", "-")
+    for line in boot.filter_requirements(UPSTREAM_REQUIREMENTS):
+        name = line.split("==")[0].split("<")[0].lower().replace("_", "-")
+        assert f"\n{name}==" in lock, name

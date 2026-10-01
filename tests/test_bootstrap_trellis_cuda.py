@@ -248,3 +248,32 @@ def test_nvidia_setup_installs_the_background_remover(tmp_path):
     boot.install_background_remover(tmp_path / "lite.onnx", download=fetched.append)
     assert fetched == [tmp_path / "lite.onnx"]
     assert "BiRefNet-lite" in boot.announcement("source", "test")
+
+
+def test_installs_the_basics_from_the_lock():
+    assert boot.basic_args() == ["-r", str(boot.PACKAGE_LOCK)] and boot.PACKAGE_LOCK.is_file()
+    commands = boot.pip_commands("source", "uv", boot.venv_python(), "cu128")
+    assert any(c[-2:] == ["-r", str(boot.PACKAGE_LOCK)] for c in commands)
+    lock = boot.PACKAGE_LOCK.read_text()
+    assert "\ntransformers==4.57.3\n" in lock
+    assert not any(line.startswith(("torch==", "torchvision==", "nvidia-"))
+                   for line in lock.splitlines())
+
+
+def test_source_extensions_are_pinned_to_commits():
+    # CuMesh and FlexGEMM were cloned at whatever HEAD was that day.
+    for name, _url, ref, _recursive in boot.SOURCE_EXTENSIONS:
+        assert ref, name
+        if name != "nvdiffrast":  # nvdiffrast is pinned by its release tag
+            assert len(ref) == 40 and all(ch in "0123456789abcdef" for ch in ref), name
+
+
+def test_a_commit_ref_is_checked_out_after_cloning(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(boot, "run", lambda command, **kwargs: calls.append(command))
+    sha = "a" * 40
+    boot.clone("https://example/x.git", tmp_path / "x", sha, recursive=True)
+    assert "--branch" not in calls[0]
+    assert ["git", "checkout", "--detach", sha] in [c[:4] for c in calls]
+    boot.clone("https://example/y.git", tmp_path / "y", "v0.4.0")
+    assert ["--branch", "v0.4.0"] == calls[-1][2:4]

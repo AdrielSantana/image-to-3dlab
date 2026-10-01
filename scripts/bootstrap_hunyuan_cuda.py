@@ -74,6 +74,8 @@ SETUPTOOLS_PIN = "setuptools<81"
 
 # (route, torch, torchvision, index tag, minimum driver CUDA). "tested" is upstream's own
 # pairing; "blackwell" exists only because 2.5.1 has no kernels for compute capability 12.0.
+# Everything but PyTorch, pinned (scripts/lock_nvidia_routes.py regenerates it).
+PACKAGE_LOCK = REPO / "scripts" / "locks" / "hunyuan-cuda.txt"
 TORCH = {
     "tested": ("2.5.1", "0.20.1", "cu124", (12, 4)),
     "blackwell": ("2.7.1", "0.22.1", "cu128", (12, 8)),
@@ -226,6 +228,14 @@ def build_env(capability: str | None, nvcc: str | None,
     return env
 
 
+def requirement_args(lock: Path = PACKAGE_LOCK) -> list[str]:
+    """What the main install gets: the lock (scripts/lock_nvidia_routes.py), so a fresh
+    install matches the tested one. Upstream's own list is only the fallback."""
+    if lock.is_file():
+        return ["-r", str(lock)]
+    return filter_requirements((CHECKOUT / "requirements.txt").read_text())
+
+
 def pip_commands(route: str, uv: str, python: Path, requirements: list[str],
                  checkout: Path = CHECKOUT) -> list[list[str]]:
     """Every package install, in order. Pure, so the order and flags can be tested."""
@@ -300,7 +310,7 @@ def install_code(route: str) -> None:
     if venv_needs_rebuild(VENDOR / ".venv"):
         shutil.rmtree(VENDOR / ".venv", ignore_errors=True)
         run([uv, "venv", str(VENDOR / ".venv"), "--python", PYTHON_VERSION])
-    requirements = filter_requirements((CHECKOUT / "requirements.txt").read_text())
+    requirements = requirement_args()
     env = install_env()
     for command in pip_commands(route, uv, venv_python(), requirements):
         run(command, env=env)

@@ -47,6 +47,14 @@ NON_PYTHON = {
         "Rebuild, install and ad-hoc sign MtlBVH's native extension. Stop every Python "
         "worker first: overwriting a loaded Mach-O image makes macOS kill them."
     ),
+    "trellis-cuda.txt": (
+        "In `locks/`. Every package but PyTorch for the NVIDIA TRELLIS.2 route, pinned; "
+        "regenerate with `lock_nvidia_routes.py`."
+    ),
+    "hunyuan-cuda.txt": (
+        "In `locks/`. Every package but PyTorch for the NVIDIA Hunyuan3D-2.1 route, "
+        "pinned; regenerate with `lock_nvidia_routes.py`."
+    ),
     "runpod_trellis2_cuda_requirements.txt": (
         "Pinned CUDA 13 wheels from the RunPod control run; `bootstrap_trellis_cuda.py` "
         "installs them on compute-capability 12.0 cards."

@@ -47,6 +47,9 @@ tuning checklist. Manual fitting and visual weight/deformation review remain req
 | `trellis_rebake.py` | Re-bake a GLB from a cached decode, without re-sampling or loading the model. |
 | `export_decode_highpoly.py` | Export a cached decode as a high-poly PLY, to bake detail from. |
 | `runpod_trellis2_cuda_probe.py` | Run a frozen-shape TRELLIS.2 Stage-3 material probe on CUDA. |
+| `trellis-cuda.txt` | In `locks/`. Every package but PyTorch for the NVIDIA TRELLIS.2 route, pinned; regenerate with `lock_nvidia_routes.py`. |
+| `hunyuan-cuda.txt` | In `locks/`. Every package but PyTorch for the NVIDIA Hunyuan3D-2.1 route, pinned; regenerate with `lock_nvidia_routes.py`. |
+| `lock_nvidia_routes.py` | Regenerate the NVIDIA routes' lock files (scripts/locks/*.txt) with uv. |
 | `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA 13 wheels from the RunPod control run; `bootstrap_trellis_cuda.py` installs them on compute-capability 12.0 cards. |
 
 ## Before you spend a run
