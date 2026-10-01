@@ -212,3 +212,8 @@ def test_overlapping_setup_renders_cannot_double_a_card():
     body = SETUP[SETUP.index("async function renderBackends"):]
     body = body[:body.index("\n}\n")]
     assert body.index("await blenderCard()") < body.index("host.innerHTML = ''")
+
+
+def test_the_finished_line_shows_the_pixel_match_note():
+    finish_js = (VIEWER / "modes" / "finish.js").read_text()
+    assert "event.note" in finish_js

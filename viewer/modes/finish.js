@@ -153,9 +153,10 @@ function applyEvent(event) {
     f('finish-record').href = event.record_url;
     f('finish-where').textContent = `output/finish/${event.directory}/`;
     showCompare(event.source_url, event.result_url, event.directory, event.pixal3d);
+    // A skipped Pixel Match is said on the result itself, not only in a start-up line.
     f('finish-status').textContent =
       `Finished in ${formatDuration(event.elapsed_seconds)} — ` +
-      `${(event.size_bytes / 1048576).toFixed(1)} MB`;
+      `${(event.size_bytes / 1048576).toFixed(1)} MB` + (event.note ? `. ${event.note}` : '');
     loadRuns();
   } else if (event.phase === 'error' || event.phase === 'cancelled') {
     stopStreams();

@@ -215,6 +215,17 @@ def uses_photo(job: "FinishJob", settings: dict[str, Any]) -> bool:
     return not settings.get("skip_photo", False) and (job.views_dir / "transforms.json").is_file()
 
 
+def photo_note(job: "FinishJob", settings: dict[str, Any]) -> str | None:
+    """Why Pixel Match did not run, when it was asked for and could not: None otherwise.
+
+    Said at the start and again on the finished result, because a ticked box with no stage
+    and a one-second start-up line read as Pixel Match having run."""
+    if settings.get("skip_photo", False) or uses_photo(job, settings):
+        return None
+    return ("Pixel Match skipped: no saved camera for this model. It works on Pixal3D "
+            "models generated in this lab, which keep their camera beside the .glb.")
+
+
 def find_source_views(asset: bytes, root: Path = GENERATED_ROOT) -> Path | None:
     """The saved camera + view directory of the Pixal3D run that produced `asset`.
 
@@ -525,9 +536,8 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
             message = "Resuming from what is already on disk"
         elif "photo" in stages:
             message = "Starting: found the source camera, so Pixel Match will keep the photo's pixels"
-        elif not job.settings.get("skip_photo", False):
-            message = ("Starting: no source camera for this model (only Pixal3D runs made "
-                       "here have one), so Pixel Match is skipped")
+        elif photo_note(job, job.settings):
+            message = photo_note(job, job.settings)
         else:
             message = "Starting"
         job.emit({"phase": "queued", "overall_pct": 0, "stages": stages, "message": message})
@@ -570,6 +580,7 @@ def run_job(job: FinishJob, manager: FinishJobManager = FINISH_JOBS) -> None:
                 "directory": job.directory.name,
                 "source_url": served_url(job.asset_path),
                 "pixal3d": (job.views_dir / "transforms.json").is_file(),
+                "note": photo_note(job, job.settings),
             })
         else:
             job.status = "error"

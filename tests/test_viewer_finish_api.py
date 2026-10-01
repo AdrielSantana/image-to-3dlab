@@ -528,3 +528,21 @@ def test_the_finish_page_calls_it_pixel_match():
     html = Path("viewer/index.html").read_text()
     assert "Pixel Match" in html
     assert 'id="finish-repaint" type="checkbox" checked' not in html
+
+
+def test_a_skipped_pixel_match_is_said_plainly_and_stays_on_screen(tmp_path):
+    # Seen on a real NVIDIA pod: Pixel Match stayed ticked, no stage ran, and the only word
+    # about it was a start-up line replaced a second later. The note rides on the finished
+    # result, and says what Pixel Match needs.
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"some-other-model", b"png", {})
+    note = finish.photo_note(job, job.settings)
+    assert note and "Pixel Match" in note and "skipped" in note and "Pixal3D" in note
+    assert finish.photo_note(job, {**job.settings, "skip_photo": True}) is None
+
+
+def test_no_note_when_the_camera_is_found(tmp_path):
+    _pixal3d_run(tmp_path / "generated")
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"glb-bytes", b"png", {})
+    assert finish.photo_note(job, job.settings) is None
