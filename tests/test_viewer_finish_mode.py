@@ -242,3 +242,12 @@ def test_a_route_needing_a_top_up_is_not_called_nothing_installed():
     body = body[:body.index("\n}\n")]
     assert "state === 'partial'" in body and "Resume download" in body
     assert "NVIDIA support is on the way" not in SETUP
+
+
+def test_setup_has_a_hugging_face_sign_in_card():
+    # `hf auth login` was the one terminal step left between the install command and a
+    # working TRELLIS. The Setup page takes the token itself.
+    assert "async function hfCard" in SETUP and "/api/hf/sign-in" in SETUP
+    assert "type=\"password\"" in SETUP or "type = 'password'" in SETUP
+    body = SETUP[SETUP.index("async function renderBackends"):]
+    assert "await hfCard()" in body[:body.index("\n}\n")]

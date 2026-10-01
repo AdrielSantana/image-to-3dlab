@@ -42,6 +42,7 @@ from rig_api import (
     status_payload as rig_status_payload,
 )
 import backend_catalog  # noqa: E402
+import hf_api  # noqa: E402
 from backend_catalog import (
     APPLE,
     NVIDIA,
@@ -294,6 +295,15 @@ def backends_payload() -> dict:
          "runs_here": runs_here(spec.id)}
         for spec in BACKENDS.values()
     ]}
+
+
+def hf_sign_in_response(payload: Any) -> tuple[int, dict]:
+    """POST /api/hf/sign-in: check and save a Hugging Face token, answer with the status.
+    The token never comes back in the answer."""
+    if not isinstance(payload, dict):
+        return 400, {"error": "expected {\"token\": ...}"}
+    result = hf_api.sign_in(str(payload.get("token", "")))
+    return (422 if "error" in result else 200), result
 
 
 def catalog_payload() -> dict:
@@ -1893,6 +1903,14 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parts = self._path_parts()
+        if parts == ["api", "hf", "sign-in"]:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length)) if 0 < length <= 4096 else None
+            except (ValueError, json.JSONDecodeError):
+                payload = None
+            self._send_json(*hf_sign_in_response(payload))
+            return
         if parts == ["api", "setup", "run"]:
             self._start_setup()
             return
@@ -2041,6 +2059,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parts = self._path_parts()
+        if parts == ["api", "hf", "status"]:
+            self._send_json(200, hf_api.status())
+            return
         if parts == ["api", "catalog"]:
             self._send_json(200, catalog_payload())
             return

@@ -94,6 +94,9 @@
 .setup-card.ready { border-color: #2a4436; }
 .setup-card.partial { border-color: #4a4426; }
 .setup-card.elsewhere { opacity: .8; }
+.setup-hf-repos { font-size: 12px; margin: 6px 0; padding-left: 18px; }
+.setup-hf-form { display: flex; gap: 8px; margin-top: 8px; }
+.setup-hf-form input { flex: 1; }
 .setup-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 10px; }
 .setup-tab { border-radius: 8px 8px 0 0; }
 .setup-tab[aria-selected="true"] { background: #2d4f78; border-color: #4d84c0; color: #fff; }

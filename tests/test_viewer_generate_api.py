@@ -1372,3 +1372,14 @@ def test_backends_say_whether_they_run_on_this_machine(monkeypatch):
 def test_dropdown_hides_routes_that_do_not_run_here():
     js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
     assert "option.hidden = meta.runs_here === false" in js
+
+
+def test_sign_in_answers_with_status_or_a_plain_error(monkeypatch):
+    monkeypatch.setattr(api.hf_api, "sign_in", lambda token: (
+        {"signed_in": True, "user": "ada", "repos": []} if token == "good"
+        else {"error": "Hugging Face refused that token."}))
+    assert api.hf_sign_in_response({"token": "good"}) == (
+        200, {"signed_in": True, "user": "ada", "repos": []})
+    code, body = api.hf_sign_in_response({"token": "nope"})
+    assert code == 422 and "error" in body
+    assert api.hf_sign_in_response("not a dict")[0] == 400

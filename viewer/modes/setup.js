@@ -379,6 +379,7 @@ async function renderBackends(catalog) {
   const token = ++state.renderToken;
   const readOnly = state.tab !== catalog.host.id;
   const blender = readOnly ? null : await blenderCard();
+  const hf = readOnly ? null : await hfCard();
   if (token !== state.renderToken) return;
   const host = s('setup-backends');
   host.after(s('setup-run')); // park it outside the cards before they are rebuilt
@@ -390,6 +391,7 @@ async function renderBackends(catalog) {
       Watch the releases on GitHub, or open an issue to say you want it.</p></div>`;
     return;
   }
+  if (hf) host.appendChild(hf);
   const list = readOnly ? catalog.views[state.tab] : hereBackends(catalog);
   for (const backend of list) host.appendChild(backendCard(backend, { readOnly }));
   if (blender) host.appendChild(blender);
@@ -429,6 +431,75 @@ function summarise(catalog) {
   }
   return `<strong>${ready.length} of ${mine.length} backends installed</strong>`
     + ` · ${formatBytes(onDisk)} of model weights on disk`;
+}
+
+/* Hugging Face sign-in. Some models are gated (DINOv3 for TRELLIS.2, Stable Fast 3D), and
+ * `hf auth login` in a terminal was the one step left between the install command and a
+ * working setup. The token goes to the lab, which checks it with Hugging Face and saves it
+ * where `hf auth login` would; it is never shown again. */
+async function hfCard() {
+  const card = document.createElement('div');
+  card.dataset.backend = 'huggingface';
+  let st = null;
+  try {
+    const response = await fetch('/api/hf/status');
+    if (response.ok) st = await response.json();
+  } catch { /* shown as unknown below */ }
+  const signedIn = Boolean(st && st.signed_in);
+  card.className = `setup-card ${signedIn ? 'ready' : 'missing'}`;
+  const rows = (st ? st.repos : []).map((r) => {
+    const mark = r.access === 'yes' ? '<span class="setup-ready">✓ access</span>'
+      : r.access === 'no'
+        ? `<a href="${r.request_url}" target="_blank" rel="noopener">Request access</a> (approved by hand)`
+        : '<span class="setup-card-state">sign in to check</span>';
+    return `<li><code>${r.repo}</code> for ${r.for}: ${mark}</li>`;
+  }).join('');
+  card.innerHTML = `
+    <div class="setup-card-head">
+      <span class="setup-dot ${signedIn ? 'ok' : 'off'}">${signedIn ? '●' : '○'}</span>
+      <div class="setup-card-title">
+        <strong>Hugging Face sign-in (for gated models)</strong>
+        <div class="setup-card-state">${signedIn ? `signed in as ${st.user}` : 'not signed in'}</div>
+      </div>
+      <div class="setup-card-action"></div>
+    </div>
+    <p class="setup-card-trade">Some models ask you to accept their licence on Hugging Face
+      first. Sign in once here; nothing is downloaded until you press Set up.</p>
+    <ul class="setup-hf-repos">${rows}</ul>`;
+  if (!signedIn) {
+    const form = document.createElement('div');
+    form.className = 'setup-hf-form';
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.placeholder = 'hf_… (a Read token)';
+    input.autocomplete = 'off';
+    const button = document.createElement('button');
+    button.textContent = 'Sign in';
+    const note = document.createElement('p');
+    note.className = 'setup-card-trade';
+    note.innerHTML = 'Make a token at <a href="https://huggingface.co/settings/tokens" '
+      + 'target="_blank" rel="noopener">huggingface.co/settings/tokens</a> (type: Read).';
+    button.onclick = async () => {
+      button.disabled = true;
+      note.textContent = 'checking with Hugging Face…';
+      try {
+        const response = await fetch('/api/hf/sign-in', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: input.value }),
+        });
+        const result = await response.json();
+        input.value = '';
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        load();
+      } catch (error) {
+        note.textContent = error.message;
+        button.disabled = false;
+      }
+    };
+    form.append(input, button);
+    card.append(form, note);
+  }
+  return card;
 }
 
 /* Blender is the one requirement the viewer never installs: it is a ~400 MB application
