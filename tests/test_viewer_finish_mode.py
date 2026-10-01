@@ -202,3 +202,13 @@ def test_a_build_without_a_percentage_shows_the_bar_working():
 
 def test_another_machines_tab_says_whose_it_is():
     assert "Showing what runs on" in SETUP
+
+
+def test_overlapping_setup_renders_cannot_double_a_card():
+    # Seen live: first load drew the page twice at once (startup + tab open). Each cleared
+    # the list, awaited the Blender check, then appended, so Blender showed twice. Only
+    # the newest render may write, and it writes after its await, never across one.
+    assert "state.renderToken" in SETUP
+    body = SETUP[SETUP.index("async function renderBackends"):]
+    body = body[:body.index("\n}\n")]
+    assert body.index("await blenderCard()") < body.index("host.innerHTML = ''")

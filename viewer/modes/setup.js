@@ -16,7 +16,8 @@ const SKIP_KEY = 'i2l.setup.skip';
 
 // `panelFor` is the backend whose download the progress panel shows. It outlives the run
 // so the finished result stays under the card that started it.
-const state = { catalog: null, source: null, running: null, panelFor: null, tab: null };
+const state = { catalog: null, source: null, running: null, panelFor: null, tab: null,
+  renderToken: 0 };
 
 /** Put the progress panel right under the card it belongs to. It used to sit below every
  * card, so on a long list the bar was off-screen and a click on Set up looked like it had
@@ -370,6 +371,12 @@ function renderTabs(catalog) {
 }
 
 async function renderBackends(catalog) {
+  // Renders can overlap (startup and opening the tab both load). Ask everything first,
+  // then write in one go, and only if no newer render has started since.
+  const token = ++state.renderToken;
+  const readOnly = state.tab !== catalog.host.id;
+  const blender = readOnly ? null : await blenderCard();
+  if (token !== state.renderToken) return;
   const host = s('setup-backends');
   host.after(s('setup-run')); // park it outside the cards before they are rebuilt
   host.innerHTML = '';
@@ -380,10 +387,9 @@ async function renderBackends(catalog) {
       Watch the releases on GitHub, or open an issue to say you want it.</p></div>`;
     return;
   }
-  const readOnly = state.tab !== catalog.host.id;
   const list = readOnly ? catalog.views[state.tab] : hereBackends(catalog);
   for (const backend of list) host.appendChild(backendCard(backend, { readOnly }));
-  if (!readOnly) host.appendChild(await blenderCard());
+  if (blender) host.appendChild(blender);
   placeRunPanel();
 }
 
