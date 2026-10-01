@@ -81,9 +81,10 @@ TORCH = {
 BLACKWELL_ARCH = "120"
 
 # Dropped from upstream's requirements.txt: the Gradio demo's web stack, training-only
-# packages, and two GPU/3D libraries nothing on the inference path imports.
+# packages, and cupy, which nothing on the inference path imports. open3d stays: no
+# Hunyuan file imports it, but paint's remesh reaches it through trimesh.
 SKIP_REQUIREMENTS = {"gradio", "fastapi", "uvicorn", "deepspeed", "pythreejs",
-                     "cupy-cuda12x", "open3d"}
+                     "cupy-cuda12x"}
 
 REALESRGAN_URL = ("https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/"
                   "RealESRGAN_x4plus.pth")

@@ -62,8 +62,14 @@ def test_requirements_come_from_pypi_only():
 
 def test_demo_and_training_packages_are_dropped():
     kept = " ".join(boot.filter_requirements(UPSTREAM_REQUIREMENTS))
-    for name in ("gradio", "fastapi", "uvicorn", "deepspeed", "pythreejs", "cupy", "open3d"):
+    for name in ("gradio", "fastapi", "uvicorn", "deepspeed", "pythreejs", "cupy"):
         assert name not in kept, name
+
+
+def test_open3d_is_kept_for_the_paint_remesh():
+    # Seen on a real pod: paint's remesh calls trimesh's simplify, which imports open3d,
+    # so dropping it as "unused" killed every paint run after a finished shape.
+    assert "open3d==0.18.0" in boot.filter_requirements(UPSTREAM_REQUIREMENTS)
 
 
 def test_the_inference_path_is_kept_pinned():
