@@ -8,31 +8,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **TRELLIS.2 on Linux with an NVIDIA card.** Setup & Status now offers **Set up** for
-  TRELLIS.2 on NVIDIA Linux, and Generate 3D runs it there. It uses Microsoft's own
-  TRELLIS.2 code, not the Mac port, with the same settings. Setup says what it will fetch
-  (~15 GB) and asks first; RTX 50-series cards get prebuilt wheels, other cards need the
-  CUDA toolkit and a one-off compile. Not tested on real hardware yet. Windows is not
-  supported for TRELLIS.2 yet. Also available as `scripts/bootstrap_trellis_cuda.py` and
-  `scripts/trellis_cuda_generate.py`.
+- **TRELLIS.2 on Linux with an NVIDIA card.** Setup & Status offers **Set up**, and
+  Generate 3D runs it. It uses Microsoft's own TRELLIS.2 code, not the Mac port, with the
+  same settings. Setup checks your Hugging Face access to the gated DINOv3 encoder before
+  downloading anything, says what it will fetch (~16 GB) and asks first. Tested end to end
+  on an RTX 3090. Windows is not supported for TRELLIS.2 yet. Also available as
+  `scripts/bootstrap_trellis_cuda.py` and `scripts/trellis_cuda_generate.py`.
 - **Hunyuan3D-2.1 on Linux with an NVIDIA card.** A new route, **Hunyuan3D-2.1 (NVIDIA)**,
   runs Tencent's own code: shape, then PBR paint, in one run. Setup says what it will
-  fetch (~19.5 GB, including the DINOv2 encoder upstream downloads unannounced) and asks
+  fetch (~19.7 GB, including the DINOv2 encoder upstream downloads unannounced) and asks
   first; it compiles the paint rasterizer for your card, so it needs the CUDA 12 toolkit
-  and a 24 GB card. Pictures are cut out by our own remover first. Not tested on real
-  hardware yet, and not licensed in the EU, the UK or South Korea. Also available as
-  `scripts/bootstrap_hunyuan_cuda.py` and `scripts/hunyuan_cuda_generate.py`.
+  and a 24 GB card. Tested end to end on an RTX 3090. Not licensed in the EU, the UK or
+  South Korea. Also available as `scripts/bootstrap_hunyuan_cuda.py` and
+  `scripts/hunyuan_cuda_generate.py`.
+- **Setup & Status has a tab per machine: Mac, NVIDIA, AMD.** It opens on yours, the only
+  one with buttons; the others show what that machine gets. AMD says support is coming.
+- **Finish this model**, straight from a Generate result, with its source picture: no
+  download and re-upload.
+
+### Changed
+- Generate 3D only offers the routes your machine can run.
+- With Debug off, a generated model now keeps its record (`<name>.json`) beside the GLB,
+  and a Pixal3D model keeps the camera Pixel Match needs.
+- NVIDIA and Hunyuan setups install the background remover, so a first generation never
+  fetches one you did not agree to.
+
+### Fixed
+- **Updating with the install command works after you have generated.** The viewer wrote
+  learned timings into a tracked file, so the installer refused every later update. Timings
+  now live in `output/`, and the installer moves an old copy there.
+- **Pixal3D models keep their licence record.** With Debug off, it was deleted, and Finish
+  then skipped Pixel Match without saying so. When Pixel Match is skipped, the finished
+  result now says why.
+- **Remove on one route keeps files another route uses** (the background remover).
+- Setup & Status picks a running setup back up after a refresh, shows a moving bar while
+  compiling instead of an empty one, and no longer calls a compile "stalled".
+- Generate 3D notices a setup that finished in another tab, instead of saying "not
+  installed" until a reload.
+- Live progress no longer lags behind when the lab is reached through a proxy (RunPod,
+  nginx, Cloudflare).
+- Mac-only options no longer show on NVIDIA, and routes that cut pictures out themselves no
+  longer ask for a pre-masked PNG.
 
 ### Security
 - **BRIA RMBG-2.0 stays out of the NVIDIA TRELLIS.2 route too.** Upstream loads it by
   default; `scripts/patch_trellis_cuda_no_bria.py` removes it, and the route refuses to run
   without that patch. Pictures are cut out by our own background remover instead.
-
-### Fixed
-- **Pixal3D models keep their licence record.** With Debug off (the default), Generate 3D
-  kept only the GLB, which deleted Pixal3D's `<name>.json` (its licence record) and the
-  camera Pixel Match needs, so Finish silently skipped Pixel Match. Both now stay with the
-  model.
 
 ## [0.3.6] - 2026-10-01
 

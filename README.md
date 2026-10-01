@@ -254,7 +254,7 @@ character with them.
 | Thing | Why |
 |---|---|
 | Apple Silicon Mac (M-series), 32 GB recommended | Every route |
-| **or** Linux with an NVIDIA card (24 GB VRAM tested; Pixal3D's authors run it on 16 GB) | Pixal3D, Stable Fast 3D, Generate Image, TRELLIS.2 and Hunyuan3D-2.1 (both untested so far) |
+| **or** Linux with an NVIDIA card (24 GB VRAM tested; Pixal3D's authors run it on 16 GB) | Pixal3D, Stable Fast 3D, Generate Image, TRELLIS.2, Hunyuan3D-2.1 |
 | Linux + NVIDIA: CUDA toolkit matching PyTorch's CUDA | compiles TRELLIS.2's CUDA extensions (not needed on RTX 50-series) and Hunyuan3D-2.1's rasterizer (CUDA 12) |
 | macOS: full Xcode | compiles the Metal kernels for Pixal3D and TRELLIS |
 | Blender 4.2+ | Finish (low-poly clean-up, Pixel Match) and rigging. Install it yourself from [blender.org](https://www.blender.org/download/); Setup & Status shows whether it was found |
