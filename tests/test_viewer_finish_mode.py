@@ -217,3 +217,7 @@ def test_overlapping_setup_renders_cannot_double_a_card():
 def test_the_finished_line_shows_the_pixel_match_note():
     finish_js = (VIEWER / "modes" / "finish.js").read_text()
     assert "event.note" in finish_js
+
+
+def test_remove_button_counts_only_what_it_would_free():
+    assert "backend.bytes_removable" in SETUP

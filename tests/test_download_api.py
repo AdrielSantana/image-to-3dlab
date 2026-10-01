@@ -414,3 +414,38 @@ def test_files_already_on_disk_do_not_make_a_build_look_stalled():
                                 stalled=dl.is_stalled(0, 10 * dl.STALL_SECONDS),
                                 step="Building custom-rasterizer", fetched=0)
     assert line["detail"] == "Building custom-rasterizer" and line["stalled"] is False
+
+
+def _sharing(tmp_path, monkeypatch):
+    """Two routes and the remover's own card, all declaring one remover file."""
+    import dataclasses
+
+    shared = tmp_path / "birefnet-lite.onnx"
+    shared.write_bytes(b"x" * 10)
+    own = tmp_path / "own-weights"
+    own.mkdir()
+    (own / "w.bin").write_bytes(b"y" * 20)
+    real = dl.BY_ID["pixal3d"]
+    lite = dataclasses.replace(real.weights[0], path=shared)
+    mine = dataclasses.replace(real.weights[0], path=own)
+    monkeypatch.setitem(dl.BY_ID, "route-a", dataclasses.replace(real, id="route-a", weights=(mine, lite)))
+    monkeypatch.setitem(dl.BY_ID, "route-b", dataclasses.replace(real, id="route-b", weights=(lite,)))
+    monkeypatch.setitem(dl.BY_ID, "remover", dataclasses.replace(
+        dl.BY_ID["matte"], id="remover", weights=(lite,)))
+    monkeypatch.setattr(dl, "_inside_known_roots", lambda path: True)
+    return shared, own
+
+
+def test_removing_a_route_keeps_files_another_route_uses(tmp_path, monkeypatch):
+    # Seen on a real pod: Pixal3D offered "Delete 213.6 MB of weights", and that was the
+    # background remover TRELLIS and Hunyuan cut out with.
+    shared, own = _sharing(tmp_path, monkeypatch)
+    result = dl.remove("route-a")
+    assert not own.exists() and shared.is_file()
+    assert result["freed_bytes"] == 20
+
+
+def test_the_removers_own_card_can_still_remove_it(tmp_path, monkeypatch):
+    shared, _ = _sharing(tmp_path, monkeypatch)
+    dl.remove("remover")
+    assert not shared.exists()

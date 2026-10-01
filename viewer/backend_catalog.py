@@ -255,6 +255,9 @@ class Backend:
             "human_expected": human_bytes(self.bytes_expected),
             "bytes_present": present,
             "human_present": human_bytes(present),
+            # What Remove would free: files other routes share are kept (see is_shared).
+            "bytes_removable": sum(d["bytes_present"] for d, w in zip(weights, self.weights)
+                                   if not is_shared(self, w)),
             "automated_setup": self.automated_setup,
             "state": "unsupported" if not supported else
                      _state(weights, built, fetches),
@@ -552,6 +555,18 @@ CATALOG: tuple[Backend, ...] = (
 )
 
 BY_ID = {backend.id: backend for backend in CATALOG}
+
+def is_shared(backend: "Backend", weight: "WeightSet") -> bool:
+    """Whether another route also uses this file, so removing `backend` must keep it.
+
+    The background remover is listed by every route that cuts pictures out; Pixal3D's
+    Remove once offered to delete it from under TRELLIS and Hunyuan. Its own card (a
+    tool) can still remove it: that is the explicit choice."""
+    if backend.kind == "tool":
+        return False
+    return any(other.id != backend.id and any(w.path == weight.path for w in other.weights)
+               for other in BY_ID.values())
+
 
 # The Generate tab spells one route differently from the catalogue, and renaming either
 # would break a saved setting or a download key for no gain. One alias costs a line; two

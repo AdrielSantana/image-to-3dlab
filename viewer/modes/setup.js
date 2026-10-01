@@ -140,7 +140,10 @@ function backendCard(backend, { readOnly = false } = {}) {
     action.appendChild(rebuild);
   }
   // Reclaiming is about bytes on disk, not about whether the backend works.
-  if (backend.bytes_present > 0) action.appendChild(removeButton(backend));
+  // Only what Remove would free: files another route shares (the background remover) stay.
+  if ((backend.bytes_removable ?? backend.bytes_present) > 0) {
+    action.appendChild(removeButton(backend));
+  }
   return card;
 }
 
@@ -154,7 +157,7 @@ function removeButton(backend) {
   const button = document.createElement('button');
   button.className = 'ghost setup-remove';
   button.textContent = 'Remove';
-  button.title = `Delete ${backend.human_present} of weights from disk`;
+  button.title = `Delete ${formatBytes(backend.bytes_removable ?? backend.bytes_present)} of weights from disk`;
   button.onclick = async () => {
     const shared = backend.weights.some((w) => w.path.includes('huggingface'));
     // Typed confirmation, not a yes/no. Three Remove buttons sit in one column and each
@@ -164,7 +167,7 @@ function removeButton(backend) {
     // would not.
     // eslint-disable-next-line no-alert -- deliberate, and the strongest gate available.
     const typed = window.prompt([
-      `Delete ${backend.human_present} of ${backend.label} weights?`,
+      `Delete ${formatBytes(backend.bytes_removable ?? backend.bytes_present)} of ${backend.label} weights?`,
       '',
       ...backend.weights.filter((w) => w.present).map((w) => `  ${w.path}`),
       '',

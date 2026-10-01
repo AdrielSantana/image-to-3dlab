@@ -292,8 +292,12 @@ def remove(backend_id: str) -> dict[str, Any]:
     if run is not None and run.status not in TERMINAL:
         raise RuntimeError("that backend is downloading right now; cancel it first")
 
+    from backend_catalog import is_shared
+
     freed, removed = 0, []
     for weight in backend.weights:
+        if is_shared(backend, weight):
+            continue  # another route uses it too (the background remover)
         path = weight.path.resolve()
         if not _inside_known_roots(path):
             raise RuntimeError(f"refusing to delete outside the repo or cache: {path}")

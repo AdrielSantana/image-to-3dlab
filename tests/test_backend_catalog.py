@@ -510,3 +510,12 @@ def test_a_tab_describes_its_own_machine():
     pixal_nv = next(b for b in views[bc.NVIDIA] if b["id"] == "pixal3d")
     assert "Xcode" in pixal_mac["tradeoff"] and "NVIDIA" not in pixal_mac["tradeoff"]
     assert "CUDA" in pixal_nv["tradeoff"] and "Xcode" not in pixal_nv["tradeoff"]
+
+
+def test_a_routes_removable_bytes_leave_out_shared_files():
+    # Pixal3D's Remove button counted the shared background remover as its own.
+    pixal = bc.BY_ID["pixal3d"]
+    lite = next(w for w in pixal.weights if "BiRefNet" in w.source)
+    assert bc.is_shared(pixal, lite) is True
+    assert bc.is_shared(bc.BY_ID["matte"], bc.BY_ID["matte"].weights[0]) is False
+    assert "bytes_removable" in pixal.describe(bc.NVIDIA)
