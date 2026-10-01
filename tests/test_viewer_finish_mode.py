@@ -176,3 +176,7 @@ def test_setup_page_reattaches_to_a_run_already_in_progress():
     # loses the progress bar for the rest of a 30-60 minute build.
     assert "state.catalog.running_setup" in SETUP
     assert "resume(state.catalog.running_setup)" in SETUP
+
+
+def test_setup_confirmation_mentions_the_build_before_the_download():
+    assert "This builds the code for this machine first, then:" in SETUP

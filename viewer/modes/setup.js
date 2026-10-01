@@ -203,6 +203,9 @@ function confirmDownload(backend, button) {
   // download here would be a lie the progress bar then has to keep.
   const body = backend.setup_fetches_weights
     ? [
+      // NVIDIA TRELLIS.2 compiles first, then downloads; say both, not just the bytes.
+      ...(backend.build_present || backend.install === 'viewer' ? []
+        : ['This builds the code for this machine first, then:', '']),
       `About ${formatBytes(remaining)} will be downloaded from Hugging Face`,
       `into ${backend.weights[0].path.replace(/\/[^/]*$/, '/')}`,
       '',

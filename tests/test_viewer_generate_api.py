@@ -1196,3 +1196,9 @@ def test_catalog_names_the_setup_already_running(monkeypatch):
     assert api.catalog_payload()["running_setup"] == {"backend": "trellis"}
     monkeypatch.setattr(api, "running_payload", lambda: None)
     assert api.catalog_payload()["running_setup"] is None
+
+
+def test_backend_dropdown_takes_its_names_from_the_server():
+    # The option text was fixed in index.html, so NVIDIA showed "TRELLIS.2 (clean port)".
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    assert "function applyBackendLabels()" in js and "applyBackendLabels();" in js

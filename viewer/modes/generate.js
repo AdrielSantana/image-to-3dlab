@@ -39,6 +39,13 @@ function applyHiddenFields() {
     if (row && (el.tagName === 'SELECT' || el.tagName === 'INPUT')) row.hidden = hidden.has(el.id);
   }
 }
+// The server names each route for this machine (TRELLIS.2 is "(NVIDIA)" there).
+function applyBackendLabels() {
+  for (const option of g('generate-backend').options) {
+    const label = backendMeta[option.value]?.label;
+    if (label) option.textContent = label;
+  }
+}
 // Only routes that need a cut-out ask for one; the rest matte the image themselves.
 function updateDropPrompt() {
   g('generate-prompt').innerHTML = backendRequiresAlpha()
@@ -400,6 +407,7 @@ async function loadBackendMeta() {
     for (const b of data.backends) merged[b.id] = b;
     backendMeta = merged;
   } catch (e) { /* keep the trellis-only placeholder; page stays usable */ }
+  applyBackendLabels();
   buildStageRows(currentBackend());
   applyHiddenFields();
   updateDropPrompt();

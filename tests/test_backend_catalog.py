@@ -441,3 +441,27 @@ def test_trellis_warns_about_the_gated_dinov3_before_setup():
 def test_pixal3d_setup_counts_the_background_remover_it_now_installs():
     sources = [w.source for w in bc.BY_ID["pixal3d"].weights]
     assert any("BiRefNet" in s for s in sources)
+
+
+def test_trellis_on_nvidia_is_described_as_what_it_is():
+    # Seen on a real NVIDIA pod: the card said "clean port", "Slowest" and that the first
+    # run stops after the 14 GB download; the confirmation promised a Metal build and no
+    # downloads. On NVIDIA it is Microsoft's own code, and setup fetches the weights after
+    # checking Hugging Face access first.
+    entry = bc.BY_ID["trellis"].describe(bc.NVIDIA)
+    assert entry["label"] == "TRELLIS.2 (NVIDIA)"
+    assert "port" not in entry["label"] and "Slowest" not in entry["tradeoff"]
+    assert entry["setup_fetches_weights"] is True
+    assert "hf auth login" in entry["caveat"] and "stops after" not in entry["caveat"]
+
+
+def test_trellis_on_nvidia_needs_its_weights_to_be_ready():
+    entry = bc.BY_ID["trellis"].describe(bc.NVIDIA)
+    none_present = [{"bytes_present": 0, "bytes_expected": 10 * bc.GB}]
+    assert bc._state(none_present, built=True, setup_fetches=entry["setup_fetches_weights"]) != "ready"
+
+
+def test_host_overrides_only_name_fields_describe_knows():
+    for backend in bc.CATALOG:
+        for overrides in backend.overrides_by_host.values():
+            assert set(overrides) <= bc.HOST_OVERRIDABLE, backend.id

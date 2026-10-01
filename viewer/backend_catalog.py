@@ -105,6 +105,10 @@ class WeightSet:
         }
 
 
+HOST_OVERRIDABLE = frozenset({"label", "tradeoff", "caveat", "setup_fetches_weights",
+                              "setup_minutes"})
+
+
 @dataclass(frozen=True)
 class Backend:
     """One generation route, as the onboarding table presents it."""
@@ -153,6 +157,9 @@ class Backend:
     # Hosts not listed use the plain fields.
     install_by_host: dict[str, str] = field(default_factory=dict)
     build_probes_by_host: dict[str, tuple[Path, ...]] = field(default_factory=dict)
+    # What the card says, per machine, where one route is really different code: TRELLIS
+    # is the Metal port on a Mac and Microsoft's own code on NVIDIA. Keys: HOST_OVERRIDABLE.
+    overrides_by_host: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Operating systems a listed machine type still cannot use, as (host, os family):
     # TRELLIS.2 runs on NVIDIA under Linux, but its CUDA build is not set up for Windows.
     excludes: tuple[tuple[str, str], ...] = ()
@@ -203,6 +210,8 @@ class Backend:
         present = sum(w["bytes_present"] for w in weights)
         built = self.built_on(host)
         supported = self.runs_here(host)
+        said = self.overrides_by_host.get(host or host_platform(), {})
+        fetches = said.get("setup_fetches_weights", self.setup_fetches_weights)
         return {
             "build_present": built,
             "supported_here": supported,
@@ -212,17 +221,17 @@ class Backend:
             "upstream": ({"label": self.upstream[0], "url": self.upstream[1]}
                          if self.upstream else None),
             "id": self.id,
-            "label": self.label,
+            "label": said.get("label", self.label),
             "kind": self.kind,
             "rank": self.rank,
             "recommended": self.rank == 1,
             "best_for": self.best_for,
-            "tradeoff": self.tradeoff,
+            "tradeoff": said.get("tradeoff", self.tradeoff),
             "license": {"name": self.license_name, "url": self.license_url},
-            "caveat": self.caveat,
+            "caveat": said.get("caveat", self.caveat),
             "install": self.install_for(host),
-            "setup_minutes": self.setup_minutes,
-            "setup_fetches_weights": self.setup_fetches_weights,
+            "setup_minutes": said.get("setup_minutes", self.setup_minutes),
+            "setup_fetches_weights": fetches,
             "extra_steps": list(self.extra_steps),
             "weights": weights,
             "bytes_expected": self.bytes_expected,
@@ -231,9 +240,9 @@ class Backend:
             "human_present": human_bytes(present),
             "automated_setup": self.automated_setup,
             "state": "unsupported" if not supported else
-                     _state(weights, built, self.setup_fetches_weights),
+                     _state(weights, built, fetches),
             "action": "none" if not supported else
-                      _action(weights, built, self.setup_fetches_weights,
+                      _action(weights, built, fetches,
                               self.automated_setup),
             "percent_present": _percent(present, self.bytes_expected),
         }
@@ -389,6 +398,18 @@ CATALOG: tuple[Backend, ...] = (
         ),
         setup_minutes=60,
         setup_fetches_weights=False,
+        overrides_by_host={NVIDIA: {
+            "label": "TRELLIS.2 (NVIDIA)",
+            "tradeoff": ("Microsoft's own code, built for your card. Its material model "
+                         "bleaches flat or vector-style illustrations. Prefer photographs "
+                         "or softly lit 3D-style references."),
+            "caveat": ("Its DINOv3 image encoder is gated: request access to "
+                       "facebook/dinov3-vitl16-pretrain-lvd1689m on Hugging Face (Meta "
+                       "approves by hand) and run `hf auth login` first. Setup checks "
+                       "access before downloading anything."),
+            # The CUDA bootstrap fetches the weights once the build is done.
+            "setup_fetches_weights": True,
+        }},
         build_probes=(venv_python(REPO / "vendor" / "trellis-space-mac"),),
         weights=(
             WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(14.0 * GB),
