@@ -333,3 +333,22 @@ def test_background_remover_is_fetched_once_and_only_when_missing(tmp_path):
     assert fetched == [target]
     target.write_bytes(b"x")
     boot.install_background_remover(target, download=lambda t: pytest.fail("refetched"))
+
+
+def test_the_cuda_source_build_fetches_the_tested_commit():
+    assert boot.source_ref("cuda-source") == boot.PREBUILT_COMMIT
+    assert len(boot.PREBUILT_COMMIT) == 40
+    assert boot.source_ref("metal-source") == "HEAD"
+
+
+def test_weights_come_from_the_tested_revisions(monkeypatch, tmp_path):
+    """A fresh install must get the files that were tested, not whatever was pushed since."""
+    seen = {}
+    hub = types.ModuleType("huggingface_hub")
+    hub.snapshot_download = lambda repo, **kw: seen.setdefault(repo, kw["revision"])
+    hub.hf_hub_download = lambda repo, name, **kw: seen.setdefault(repo, kw["revision"])
+    monkeypatch.setitem(__import__("sys").modules, "huggingface_hub", hub)
+    monkeypatch.setattr(boot, "install_background_remover", lambda: None)
+    boot.install_weights(tmp_path)
+    assert seen == {boot.WEIGHTS_REPO: boot.WEIGHTS_REVISION,
+                    boot.MATTE_REPO: boot.MATTE_REVISION}

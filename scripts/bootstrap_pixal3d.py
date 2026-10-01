@@ -54,10 +54,17 @@ UPSTREAM = "https://github.com/raven38/pixal3d.cpp.git"
 WEIGHTS_REPO = "raven38/pixal3d-sv-q8_0-v1"
 MATTE_REPO = "ilintar/trellis2-gguf"
 WEIGHTS_GB = 8.4
+# Exact Hugging Face revisions, so a fresh install gets the files that were tested
+# (fresh NVIDIA pod, 2026-10-01), not whatever was pushed since.
+WEIGHTS_REVISION = "46d399ac986f45a0d7f5b1ca5058614d8729a131"
+MATTE_REVISION = "a57397bd3d351599d9729fc144b3f87c3f87d65b"
 
 # Pinned, not "latest": every upstream release so far is a pre-release, and a prebuilt
 # that has been run end to end is worth more than a newer one that has not.
 PREBUILT_RELEASE = "v0.10.1-desktop-alpha"
+# The commit that tag points at. A tag can be moved; a commit cannot, so the CUDA source
+# build fetches this.
+PREBUILT_COMMIT = "1f432fd3f0689c504fa1e9b15b038c33584174d1"
 RELEASE_API = "https://api.github.com/repos/raven38/pixal3d.cpp/releases/tags/{tag}"
 
 # CUDA 12 rather than upstream's unversioned CUDA build (which is newer): CUDA 12 runs on
@@ -277,6 +284,12 @@ def apply_steps_patch(runner=subprocess.run) -> bool:
     return True
 
 
+def source_ref(kind: str) -> str:
+    """The Mac build has always tracked upstream's default branch; the CUDA build pins the
+    commit the prebuilts come from, which is the one tested on NVIDIA."""
+    return "HEAD" if kind == "metal-source" else PREBUILT_COMMIT
+
+
 def build_from_source(kind: str) -> Path:
     """Clone and compile: Metal on a Mac, CUDA on Linux with the toolkit installed."""
     needed = ("cmake", "ninja", "git") if kind == "metal-source" else ("cmake", "git")
@@ -294,9 +307,7 @@ def build_from_source(kind: str) -> Path:
             "xcodebuild -downloadComponent MetalToolchain\n"
             "then re-run this script with DEVELOPER_DIR set."
         )
-    # The Mac build has always tracked upstream's default branch; the CUDA build pins the
-    # same release the prebuilts come from, which is the one tested on NVIDIA.
-    fetch_source("HEAD" if kind == "metal-source" else PREBUILT_RELEASE)
+    fetch_source(source_ref(kind))
     apply_steps_patch()
     flags = cmake_flags(kind, find_nvcc(), host.compute_capability())
     generator = ["-G", "Ninja"] if shutil.which("ninja") else []
@@ -333,8 +344,10 @@ def install_weights(models: Path = MODELS) -> None:
         ) from exc
     models.mkdir(parents=True, exist_ok=True)
     print(f"\nFetching {WEIGHTS_REPO} ({WEIGHTS_GB:.1f} GB, resumable)...", flush=True)
-    snapshot_download(WEIGHTS_REPO, local_dir=models, max_workers=2)
-    hf_hub_download(MATTE_REPO, "q8/birefnet.gguf", local_dir=models)
+    snapshot_download(WEIGHTS_REPO, revision=WEIGHTS_REVISION, local_dir=models,
+                      max_workers=2)
+    hf_hub_download(MATTE_REPO, "q8/birefnet.gguf", revision=MATTE_REVISION,
+                    local_dir=models)
     flatten_matte(models)
     print(f"  weights in {models}")
     install_background_remover()

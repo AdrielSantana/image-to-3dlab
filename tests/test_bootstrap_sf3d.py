@@ -135,7 +135,35 @@ def test_build_tools_go_in_before_the_extensions(monkeypatch, tmp_path):
     boot.install_code("linux-nvidia")
     assert calls[0][1].endswith("patch_sf3d_cpu_baker.py")  # before the baker is built
     assert calls[1] == ["pip", "install", "setuptools", "wheel"]
-    assert calls[2][-2:] == ["-r", "requirements.txt"]
+    assert calls[2] == ["pip", "install", "-r", str(boot.PACKAGE_LOCK)]  # pinned first
+    assert calls[3][-2:] == ["-r", "requirements.txt"]
+
+
+def test_the_mac_install_does_not_use_the_linux_lock(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(boot, "VENDOR", tmp_path)
+    monkeypatch.setattr(boot, "pip_install_command", lambda: ["pip", "install"])
+    monkeypatch.setattr(boot, "find_nvcc", lambda: None)
+    monkeypatch.setattr(boot.Path, "exists", lambda self: True)  # libomp
+    calls = []
+    monkeypatch.setattr(boot.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    boot.install_code("macos-arm64")
+    assert not any(str(boot.PACKAGE_LOCK) in cmd for cmd in calls)
+
+
+def test_fetches_exactly_the_pinned_commit(tmp_path):
+    commands = boot.fetch_commands(tmp_path)
+    assert ["git", "-C", str(tmp_path), "fetch", "-q", "--depth", "1", "origin",
+            boot.COMMIT] in commands
+    assert len(boot.COMMIT) == 40
+
+
+def test_the_lock_keeps_sf3d_pins_and_leaves_pytorch_alone():
+    lines = boot.PACKAGE_LOCK.read_text().splitlines()
+    for pin in ("transformers==4.42.3", "numpy==1.26.4", "rembg==2.0.57"):
+        assert pin in lines, pin
+    assert not any(line.startswith(("torch==", "torchvision==", "nvidia-", "cuda-"))
+                   for line in lines)
 
 
 # On the second NVIDIA pod, PyTorch from PyPI was built for CUDA 13.0 and the pod's nvcc

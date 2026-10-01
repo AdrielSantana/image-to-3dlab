@@ -43,6 +43,11 @@ from image_to_3dlab import host
 
 VENDOR = REPO / "vendor" / "stable-fast-3d"
 UPSTREAM = "https://github.com/Stability-AI/stable-fast-3d.git"
+# Upstream's head since January 2025, and the code every SF3D run here has used.
+COMMIT = "ff21fc491b4dc5314bf6734c7c0dabd86b5f5bb2"
+# On NVIDIA, every package SF3D pulls in, pinned (scripts/lock_nvidia_routes.py
+# regenerates it). The Mac install keeps upstream's own list.
+PACKAGE_LOCK = REPO / "scripts" / "locks" / "sf3d-cuda.txt"
 
 # (repo, files, approximate gigabytes). DINOv2 is here because SF3D's image tokenizer
 # downloads it on first use otherwise, which is exactly the surprise AGENTS.md forbids.
@@ -167,13 +172,23 @@ def pip_install_command() -> list[str]:
                      "Install uv (https://docs.astral.sh/uv/) and run this again.")
 
 
+def fetch_commands(vendor: Path = VENDOR) -> list[list[str]]:
+    """Check out exactly COMMIT, shallow: `git clone --branch` takes no commit."""
+    git = ["git", "-C", str(vendor)]
+    return [["git", "init", "-q", str(vendor)],
+            [*git, "remote", "add", "origin", UPSTREAM],
+            [*git, "fetch", "-q", "--depth", "1", "origin", COMMIT],
+            [*git, "checkout", "-q", "FETCH_HEAD"]]
+
+
 def install_code(key: str) -> None:
     if key == "macos-arm64" and not Path("/opt/homebrew/opt/libomp").exists():
         raise SystemExit("SF3D's Metal baker needs libomp: brew install libomp")
     if not (VENDOR / ".git").is_dir():
-        print(f"Cloning {UPSTREAM}", flush=True)
-        VENDOR.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "clone", "--depth", "1", UPSTREAM, str(VENDOR)], check=True)
+        print(f"Fetching {UPSTREAM} @ {COMMIT[:12]}", flush=True)
+        VENDOR.mkdir(parents=True, exist_ok=True)
+        for command in fetch_commands():
+            subprocess.run(command, check=True)
     # The CPU baker must accept the GPU tensors SF3D hands it; patch before building,
     # since the baker is installed as a copy, not in place.
     subprocess.run([sys.executable, str(REPO / "scripts" / "patch_sf3d_cpu_baker.py"),
@@ -184,6 +199,8 @@ def install_code(key: str) -> None:
     # here, not a fresh one pip would fetch into a throwaway build environment.
     install = pip_install_command()
     subprocess.run([*install, "setuptools", "wheel"], check=True)
+    if key == "linux-nvidia" and PACKAGE_LOCK.is_file():
+        subprocess.run([*install, "-r", str(PACKAGE_LOCK)], check=True)
     subprocess.run([*install, "--no-build-isolation", "-r", "requirements.txt"],
                    cwd=VENDOR, env=build_env(key, dict(os.environ)), check=True)
 

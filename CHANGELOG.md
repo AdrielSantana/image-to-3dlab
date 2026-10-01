@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a Pixal3D model keeps the camera Pixel Match needs.
 - NVIDIA and Hunyuan setups install the background remover, so a first generation never
   fetches one you did not agree to.
+- **Fresh installs get the versions we tested.** The viewer and every NVIDIA route install
+  pinned package versions, and upstream code and weights come from fixed commits, so a
+  new release elsewhere can no longer break an install overnight.
 
 ### Fixed
 - **Updating with the install command works after you have generated.** The viewer wrote
