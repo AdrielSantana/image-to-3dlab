@@ -16,7 +16,7 @@ const SKIP_KEY = 'i2l.setup.skip';
 
 // `panelFor` is the backend whose download the progress panel shows. It outlives the run
 // so the finished result stays under the card that started it.
-const state = { catalog: null, source: null, running: null, panelFor: null };
+const state = { catalog: null, source: null, running: null, panelFor: null, tab: null };
 
 /** Put the progress panel right under the card it belongs to. It used to sit below every
  * card, so on a long list the bar was off-screen and a click on Set up looked like it had
@@ -49,17 +49,20 @@ const STATE_META = {
   unsupported: { dot: '–', cls: 'off', text: 'not available on this machine' },
 };
 
-function backendCard(backend) {
-  const meta = STATE_META[backend.state] || STATE_META.missing;
+function backendCard(backend, { readOnly = false } = {}) {
+  // readOnly: a card on another machine's tab. What it is and what it costs, no state
+  // (this disk says nothing about that machine) and no buttons.
+  const meta = readOnly ? { cls: 'off', dot: '·', text: 'on that machine' }
+    : STATE_META[backend.state] || STATE_META.missing;
   const card = document.createElement('div');
-  card.className = `setup-card ${backend.state}`;
+  card.className = `setup-card ${readOnly ? 'elsewhere' : backend.state}`;
   card.dataset.backend = backend.id;
 
-  const size = backend.state === 'partial'
+  const size = !readOnly && backend.state === 'partial'
     ? `${backend.human_present} of ${backend.human_expected}`
     : backend.human_expected;
   // Say where the weights are when they are not here yet but the backend still works.
-  const later = backend.action === 'none' && backend.bytes_present === 0
+  const later = !readOnly && backend.action === 'none' && backend.bytes_present === 0
     ? ' · weights download on your first run' : '';
 
   card.innerHTML = `
@@ -74,7 +77,7 @@ function backendCard(backend) {
     </div>
     <p class="setup-card-best">${backend.best_for}</p>
     <p class="setup-card-trade">${backend.tradeoff}</p>
-    ${backend.platform_note
+    ${!readOnly && backend.platform_note
       ? `<p class="setup-card-caveat">${backend.platform_note}</p>` : ''}
     ${backend.caveat ? `<p class="setup-card-caveat">${backend.caveat}</p>` : ''}
     <details class="setup-card-detail">
@@ -95,6 +98,7 @@ function backendCard(backend) {
     </details>`;
 
   const action = card.querySelector('.setup-card-action');
+  if (readOnly) return card;
   // Driven by the server's `action`, not inferred from state here. Build and weights
   // are independent: a built TRELLIS with no weights is usable and must not be offered a
   // Set up button, because re-running a finished bootstrap fails on its own patches.
@@ -102,12 +106,9 @@ function backendCard(backend) {
   // A backend that cannot run here gets no button at all. Offering one would spend
   // gigabytes of someone's bandwidth on a build that fails partway through.
   if (backend.supported_here === false) {
-    // A Mac port of an NVIDIA-first model says so, instead of implying the model itself
-    // needs a Mac: TRELLIS.2 and Hunyuan3D run on NVIDIA upstream.
-    action.innerHTML = backend.upstream
-      ? `<span class="setup-unavailable">Mac port here · <a href="${backend.upstream.url}"
-           target="_blank" rel="noopener">official ${backend.upstream.label} runs on NVIDIA</a></span>`
-      : `<span class="setup-unavailable">needs ${backend.requires}</span>`;
+    // On this machine's own tab, so only an OS exclusion lands here (TRELLIS.2 on Windows);
+    // the platform note under the card says why.
+    action.innerHTML = '<span class="setup-unavailable">not on this OS yet</span>';
   } else if (backend.action === 'none') {
     action.innerHTML = '<span class="setup-ready">✓ ready</span>';
   } else if (backend.action === 'manual') {
@@ -320,6 +321,9 @@ function applyEvent(event) {
   if (typeof event.overall_pct === 'number') {
     s('setup-run-bar').style.width = `${event.overall_pct}%`;
   }
+  // A compile has no percentage to show; an empty bar for half an hour reads as stuck.
+  s('setup-run-bar').parentElement.classList.toggle('busy',
+    event.phase === 'building' || event.phase === 'queued');
   if (event.detail) s('setup-run-detail').textContent = event.detail;
   if (event.log) {
     const log = s('setup-log');
@@ -335,9 +339,64 @@ function applyEvent(event) {
   }
 }
 
+/** This machine's backends: its own tab's list, or every backend on an unknown machine. */
+function hereBackends(catalog) {
+  return (catalog.views && catalog.views[catalog.host.id]) || catalog.backends;
+}
+
+/* One tab per machine family. This machine's tab opens first and is the only one with
+ * buttons; the others say what that machine would get, so a Mac card never sits on an
+ * NVIDIA page saying "use the NVIDIA one instead". */
+function renderTabs(catalog) {
+  const bar = s('setup-tabs');
+  const here = catalog.host.id;
+  if (!state.tab) {
+    state.tab = catalog.platforms.some((p) => p.id === here) ? here : catalog.platforms[0].id;
+  }
+  bar.replaceChildren(...catalog.platforms.map((platform) => {
+    const tab = document.createElement('button');
+    tab.className = 'setup-tab';
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', String(platform.id === state.tab));
+    tab.textContent = platform.label + (platform.id === here ? ' · this machine' : '');
+    tab.onclick = () => {
+      state.tab = platform.id;
+      renderTabs(catalog);
+      s('setup-summary').innerHTML = summarise(catalog);
+      renderBackends(catalog);
+    };
+    return tab;
+  }));
+}
+
+async function renderBackends(catalog) {
+  const host = s('setup-backends');
+  host.after(s('setup-run')); // park it outside the cards before they are rebuilt
+  host.innerHTML = '';
+  const platform = catalog.platforms.find((p) => p.id === state.tab);
+  if (platform && platform.coming) {
+    host.innerHTML = `<div class="setup-card elsewhere"><p class="setup-card-best">
+      <strong>${platform.label} support is coming.</strong> No backend runs on it yet.
+      Watch the releases on GitHub, or open an issue to say you want it.</p></div>`;
+    return;
+  }
+  const readOnly = state.tab !== catalog.host.id;
+  const list = readOnly ? catalog.views[state.tab] : hereBackends(catalog);
+  for (const backend of list) host.appendChild(backendCard(backend, { readOnly }));
+  if (!readOnly) host.appendChild(await blenderCard());
+  placeRunPanel();
+}
+
 function summarise(catalog) {
-  const ready = catalog.backends.filter((b) => b.state === 'ready');
-  const onDisk = catalog.backends.reduce((total, b) => total + b.bytes_present, 0);
+  // Another machine's tab: say so first, or "7 of 7 installed" reads as that machine's.
+  if (state.tab && catalog.platforms && state.tab !== catalog.host.id) {
+    const shown = catalog.platforms.find((p) => p.id === state.tab);
+    return `<strong>Showing what runs on ${shown ? shown.label : state.tab}.</strong> `
+      + `This machine: ${catalog.host.label}. Its own tab has the Set up buttons.`;
+  }
+  const mine = hereBackends(catalog);
+  const ready = mine.filter((b) => b.state === 'ready');
+  const onDisk = mine.reduce((total, b) => total + b.bytes_present, 0);
   // Said before anything else, because "nothing is installed" and "nothing can be
   // installed here" look the same in a list of cards, and only one of them is fixable
   // by clicking a button. Someone on the wrong machine deserves to know on arrival.
@@ -349,9 +408,9 @@ function summarise(catalog) {
   }
   if (!ready.length) {
     return `<strong>No backend installed yet.</strong> Pick one below. `
-      + `The recommended one is about ${catalog.backends[0].human_expected}.`;
+      + `The recommended one is about ${mine[0].human_expected}.`;
   }
-  return `<strong>${ready.length} of ${catalog.backends.length} backends installed</strong>`
+  return `<strong>${ready.length} of ${mine.length} backends installed</strong>`
     + ` · ${formatBytes(onDisk)} of model weights on disk`;
 }
 
@@ -394,12 +453,16 @@ export async function load() {
     const response = await fetch('/api/catalog');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.catalog = await response.json();
+    if (state.catalog.platforms) renderTabs(state.catalog);
     s('setup-summary').innerHTML = summarise(state.catalog);
-    host.after(s('setup-run')); // park it outside the cards before they are rebuilt
-    host.innerHTML = '';
-    for (const backend of state.catalog.backends) host.appendChild(backendCard(backend));
-    host.appendChild(await blenderCard());
-    placeRunPanel();
+    if (state.catalog.platforms) await renderBackends(state.catalog);
+    else {
+      host.after(s('setup-run'));
+      host.innerHTML = '';
+      for (const backend of state.catalog.backends) host.appendChild(backendCard(backend));
+      host.appendChild(await blenderCard());
+      placeRunPanel();
+    }
     // A setup runs for up to an hour. Reloaded or reopened mid-run, pick it back up; the
     // event stream replays from the start, so the bar and the log come back whole.
     if (state.catalog.running_setup && !state.source) resume(state.catalog.running_setup);

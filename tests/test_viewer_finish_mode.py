@@ -185,3 +185,20 @@ def test_setup_confirmation_mentions_the_build_before_the_download():
 def test_setup_title_says_setting_up_until_the_build_exists():
     # NVIDIA TRELLIS.2 compiles for half an hour before downloading; "Downloading" misled.
     assert "'Setting up'" in SETUP
+
+
+def test_setup_page_has_machine_tabs():
+    # One page for every machine read as a contradiction on NVIDIA ("Mac port here",
+    # "use the NVIDIA one instead"). Tabs: this machine's live cards, others read-only.
+    assert 'id="setup-tabs"' in (VIEWER / "index.html").read_text()
+    assert "function renderTabs(" in SETUP and "readOnly" in SETUP
+
+
+def test_a_build_without_a_percentage_shows_the_bar_working():
+    assert "classList.toggle('busy'" in SETUP
+    css = (VIEWER / "styles" / "generate.css").read_text()
+    assert ".progress-track.busy" in css
+
+
+def test_another_machines_tab_says_whose_it_is():
+    assert "Showing what runs on" in SETUP

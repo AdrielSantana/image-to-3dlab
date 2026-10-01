@@ -483,3 +483,30 @@ def test_setup_fetch_flag_is_answered_per_machine():
     assert trellis.setup_fetches_on(bc.NVIDIA) is True
     assert trellis.setup_fetches_on(bc.APPLE) is False
     assert bc.BY_ID["pixal3d"].setup_fetches_on(bc.NVIDIA) is True
+
+
+# --- Setup page tabs: one per machine family, so nobody reads another machine's cards ---
+def test_catalog_offers_a_tab_per_machine_family():
+    tabs = bc.catalog_status(bc.NVIDIA)["platforms"]
+    assert [t["id"] for t in tabs] == [bc.APPLE, bc.NVIDIA, "amd"]
+    assert next(t for t in tabs if t["id"] == "amd")["coming"] is True
+
+
+def test_each_tab_lists_only_what_runs_on_that_machine():
+    views = bc.catalog_status(bc.NVIDIA)["views"]
+    nvidia = {b["id"] for b in views[bc.NVIDIA]}
+    apple = {b["id"] for b in views[bc.APPLE]}
+    assert "hunyuan-cuda" in nvidia and "hunyuan_xiong" not in nvidia
+    assert "hunyuan_xiong" in apple and "hunyuan-cuda" not in apple
+    assert {"pixal3d", "trellis"} <= nvidia & apple
+
+
+def test_a_tab_describes_its_own_machine():
+    views = bc.catalog_status(bc.NVIDIA)["views"]
+    trellis_mac = next(b for b in views[bc.APPLE] if b["id"] == "trellis")
+    trellis_nv = next(b for b in views[bc.NVIDIA] if b["id"] == "trellis")
+    assert trellis_nv["label"] == "TRELLIS.2 (NVIDIA)" and trellis_mac["label"] != trellis_nv["label"]
+    pixal_mac = next(b for b in views[bc.APPLE] if b["id"] == "pixal3d")
+    pixal_nv = next(b for b in views[bc.NVIDIA] if b["id"] == "pixal3d")
+    assert "Xcode" in pixal_mac["tradeoff"] and "NVIDIA" not in pixal_mac["tradeoff"]
+    assert "CUDA" in pixal_nv["tradeoff"] and "Xcode" not in pixal_nv["tradeoff"]

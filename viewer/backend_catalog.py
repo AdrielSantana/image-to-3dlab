@@ -45,6 +45,10 @@ GB = 1024 ** 3
 # Mac?" test, so a route gains NVIDIA support by adding a string to its `runs_on`. The
 # detection itself lives in `image_to_3dlab.host`, shared with the bootstraps.
 PLATFORM_LABELS = {APPLE: "an Apple Silicon Mac", NVIDIA: "an NVIDIA GPU"}
+# Setup page tabs, in order. AMD has a tab before it has a backend, so its users find out
+# it is coming instead of reading NVIDIA instructions.
+TAB_LABELS = {APPLE: "Mac (Apple Silicon)", NVIDIA: "NVIDIA (Linux)", "amd": "AMD"}
+VIEW_PLATFORMS = (APPLE, NVIDIA)
 
 
 def venv_python(project: Path) -> Path:
@@ -274,6 +278,13 @@ CATALOG: tuple[Backend, ...] = (
             "On NVIDIA Linux with the CUDA toolkit it compiles for your card, which runs "
             "about twice as fast; otherwise it downloads a prebuilt CUDA build."
         ),
+        overrides_by_host={
+            APPLE: {"tradeoff": "Compiles on your Mac, and needs full Xcode for the Metal "
+                                "compiler."},
+            NVIDIA: {"tradeoff": "With the CUDA toolkit it compiles for your card, which "
+                                 "runs about twice as fast; otherwise it downloads a "
+                                 "prebuilt CUDA build."},
+        },
         license_name="MIT (code + flow weights); DINOv3 License (bundled encoder)",
         license_url="https://huggingface.co/raven38/pixal3d-sv-q8_0-v1",
         install="scripts/bootstrap_pixal3d.py",
@@ -621,6 +632,12 @@ def catalog_status(host: str | None = None) -> dict[str, Any]:
                                  for b in CATALOG for p in b.runs_on}),
         },
         "backends": backends,
+        # The Setup page's tabs. Each machine family sees only the backends that run on it,
+        # worded for it; the tab for this machine is the only one with buttons.
+        "platforms": [{"id": p, "label": TAB_LABELS[p], "coming": p not in VIEW_PLATFORMS}
+                      for p in TAB_LABELS],
+        "views": {p: [b.describe(p) for b in sorted(CATALOG, key=_rank_key) if p in b.runs_on]
+                  for p in VIEW_PLATFORMS},
     }
 
 

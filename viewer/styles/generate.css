@@ -93,6 +93,13 @@
   background: #15181e; }
 .setup-card.ready { border-color: #2a4436; }
 .setup-card.partial { border-color: #4a4426; }
+.setup-card.elsewhere { opacity: .8; }
+.setup-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 10px; }
+.setup-tab { border-radius: 8px 8px 0 0; }
+.setup-tab[aria-selected="true"] { background: #2d4f78; border-color: #4d84c0; color: #fff; }
+/* A build with no percentage: a sliding band, so the bar never sits empty. */
+.progress-track.busy > div { width: 30% !important; animation: setup-busy 1.4s ease-in-out infinite; }
+@keyframes setup-busy { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 .setup-card-head { display: grid; grid-template-columns: 20px 1fr auto; gap: 10px;
   align-items: start; }
 .setup-dot { font-size: 15px; line-height: 1.4; }
