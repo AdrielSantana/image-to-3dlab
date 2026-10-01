@@ -11,7 +11,7 @@ is timed; models, records and a summary land in output/pod-smoke-<time>/.
 
 Money and downloads are only spent after one "yes": the script names the GPU, its hourly
 price cap, every route and its download size first (AGENTS.md). The pod is rented on
-Secure cloud, checked for download speed (a slow host turns a 40-minute test into three
+Secure cloud unless --cloud community, checked for download speed (a slow host turns a 40-minute test into three
 hours), and **always deleted at the end**, pass or fail. RunPod also terminates it by
 itself after --max-hours, in case this machine dies first.
 
@@ -68,8 +68,11 @@ def terminate_after(hours: float, now: datetime | None = None) -> str:
     return (now + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def create_command(gpu: str, name: str, hours: float) -> list[str]:
-    return ["runpodctl", "pod", "create", "--cloud-type", "SECURE", "--gpu-id", gpu,
+def create_command(gpu: str, name: str, hours: float, cloud: str = "secure") -> list[str]:
+    """Community pods only get a reachable SSH port with a public IP, which --wait needs."""
+    community = ["--public-ip"] if cloud == "community" else []
+    return ["runpodctl", "pod", "create", "--cloud-type", cloud.upper(), *community,
+            "--gpu-id", gpu,
             "--image", IMAGE, "--name", name, "--container-disk-in-gb", "120",
             "--volume-in-gb", "60", "--ports", f"{PORT}/http,22/tcp",
             "--terminate-after", terminate_after(hours), "--wait", "-o", "json"]
@@ -155,8 +158,9 @@ def sse_events(text: str) -> list[dict]:
     return events
 
 
-def announcement(routes: list[str], gpus: list[str], cap: float, hours: float) -> str:
-    lines = ["This rents one RunPod pod (Secure cloud) and downloads model weights onto it:",
+def announcement(routes: list[str], gpus: list[str], cap: float, hours: float,
+                 cloud: str = "secure") -> str:
+    lines = [f"This rents one RunPod pod ({cloud} cloud) and downloads model weights onto it:",
              f"  GPU: first available of {', '.join(gpus)}, at most ${cap:.2f}/hr",
              f"  deleted at the end; RunPod terminates it anyway after {hours:g} h"]
     total = 0.0
@@ -195,12 +199,12 @@ class Pod:
         return out.stdout
 
 
-def rent(gpus: list[str], cap: float, hours: float) -> dict:
+def rent(gpus: list[str], cap: float, hours: float, cloud: str = "secure") -> dict:
     name = f"pod-smoke-{datetime.now():%m%d-%H%M}"
     for gpu in gpus:
         print(f"Renting {gpu}...", flush=True)
         try:
-            pod = runpodctl(*create_command(gpu, name, hours)[1:])
+            pod = runpodctl(*create_command(gpu, name, hours, cloud)[1:])
         except RuntimeError as exc:
             print(f"  not available: {str(exc).splitlines()[0][:160]}")
             continue
@@ -408,6 +412,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--routes", default=",".join(ROUTES),
                         help=f"comma-separated (default: {','.join(ROUTES)})")
     parser.add_argument("--gpu", action="append", help="GPU id to try, in order (repeatable)")
+    parser.add_argument("--cloud", choices=("secure", "community"), default="secure",
+                        help="community is cheaper (a 3090 for ~$0.22/hr) but rarer with "
+                             "a public IP")
     parser.add_argument("--max-price", type=float, default=0.80, help="$/hr cap (0.80)")
     parser.add_argument("--max-hours", type=float, default=3.0,
                         help="RunPod terminates the pod after this, whatever happens (3)")
@@ -423,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"no input picture at {args.image}; pass --image")
     gpus = args.gpu or list(GPUS)
 
-    print(announcement(args.routes, gpus, args.max_price, args.max_hours))
+    print(announcement(args.routes, gpus, args.max_price, args.max_hours, args.cloud))
     if not args.yes and input("Rent the pod and download all of that? [y/N] ").strip().lower() \
             not in {"y", "yes"}:
         print("Nothing rented.")
@@ -434,7 +441,7 @@ def main(argv: list[str] | None = None) -> int:
     out = REPO / "output" / f"pod-smoke-{datetime.now():%Y%m%d-%H%M}"
     out.mkdir(parents=True, exist_ok=True)
     started = time.time()
-    pod_json = rent(gpus, args.max_price, args.max_hours)
+    pod_json = rent(gpus, args.max_price, args.max_hours, args.cloud)
     results: list[dict] = []
     try:
         results = run_smoke(Pod(pod_json), args, token, out)

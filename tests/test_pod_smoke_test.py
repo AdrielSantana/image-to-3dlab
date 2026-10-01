@@ -17,6 +17,13 @@ def test_the_pod_terminates_itself_even_if_this_machine_dies():
     assert f"{smoke.PORT}/http" in command[command.index("--ports") + 1]
 
 
+def test_a_community_pod_asks_for_a_public_ip():
+    command = smoke.create_command("NVIDIA GeForce RTX 3090", "x", 3, "community")
+    assert command[command.index("--cloud-type") + 1] == "COMMUNITY"
+    assert "--public-ip" in command
+    assert "--public-ip" not in smoke.create_command("NVIDIA A40", "x", 3)
+
+
 def test_terminate_after_is_hours_from_now_in_utc():
     now = datetime(2026, 10, 2, 22, 30, tzinfo=timezone.utc)
     assert smoke.terminate_after(3, now) == "2026-10-03T01:30:00Z"
