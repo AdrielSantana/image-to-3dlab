@@ -88,16 +88,40 @@ def test_pinned_plan_uses_the_runpod_pins_and_adds_our_matte():
 
 def test_source_plan_builds_every_extension_against_the_installed_torch():
     commands = boot.pip_commands("source", "uv", boot.venv_python(), "cu128")
-    torch_at = next(i for i, c in enumerate(commands) if "torch" in c)
+    torch_at = next(i for i, c in enumerate(commands) if any(a.startswith("torch") for a in c))
     assert commands[torch_at][-1].endswith("/cu128")
     builds = [c for c in commands if "--no-build-isolation" in c]
     targets = {c[-1] for c in builds}
-    assert boot.FLASH_ATTN in targets
     for name, *_ in boot.SOURCE_EXTENSIONS:
         assert str(boot.EXTENSIONS / name) in targets
     assert str(boot.CHECKOUT / "o-voxel") in targets
     # Every build comes after torch, or it would compile against nothing.
     assert all(commands.index(c) > torch_at for c in builds)
+
+
+def test_cuda_12_pins_the_torch_flash_attn_ships_a_wheel_for():
+    # An unpinned torch outran flash-attn's wheels and cost a 1-2 hour compile on 8 CPUs.
+    commands = boot.pip_commands("source", "uv", boot.venv_python(), "cu128")
+    torch_install = next(c for c in commands if any(a.startswith("torch") for a in c))
+    assert f"torch=={boot.TORCH_FOR_FLASH_WHEEL}" in torch_install
+    flash = [c for c in commands if any("flash" in a for a in c)]
+    assert len(flash) == 1 and flash[0][-1] == boot.flash_attn_target("cu128")
+    assert flash[0][-1].endswith(".whl") and "--no-build-isolation" not in flash[0]
+
+
+def test_flash_wheel_matches_the_pinned_torch_and_the_venv_python():
+    url = boot.flash_attn_target("cu126")
+    torch_minor = ".".join(boot.TORCH_FOR_FLASH_WHEEL.split(".")[:2])
+    assert f"cu12torch{torch_minor}cxx11abiTRUE" in url
+    assert "-cp311-" in url and boot.SOURCE_PYTHON == "3.11"
+    assert url.startswith("https://github.com/Dao-AILab/flash-attention/releases/download/")
+
+
+def test_cuda_13_has_no_flash_wheel_and_compiles_it():
+    commands = boot.pip_commands("source", "uv", boot.venv_python(), "cu130")
+    torch_install = next(c for c in commands if any(a.startswith("torch") for a in c))
+    assert "torch" in torch_install and not any("==" in a for a in torch_install)
+    assert any(c[-1] == boot.FLASH_ATTN and "--no-build-isolation" in c for c in commands)
 
 
 def test_source_plan_needs_a_torch_tag():

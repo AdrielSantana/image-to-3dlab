@@ -69,6 +69,15 @@ BASIC = ["imageio", "imageio-ffmpeg", "tqdm", "easydict", "opencv-python-headles
          "ninja", "trimesh", "transformers==4.57.3", "zstandard", "kornia", "timm",
          "pillow", "huggingface_hub", "rembg", "onnxruntime"]
 FLASH_ATTN = "flash-attn"
+# flash-attn publishes Linux wheels for CUDA 12 up to torch 2.8 only. An unpinned torch
+# outran them, and pip then compiled flash-attn: one to two hours on an 8-CPU machine.
+# Pinning torch to the newest version it has a wheel for makes that step a download.
+# CUDA 13 has no flash-attn wheel yet, so that route still compiles it.
+TORCH_FOR_FLASH_WHEEL = "2.8.0"
+TORCHVISION_FOR_FLASH_WHEEL = "0.23.0"
+SOURCE_PYTHON = "3.11"
+FLASH_WHEEL = ("https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3.post1/"
+               "flash_attn-2.8.3.post1%2Bcu12torch2.8cxx11abiTRUE-cp311-cp311-linux_x86_64.whl")
 # (name, git url, ref or None, recursive), as upstream's setup.sh clones them.
 SOURCE_EXTENSIONS = (
     ("nvdiffrast", "https://github.com/NVlabs/nvdiffrast.git", "v0.4.0", False),
@@ -184,6 +193,15 @@ def announcement(route: str | None, why: str, code: bool = True,
     return "\n".join(lines)
 
 
+def has_flash_wheel(torch_tag: str) -> bool:
+    return torch_tag_version(torch_tag)[0] == 12
+
+
+def flash_attn_target(torch_tag: str) -> str:
+    """The prebuilt flash-attn wheel where one exists for this CUDA, else the source package."""
+    return FLASH_WHEEL if has_flash_wheel(torch_tag) else FLASH_ATTN
+
+
 def build_present() -> bool:
     return BUILT_MARKER.is_file()
 
@@ -219,13 +237,17 @@ def pip_commands(route: str, uv: str, python: Path, torch_tag: str | None = None
         return commands
     if route != "source" or torch_tag is None:
         raise ValueError(f"no install plan for route {route!r}")
-    commands.append([*pip, "torch", "torchvision",
-                     "--index-url", host.TORCH_INDEX + torch_tag])
+    torch = ([f"torch=={TORCH_FOR_FLASH_WHEEL}", f"torchvision=={TORCHVISION_FOR_FLASH_WHEEL}"]
+             if has_flash_wheel(torch_tag) else ["torch", "torchvision"])
+    commands.append([*pip, *torch, "--index-url", host.TORCH_INDEX + torch_tag])
     commands.append([*pip, *BASIC])
     commands.append([*pip, UTILS3D])
     # --no-build-isolation throughout: the extensions must compile against the torch just
     # installed, not a fresh one pip would fetch into a throwaway build environment.
-    commands.append([*pip, "--no-build-isolation", FLASH_ATTN])
+    if has_flash_wheel(torch_tag):
+        commands.append([*pip, flash_attn_target(torch_tag)])
+    else:
+        commands.append([*pip, "--no-build-isolation", FLASH_ATTN])
     for name, *_ in SOURCE_EXTENSIONS:
         commands.append([*pip, "--no-build-isolation", str(extensions / name)])
     commands.append([*pip, "--no-build-isolation", str(checkout / "o-voxel")])
@@ -263,7 +285,7 @@ def install_code(route: str, torch_tag: str | None) -> None:
     fetch_checkout(pinned_commit())
     changed = bria_patch.apply(CHECKOUT)
     print(f"BRIA guardrail: {'applied' if changed else 'already present'}", flush=True)
-    python_version = "3.12" if route == "pinned" else "3.11"
+    python_version = "3.12" if route == "pinned" else SOURCE_PYTHON
     if not venv_python().is_file():
         run([uv, "venv", str(VENDOR / ".venv"), "--python", python_version])
     env = dict(os.environ)
