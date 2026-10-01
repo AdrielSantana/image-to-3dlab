@@ -356,6 +356,9 @@ CATALOG: tuple[Backend, ...] = (
                       "RealESRGAN_x4plus.pth",
                       int(0.067 * GB),
                       REPO / "vendor" / "hunyuan-cuda" / "ckpt" / "RealESRGAN_x4plus.pth"),
+            WeightSet("BiRefNet-lite background remover", _matte.LITE_URL, _matte.LITE_BYTES,
+                      _matte.model_file(_matte.LITE_MODEL),
+                      note="Cuts out pictures without alpha. Shared with the other routes."),
         ),
     ),
     Backend(

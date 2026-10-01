@@ -31,11 +31,15 @@ timm
 """
 
 
+REMOVER = "BiRefNet-lite background remover"
+
+
 def test_weights_match_the_catalogue():
     """Every set the installer fetches is one the Setup page announces, at the same size."""
     entry = backend_catalog.BY_ID["hunyuan-cuda"]
     announced = {w.label: w.bytes_expected for w in entry.weights}
-    assert set(announced) == {label for label, *_ in boot.WEIGHTS}
+    # The background remover is the shared one, installed by bootstrap_matte.
+    assert set(announced) - {REMOVER} == {label for label, *_ in boot.WEIGHTS}
     for label, _, _, _, size in boot.WEIGHTS:
         assert announced[label] == pytest.approx(size * backend_catalog.GB, rel=0.05), label
 
@@ -204,3 +208,13 @@ def test_installs_use_patient_downloads(monkeypatch):
     monkeypatch.setattr(boot.host, "find_nvcc", lambda: "/usr/local/cuda/bin/nvcc")
     env = boot.install_env({"PATH": "/usr/bin"})
     assert "UV_HTTP_TIMEOUT" in env and env["TORCH_CUDA_ARCH_LIST"] == "8.6"
+
+
+def test_setup_installs_and_announces_the_background_remover(tmp_path):
+    # Without it, the first generation from a plain picture fetched u2net unannounced.
+    fetched = []
+    boot.install_background_remover(tmp_path / "lite.onnx", download=fetched.append)
+    assert fetched == [tmp_path / "lite.onnx"]
+    assert "BiRefNet-lite" in boot.announcement("source", "test")
+    sources = {w.label for w in backend_catalog.BY_ID["hunyuan-cuda"].weights}
+    assert REMOVER in sources

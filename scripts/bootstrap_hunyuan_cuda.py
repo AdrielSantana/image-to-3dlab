@@ -51,7 +51,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from image_to_3dlab import host  # noqa: E402, RUF100
+from image_to_3dlab import host, matte  # noqa: E402, RUF100
 
 VENDOR = REPO / "vendor" / "hunyuan-cuda"
 CHECKOUT = VENDOR / "Hunyuan3D-2.1"
@@ -149,8 +149,18 @@ def announcement(route: str | None, why: str, code: bool = True,
         lines.append(f"  weights: {total_gb():.1f} GB total")
         for label, source, _, _, size in WEIGHTS:
             lines.append(f"             {size:>6.2f} GB  {label} ({source})")
+        lines.append(f"  and:     BiRefNet-lite background remover, "
+                     f"{matte.LITE_BYTES / 1e6:.0f} MB -> {matte.model_file(matte.LITE_MODEL)}")
     lines += ["", "  licence: " + LICENCE, ""]
     return "\n".join(lines)
+
+
+def install_background_remover(target: Path | None = None, download=None) -> None:
+    """The cut-out every upload without alpha goes through; without it the first
+    generation fetched u2net (176 MB) unannounced."""
+    from bootstrap_matte import install_if_missing
+
+    install_if_missing(target, download)
 
 
 def filter_requirements(text: str) -> list[str]:
@@ -336,6 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         install_code(route)
     if weights:
         install_weights()
+        install_background_remover()
     print("\nDone. Pick Hunyuan3D-2.1 (NVIDIA) in the viewer's Generate 3D tab, or run:\n"
           "    vendor/hunyuan-cuda/.venv/bin/python scripts/hunyuan_cuda_generate.py "
           "input.png output.glb")
