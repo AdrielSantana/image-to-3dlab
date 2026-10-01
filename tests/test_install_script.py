@@ -232,3 +232,35 @@ def test_update_moves_learned_timings_aside_instead_of_refusing(tmp_path, upstre
     assert (target / "VERSION").read_text() == "0.3.0\n"
     assert (target / "output" / ".generate_baseline.json").read_text() == learned
     assert (target / "viewer" / "generate_baseline.json").read_text() == '{"seconds": {}}\n'
+
+
+def _with_lab(upstream):
+    lab = upstream / "lab"
+    lab.write_text('#!/bin/sh\necho "LAB STARTED $*"\n')
+    lab.chmod(0o755)
+    _git(upstream, "add", ".")
+    _git(upstream, "commit", "-q", "-m", "lab")
+    _git(upstream, "tag", "v0.2.2")
+
+
+def test_start_opens_the_lab_when_asked(tmp_path, upstream, fake_bin):
+    # The goal: run the curl command, end up in the viewer. Nothing to type in between.
+    _with_lab(upstream)
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(tmp_path / "lab"),
+               "--start")
+    assert done.returncode == 0, done.stderr
+    assert "LAB STARTED" in done.stdout
+
+
+def test_without_a_terminal_it_says_how_to_start_instead(tmp_path, upstream, fake_bin):
+    # Scripts and agents (no terminal, or --yes) must not be left holding a running server.
+    _with_lab(upstream)
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(tmp_path / "lab"))
+    assert done.returncode == 0, done.stderr
+    assert "LAB STARTED" not in done.stdout and "./lab" in done.stdout
+
+
+def test_the_real_launcher_is_executable_and_uses_auto():
+    lab = SCRIPT.parent / "lab"
+    assert lab.is_file() and lab.stat().st_mode & 0o111
+    assert "serve.py --auto" in lab.read_text()
