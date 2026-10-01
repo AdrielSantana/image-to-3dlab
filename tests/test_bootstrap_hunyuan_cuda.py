@@ -238,3 +238,15 @@ def test_a_venv_on_the_wrong_python_is_rebuilt(tmp_path):
     (venv / "pyvenv.cfg").write_text("home = /usr/bin\nversion_info = 3.11.13\n")
     assert boot.venv_needs_rebuild(venv) is False
     assert boot.venv_needs_rebuild(tmp_path / "missing") is True
+
+
+def test_setuptools_keeps_pkg_resources():
+    # Seen on a real pod: setuptools 84 has no pkg_resources, and lightning_fabric (from
+    # upstream's pytorch-lightning 1.9.5) imports it, so the paint stage died on start.
+    for command in boot.pip_commands("tested", "uv", boot.venv_python(), ["timm"]):
+        assert "setuptools" not in command, "unpinned setuptools"
+    first = boot.pip_commands("tested", "uv", boot.venv_python(), [])[0]
+    assert boot.SETUPTOOLS_PIN in first and boot.SETUPTOOLS_PIN == "setuptools<81"
+    # The requirements install must not float it back up either.
+    reqs = boot.pip_commands("tested", "uv", boot.venv_python(), ["timm"])[2]
+    assert boot.SETUPTOOLS_PIN in reqs

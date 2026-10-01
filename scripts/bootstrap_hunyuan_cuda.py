@@ -68,6 +68,9 @@ PYTHON_VERSION = "3.11"
 # Upstream pins bpy==4.0, which PyPI no longer has. The paint stage uses bpy only to turn
 # its OBJ into a GLB (wm.obj_import, shade_smooth_by_angle, export_scene.gltf), all in 4.2.
 BPY_PIN = "bpy==4.2.0"
+# setuptools 81+ dropped pkg_resources, which lightning_fabric (upstream's pytorch-lightning
+# 1.9.5) still imports: the paint stage died on start with setuptools 84.
+SETUPTOOLS_PIN = "setuptools<81"
 
 # (route, torch, torchvision, index tag, minimum driver CUDA). "tested" is upstream's own
 # pairing; "blackwell" exists only because 2.5.1 has no kernels for compute capability 12.0.
@@ -230,13 +233,13 @@ def pip_commands(route: str, uv: str, python: Path, requirements: list[str],
     torch_version, vision_version, tag, _ = TORCH[route]
     pip = [uv, "pip", "install", "--python", str(python)]
     return [
-        [*pip, "setuptools", "wheel", "ninja", "pybind11"],
+        [*pip, SETUPTOOLS_PIN, "wheel", "ninja", "pybind11"],
         [*pip, f"torch=={torch_version}", f"torchvision=={vision_version}",
          "--index-url", host.TORCH_INDEX + tag],
         # --no-build-isolation: basicsr's setup.py imports torch, and the rasterizer must
         # compile against the torch just installed. rembg is already in the list; our own
         # cut-out (image_to_3dlab/matte.py) uses it.
-        [*pip, "--no-build-isolation", *requirements],
+        [*pip, "--no-build-isolation", SETUPTOOLS_PIN, *requirements],
         [*pip, "--no-build-isolation", str(checkout / "hy3dpaint" / "custom_rasterizer")],
     ]
 
