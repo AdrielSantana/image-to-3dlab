@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default; `scripts/patch_trellis_cuda_no_bria.py` removes it, and the route refuses to run
   without that patch. Pictures are cut out by our own background remover instead.
 
+### Fixed
+- **Pixal3D models keep their licence record.** With Debug off (the default), Generate 3D
+  kept only the GLB, which deleted Pixal3D's `<name>.json` (its licence record) and the
+  camera Pixel Match needs, so Finish silently skipped Pixel Match. Both now stay with the
+  model.
+
 ## [0.3.6] - 2026-10-01
 
 ### Fixed

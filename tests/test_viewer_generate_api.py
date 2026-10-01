@@ -686,14 +686,15 @@ def test_job_manager_disambiguates_colliding_folder_names(tmp_path):
     assert job2.output_path.name == "dup-2.glb"
 
 
-def test_cleanup_debug_files_keeps_only_output_glb(tmp_path):
+def test_cleanup_debug_files_keeps_the_glb_and_its_record(tmp_path):
     job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "run.glb", {}, "trellis")
     job.output_path.write_bytes(b"glb")
     job.manifest_path.write_text("{}")
     (tmp_path / "run_latents.pt").write_bytes(b"x")
     (tmp_path / "run.log").write_text("log")
     api._cleanup_debug_files(job)
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["run.glb"]
+    # The manifest is the run's record (for Pixal3D, its licence record), not debug output.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["run.glb", "run.json"]
 
 
 # --- alpha-transparency check: a missing Pillow install is a broken environment, not a
@@ -1160,10 +1161,25 @@ def test_the_old_mac_setup_runner_refuses_other_machines():
 
 def test_cleanup_keeps_the_provenance_sidecar(tmp_path):
     job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", {}, "trellis")
-    for name in ("out.glb", "out.provenance.json", "out.json", "out_latents.pt"):
+    for name in ("out.glb", "out.provenance.json", "out.json", "out_latents.pt", "run.log"):
         (tmp_path / name).write_text("x")
     api._cleanup_debug_files(job)
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["out.glb", "out.provenance.json"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "out.glb", "out.json", "out.provenance.json"]
+
+
+def test_cleanup_keeps_pixal3d_licence_record_and_camera(tmp_path):
+    # Seen on a real NVIDIA pod: with Debug off, a Pixal3D model kept only its .glb. Its
+    # licence record is <name>.json and its camera is <name>.svviews/, so it shipped with
+    # no provenance, and Finish silently skipped Pixel Match. Both travel with the model.
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", {}, "pixal3d")
+    for name in ("out.glb", "out.json", "input__matted.png", "run.log"):
+        (tmp_path / name).write_text("x")
+    (tmp_path / "out.svviews").mkdir()
+    (tmp_path / "out.svviews" / "transforms.json").write_text("{}")
+    api._cleanup_debug_files(job)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out.glb", "out.json", "out.svviews"]
+    assert (tmp_path / "out.svviews" / "transforms.json").is_file()
 
 
 def test_nvidia_trellis_hides_the_mac_only_controls():

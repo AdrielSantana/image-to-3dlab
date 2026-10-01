@@ -956,11 +956,15 @@ def _trellis_parse_line(job: Job, line: str) -> None:
 
 
 def _cleanup_debug_files(job: Job) -> None:
-    """Debug mode off (the default): keep only the primary .glb. Deletes the manifest,
-    textures, intermediate meshes, resume caches, and run.log -- everything a run writes
+    """Debug mode off (the default): keep the .glb and what travels with it. Deletes
+    textures, intermediate meshes, resume caches and run.log -- everything a run writes
     that exists purely to diagnose a run, not to use the asset."""
-    # The licence record travels with the file (AGENTS.md), so it is never "debug".
-    keep = {job.output_path, job.output_path.with_suffix(".provenance.json")}
+    # The licence record travels with the file (AGENTS.md), so it is never "debug". For
+    # Pixal3D that record is <name>.json, and <name>.svviews/ is the camera Finish's Pixel
+    # Match needs: deleting them shipped Pixal3D models with no provenance at all.
+    out = job.output_path
+    keep = {out, out.with_suffix(".provenance.json"), out.with_suffix(".json"),
+            out.with_suffix(".svviews")}
     for path in job.directory.iterdir():
         if path in keep:
             continue
