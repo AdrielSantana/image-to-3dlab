@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-10-02
+
 ### Added
 - **TRELLIS.2 on Linux with an NVIDIA card.** Setup & Status offers **Set up**, and
   Generate 3D runs it. It uses Microsoft's own TRELLIS.2 code, not the Mac port, with the
@@ -36,10 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/blender-lts`, no admin rights. Finish finds it.
 
 ### Changed
-- **Pixal3D on NVIDIA installs the ready-made build** instead of compiling one: about a
-  minute, where compiling took 15 on a fast cloud machine and far longer on a small one.
-  It runs 12 steps instead of 8, which costs seconds on NVIDIA. An old driver still gets
-  a local compile, and `scripts/bootstrap_pixal3d.py --compile` asks for one.
+- **Pixal3D on NVIDIA installs the ready-made build** instead of compiling one, so setup
+  takes a fraction of the time, most of all on machines with few CPU cores. It runs 12
+  steps instead of 8, a small cost on NVIDIA. An old driver still gets a local compile,
+  and `scripts/bootstrap_pixal3d.py --compile` asks for one.
 - Generate 3D only offers the routes your machine can run.
 - With Debug off, a generated model now keeps its record (`<name>.json`) beside the GLB,
   and a Pixal3D model keeps the camera Pixel Match needs.
@@ -56,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   learned timings into a tracked file, so the installer refused every later update. Timings
   now live in `output/`, and the installer moves an old copy there.
 - **Pixal3D models keep their licence record.** With Debug off, it was deleted, and Finish
-  then skipped Pixel Match without saying so. When Pixel Match is skipped, the finished
+  then skipped Pixel Match without saying so. Spotted by @AdrielSantana in #78. When Pixel Match is skipped, the finished
   result now says why.
 - **Remove on one route keeps files another route uses** (the background remover).
 - Setup & Status picks a running setup back up after a refresh, shows a moving bar while
