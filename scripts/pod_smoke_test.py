@@ -3,6 +3,7 @@
 
     python scripts/pod_smoke_test.py --ref feat/hunyuan-nvidia
     python scripts/pod_smoke_test.py --routes trellis,pixal3d --image my.png
+    python scripts/pod_smoke_test.py --routes hunyuan-cuda      # one route, no Blender
 
 What a new user does, with nobody fixing anything mid-run: install with the one-line
 installer, start the lab, sign in to Hugging Face, set up every route, generate one model
@@ -430,7 +431,9 @@ def run_smoke(pod: Pod, args, token: str, out: Path, results: list[dict]) -> lis
             raise RuntimeError(caps.get("blender_problem") or "installed, but Finish cannot see it")
         return f"Blender {caps.get('blender_version')}"
 
-    step(results, "install Blender", blender)
+    # Only Finish needs Blender, and only the Pixal3D model is finished.
+    if "pixal3d" in args.routes:
+        step(results, "install Blender", blender)
 
     image = args.image.read_bytes()
     models: dict[str, bytes] = {}

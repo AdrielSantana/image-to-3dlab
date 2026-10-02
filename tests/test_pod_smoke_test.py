@@ -188,6 +188,50 @@ def test_an_interrupt_keeps_the_steps_that_finished():
     assert [(r["step"], r["ok"]) for r in results] == [("download speed", True)]
 
 
+def test_a_one_route_run_without_pixal3d_skips_blender(tmp_path, monkeypatch):
+    class FakePod:
+        id = "pod"
+
+        def ssh(self, command, timeout=0):
+            return "100000000"
+
+    class FakeViewer:
+        base = "https://pod"
+
+        def __init__(self, base):
+            pass
+
+        def call(self, method, path, body=None, content_type="", timeout=0):
+            if path.endswith("result.glb"):
+                return 200, b"glTF" + b"0" * 2048
+            return 200, b"{}"
+
+        def json(self, method, path, payload=None, **kw):
+            if path == "/api/hf/sign-in":
+                return 200, {"signed_in": True, "repos": []}
+            return 200, {"blender": None}
+
+        def start(self, path, *a, **kw):
+            assert "blender" not in path, "Blender installed for a run without Pixal3D"
+            return {"job_id": "j"}
+
+        def wait(self, path, limit, poll=15):
+            return {"status": "done"}
+
+    class Args:
+        ref, routes = "x", ["hunyuan-cuda"]
+        image = tmp_path / "in.png"
+
+    Args.image.write_bytes(b"png")
+    monkeypatch.setattr(smoke, "Viewer", FakeViewer)
+    monkeypatch.setattr(smoke.time, "sleep", lambda s: None)
+    results = []
+    smoke.run_smoke(FakePod(), Args(), "t", tmp_path, results)
+    steps = [r["step"] for r in results]
+    assert "install Blender" not in steps
+    assert steps[-1] == "generate hunyuan-cuda" and all(r["ok"] for r in results)
+
+
 def test_multipart_carries_fields_and_files():
     body, ctype = smoke.multipart({"settings": json.dumps({"backend": "trellis"})},
                                   {"image": ("in.png", b"\x89PNG")})
