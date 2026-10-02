@@ -113,6 +113,16 @@ def ssh_target(info: dict) -> tuple[str, int, str | None]:
     return host, port, key
 
 
+def matching_private_key(registered: dict, ssh_dir: Path) -> Path | None:
+    """The local private key whose public half RunPod has on file (`runpodctl ssh
+    list-keys`). Without it ssh tries the default key, which RunPod may never have seen."""
+    known = {" ".join(k.get("key", "").split()[:2]) for k in registered.get("keys", [])}
+    for pub in sorted(ssh_dir.glob("*.pub")):
+        if " ".join(pub.read_text().split()[:2]) in known and pub.with_suffix("").is_file():
+            return pub.with_suffix("")
+    return None
+
+
 def speed_command(url: str, seconds: int = 20) -> str:
     return (f"curl -sL -o /dev/null --max-time {seconds} -w '%{{speed_download}}' "
             f"{shlex.quote(url)} || true")
@@ -198,6 +208,8 @@ class Pod:
     def __init__(self, pod: dict):
         self.id = pod["id"]
         self.host, self.port, self.key = ssh_target(runpodctl("ssh", "info", self.id))
+        if not self.key or not Path(self.key).expanduser().is_file():
+            self.key = matching_private_key(runpodctl("ssh", "list-keys"), Path.home() / ".ssh")
 
     def ssh(self, command: str, timeout: float = 1800) -> str:
         args = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",

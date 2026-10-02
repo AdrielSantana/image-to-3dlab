@@ -55,6 +55,16 @@ def test_pod_price_reads_what_runpod_bills(pod, price):
     assert smoke.pod_price(pod) == price
 
 
+def test_the_ssh_key_is_the_one_runpod_knows(tmp_path):
+    # The 2026-10-02 run let ssh fall back to id_ed25519, which RunPod had never seen.
+    (tmp_path / "id_ed25519.pub").write_text("ssh-ed25519 AAAAdefault me@mac\n")
+    (tmp_path / "runpod_key.pub").write_text("ssh-ed25519 AAAArunpod session\n")
+    (tmp_path / "runpod_key").write_text("private")
+    registered = {"keys": [{"key": "ssh-ed25519 AAAArunpod\n"}]}
+    assert smoke.matching_private_key(registered, tmp_path) == tmp_path / "runpod_key"
+    assert smoke.matching_private_key({"keys": []}, tmp_path) is None
+
+
 def test_ssh_target_parses_runpods_command():
     info = {"podId": "abc", "sshCommand": "ssh root@1.2.3.4 -p 40022 -i ~/.ssh/key"}
     assert smoke.ssh_target(info) == ("root@1.2.3.4", 40022, "~/.ssh/key")
