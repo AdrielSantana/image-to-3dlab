@@ -128,6 +128,9 @@ class Backend:
     rank: int | None = None
     setup_minutes: int | None = None
     caveat: str | None = None
+    # The gated Hugging Face repo the caveat warns about, if that is what it warns about.
+    # The Setup page drops the caveat once the sign-in check says the account has access.
+    gated_repo: str | None = None
     # Whether running this backend's setup actually fetches the weights. TRELLIS's
     # bootstrap does not: it clones, patches and builds the Metal port, and the weights
     # arrive lazily on the first generation run. The distinction changes what the
@@ -246,6 +249,7 @@ class Backend:
             "tradeoff": said.get("tradeoff", self.tradeoff),
             "license": {"name": self.license_name, "url": self.license_url},
             "caveat": said.get("caveat", self.caveat),
+            "gated_repo": self.gated_repo,
             "install": self.install_for(host),
             "setup_minutes": said.get("setup_minutes", self.setup_minutes),
             "setup_fetches_weights": fetches,
@@ -430,6 +434,7 @@ CATALOG: tuple[Backend, ...] = (
             "The SF3D weights are gated: accept Stability's licence on Hugging Face and "
             "sign in under Hugging Face sign-in at the top of this page before setting it up."
         ),
+        gated_repo="stabilityai/stable-fast-3d",
         weights=(
             WeightSet("Stable Fast 3D", "stabilityai/stable-fast-3d", int(3.75 * GB),
                       HF_HUB_DIR / "models--stabilityai--stable-fast-3d"),
@@ -466,6 +471,7 @@ CATALOG: tuple[Backend, ...] = (
             "hand) and sign in under Hugging Face sign-in at the top of this page, or the first run stops "
             "after the 14 GB download."
         ),
+        gated_repo="facebook/dinov3-vitl16-pretrain-lvd1689m",
         setup_minutes=60,
         setup_fetches_weights=False,
         overrides_by_host={NVIDIA: {

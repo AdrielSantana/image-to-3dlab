@@ -11,13 +11,15 @@
 // is why it is "Setup & Status" and not "Install": it is the machine-state page, and the
 // natural home later for account and preferences.
 
+import { showsCaveat } from '../components/gated-caveat.js';
+
 const s = (id) => document.getElementById(id);
 const SKIP_KEY = 'i2l.setup.skip';
 
 // `panelFor` is the backend whose download the progress panel shows. It outlives the run
 // so the finished result stays under the card that started it.
 const state = { catalog: null, source: null, running: null, panelFor: null, tab: null,
-  renderToken: 0 };
+  renderToken: 0, hfAccess: {} };
 
 /** Put the progress panel right under the card it belongs to. It used to sit below every
  * card, so on a long list the bar was off-screen and a click on Set up looked like it had
@@ -80,7 +82,8 @@ function backendCard(backend, { readOnly = false } = {}) {
     <p class="setup-card-trade">${backend.tradeoff}</p>
     ${!readOnly && backend.platform_note
       ? `<p class="setup-card-caveat">${backend.platform_note}</p>` : ''}
-    ${backend.caveat ? `<p class="setup-card-caveat">${backend.caveat}</p>` : ''}
+    ${showsCaveat(backend, readOnly ? {} : state.hfAccess)
+      ? `<p class="setup-card-caveat">${backend.caveat}</p>` : ''}
     <details class="setup-card-detail">
       <summary>What gets downloaded</summary>
       <ul>${backend.weights.map((w) => `
@@ -446,6 +449,8 @@ async function hfCard() {
     if (response.ok) st = await response.json();
   } catch { /* shown as unknown below */ }
   const signedIn = Boolean(st && st.signed_in);
+  // The backend cards render after this one and read it to drop gated warnings already met.
+  state.hfAccess = Object.fromEntries((st ? st.repos : []).map((r) => [r.repo, r.access]));
   card.className = `setup-card ${signedIn ? 'ready' : 'missing'}`;
   const rows = (st ? st.repos : []).map((r) => {
     const mark = r.access === 'yes' ? '<span class="setup-ready">✓ access</span>'

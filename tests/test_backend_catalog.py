@@ -449,6 +449,19 @@ def test_trellis_warns_about_the_gated_dinov3_before_setup():
     assert "dinov3" in caveat.lower() and "Hugging Face sign-in" in caveat
 
 
+def test_every_gated_repo_is_one_the_sign_in_check_asks_about():
+    # The Setup page hides a gated warning only on the sign-in check's "yes"; a repo it never
+    # asks about would keep its warning forever.
+    import hf_api
+
+    checked = {repo for repo, _ in hf_api.GATED}
+    gated = {b.id: b.gated_repo for b in bc.CATALOG if b.gated_repo}
+    assert gated == {"trellis": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+                     "sf3d": "stabilityai/stable-fast-3d"}
+    assert set(gated.values()) <= checked
+    assert bc.BY_ID["trellis"].describe(bc.APPLE)["gated_repo"] == gated["trellis"]
+
+
 def test_pixal3d_setup_counts_the_background_remover_it_now_installs():
     sources = [w.source for w in bc.BY_ID["pixal3d"].weights]
     assert any("BiRefNet" in s for s in sources)

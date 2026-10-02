@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any time with `./lab`.
 - **Sign in to Hugging Face from Setup & Status.** Paste a Read token; the page checks it
   and shows, per gated model, whether your account has access, with a link to request it.
-  No terminal needed.
+  A backend's "this model is gated" warning goes away once you have access. No terminal
+  needed.
 - **Install Blender from Setup & Status on Linux.** Blender 4.2 LTS from blender.org, into
   `~/blender-lts`, no admin rights. Finish finds it.
 
