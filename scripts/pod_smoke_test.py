@@ -68,11 +68,23 @@ def terminate_after(hours: float, now: datetime | None = None) -> str:
     return (now + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def create_command(gpu: str, name: str, hours: float, cloud: str = "secure") -> list[str]:
-    """Community pods only get a reachable SSH port with a public IP, which --wait needs."""
+# Where the Hunyuan licence does not reach: the EU, the UK and South Korea.
+BLOCKED_COUNTRIES = frozenset({
+    "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+    "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+    "GB", "KR",
+})
+
+
+def create_command(gpu: str, name: str, hours: float, cloud: str = "secure",
+                   country: str = "US") -> list[str]:
+    """Community pods only get a reachable SSH port with a public IP, which --wait needs.
+
+    Pinned to one country because the run fetches Hunyuan weights, which are not licensed
+    in the EU, the UK or South Korea, and an unpinned pod can land in any of them."""
     community = ["--public-ip"] if cloud == "community" else []
     return ["runpodctl", "pod", "create", "--cloud-type", cloud.upper(), *community,
-            "--gpu-id", gpu,
+            "--country-code", country, "--gpu-id", gpu,
             "--image", IMAGE, "--name", name, "--container-disk-in-gb", "120",
             "--volume-in-gb", "60", "--ports", f"{PORT}/http,22/tcp",
             "--terminate-after", terminate_after(hours), "--wait", "-o", "json"]
@@ -199,12 +211,13 @@ class Pod:
         return out.stdout
 
 
-def rent(gpus: list[str], cap: float, hours: float, cloud: str = "secure") -> dict:
+def rent(gpus: list[str], cap: float, hours: float, cloud: str = "secure",
+         country: str = "US") -> dict:
     name = f"pod-smoke-{datetime.now():%m%d-%H%M}"
     for gpu in gpus:
-        print(f"Renting {gpu}...", flush=True)
+        print(f"Renting {gpu} in {country}...", flush=True)
         try:
-            pod = runpodctl(*create_command(gpu, name, hours, cloud)[1:])
+            pod = runpodctl(*create_command(gpu, name, hours, cloud, country)[1:])
         except RuntimeError as exc:
             print(f"  not available: {str(exc).splitlines()[0][:160]}")
             continue
@@ -415,6 +428,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cloud", choices=("secure", "community"), default="secure",
                         help="community is cheaper (a 3090 for ~$0.22/hr) but rarer with "
                              "a public IP")
+    parser.add_argument("--country", default="US", type=str.upper,
+                        help="where the pod may run (US). Hunyuan's weights are not licensed "
+                             "in the EU, the UK or South Korea, so never pick one of those")
     parser.add_argument("--max-price", type=float, default=0.80, help="$/hr cap (0.80)")
     parser.add_argument("--max-hours", type=float, default=3.0,
                         help="RunPod terminates the pod after this, whatever happens (3)")
@@ -426,6 +442,9 @@ def main(argv: list[str] | None = None) -> int:
     unknown = [r for r in args.routes if r not in ROUTES]
     if unknown:
         parser.error(f"unknown route: {', '.join(unknown)}")
+    if args.country in BLOCKED_COUNTRIES and "hunyuan-cuda" in args.routes:
+        parser.error(f"Hunyuan's weights are not licensed in {args.country}; pick another "
+                     "--country or drop hunyuan-cuda from --routes")
     if not args.image.is_file():
         parser.error(f"no input picture at {args.image}; pass --image")
     gpus = args.gpu or list(GPUS)
@@ -441,7 +460,7 @@ def main(argv: list[str] | None = None) -> int:
     out = REPO / "output" / f"pod-smoke-{datetime.now():%Y%m%d-%H%M}"
     out.mkdir(parents=True, exist_ok=True)
     started = time.time()
-    pod_json = rent(gpus, args.max_price, args.max_hours, args.cloud)
+    pod_json = rent(gpus, args.max_price, args.max_hours, args.cloud, args.country)
     results: list[dict] = []
     try:
         results = run_smoke(Pod(pod_json), args, token, out)

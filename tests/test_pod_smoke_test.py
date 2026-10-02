@@ -24,6 +24,26 @@ def test_a_community_pod_asks_for_a_public_ip():
     assert "--public-ip" not in smoke.create_command("NVIDIA A40", "x", 3)
 
 
+def test_the_pod_is_pinned_to_a_country_outside_the_hunyuan_ban():
+    command = smoke.create_command("NVIDIA GeForce RTX 3090", "x", 3, "community")
+    assert command[command.index("--country-code") + 1] == "US"
+    command = smoke.create_command("NVIDIA A40", "x", 3, country="CA")
+    assert command[command.index("--country-code") + 1] == "CA"
+
+
+@pytest.mark.parametrize("country", ["CZ", "se", "GB", "KR"])
+def test_a_banned_country_is_refused_before_anything_is_rented(country, capsys):
+    with pytest.raises(SystemExit):
+        smoke.main(["--country", country, "--yes"])
+    assert "not licensed" in capsys.readouterr().err
+
+
+def test_a_banned_country_is_fine_without_hunyuan():
+    # Refused for a different reason (no picture), which proves the country passed.
+    with pytest.raises(SystemExit):
+        smoke.main(["--country", "CZ", "--routes", "trellis", "--image", "/nope.png"])
+
+
 def test_terminate_after_is_hours_from_now_in_utc():
     now = datetime(2026, 10, 2, 22, 30, tzinfo=timezone.utc)
     assert smoke.terminate_after(3, now) == "2026-10-03T01:30:00Z"
