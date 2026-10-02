@@ -163,6 +163,31 @@ def test_a_failed_blender_install_says_why():
     assert smoke.setup_run_outcome([{"phase": "setup_done", "status": "done"}])[0] == "done"
 
 
+def test_only_a_409_that_says_wait_is_waited_out():
+    # 2026-10-02: Finish was refused for a missing Blender, and the script retried that
+    # for 10 minutes as if it were "busy".
+    assert smoke.worth_waiting(409, {"error": "setup is running; wait for it to finish"})
+    assert not smoke.worth_waiting(409, {"error": "Finish needs Blender 4.2 or newer"})
+    assert not smoke.worth_waiting(500, {"error": "wait"})
+
+
+def test_an_interrupt_keeps_the_steps_that_finished():
+    # 2026-10-02: Ctrl-C during Finish printed an empty table after 70 minutes of steps.
+    class FakePod:
+        def ssh(self, command, timeout=0):
+            if command.startswith("curl -sL -o /dev/null"):
+                return "100000000"  # the speed check: 100 MB/s
+            raise KeyboardInterrupt  # Ctrl-C during the install
+
+    class Args:
+        ref, routes = "x", []
+
+    results = []
+    with pytest.raises(KeyboardInterrupt):
+        smoke.run_smoke(FakePod(), Args(), "t", None, results)
+    assert [(r["step"], r["ok"]) for r in results] == [("download speed", True)]
+
+
 def test_multipart_carries_fields_and_files():
     body, ctype = smoke.multipart({"settings": json.dumps({"backend": "trellis"})},
                                   {"image": ("in.png", b"\x89PNG")})

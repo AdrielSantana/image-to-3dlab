@@ -184,6 +184,12 @@ def sse_events(text: str) -> list[dict]:
     return events
 
 
+def worth_waiting(status: int, payload: dict) -> bool:
+    """A 409 that says "wait" (another job or setup still running) passes; one that will
+    never pass, like "Finish needs Blender", must fail now rather than in 10 minutes."""
+    return status == 409 and "wait" in str(payload.get("error", "")).lower()
+
+
 def setup_run_outcome(events: list[dict]) -> tuple[str, str]:
     """(status, the last lines it printed) from a setup run's event stream. The stream
     ends with a `setup_done` event; one that never arrived is "unfinished"."""
@@ -250,7 +256,7 @@ def rent(gpus: list[str], cap: float, hours: float, cloud: str = "secure",
             delete(pod["id"])
             raise SystemExit(f"{gpu} bills ${price}/hr, over the ${cap:.2f} cap. Deleted.")
         print(f"  pod {pod['id']} at ${price:.2f}/hr")
-        return pod
+        return {**pod, "rented_gpu": gpu}
     raise SystemExit("No GPU from the list was available. Nothing is running.")
 
 
@@ -303,7 +309,7 @@ class Viewer:
             status, payload = self.json("POST", path, body=body, content_type=ctype)
             if status in (200, 202):
                 return payload
-            if status != 409 or time.time() > deadline:
+            if not worth_waiting(status, payload) or time.time() > deadline:
                 raise RuntimeError(f"POST {path}: HTTP {status} {payload}")
             time.sleep(10)
 
@@ -354,8 +360,8 @@ def step(results: list[dict], name: str, func, *args):
     return ok, detail
 
 
-def run_smoke(pod: Pod, args, token: str, out: Path) -> list[dict]:
-    results: list[dict] = []
+def run_smoke(pod: Pod, args, token: str, out: Path, results: list[dict]) -> list[dict]:
+    """Appends to `results` as it goes, so a Ctrl-C keeps the steps that finished."""
 
     def speed():
         speeds = [mb_per_s(pod.ssh(speed_command(url), 60)) for url in SPEED_URLS]
@@ -516,7 +522,7 @@ def main(argv: list[str] | None = None) -> int:
     pod_json = rent(gpus, args.max_price, args.max_hours, args.cloud, args.country)
     results: list[dict] = []
     try:
-        results = run_smoke(Pod(pod_json), args, token, out)
+        run_smoke(Pod(pod_json), args, token, out, results)
     except KeyboardInterrupt:
         print("\nInterrupted.")
     finally:
@@ -527,7 +533,8 @@ def main(argv: list[str] | None = None) -> int:
         hours = (time.time() - started) / 3600
         price = pod_price(pod_json) or 0.0
         summary = {"ref": args.ref, "gpu": pod_json.get("machine", {}).get("gpuDisplayName")
-                   or pod_json.get("gpuTypeId"), "price_per_hr": price,
+                   or pod_json.get("gpuTypeId") or pod_json.get("rented_gpu"),
+                   "price_per_hr": price,
                    "hours": round(hours, 2), "cost": round(hours * price, 2), "steps": results}
         (out / "summary.json").write_text(json.dumps(summary, indent=2))
         print(f"\n{'step':45} {'result':8} min")
