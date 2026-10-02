@@ -152,6 +152,21 @@ def lab_command(pod_id: str) -> str:
             "nohup ./lab > lab.log 2>&1 < /dev/null &")
 
 
+# Blender for the hand install, when the viewer's own install fails. Finish is what the
+# run is for; the installer is a means, so its failure is recorded and then got around.
+BLENDER_FALLBACK = "4.2.23"
+
+
+def blender_fallback_command(version: str = BLENDER_FALLBACK) -> str:
+    """Plain curl + tar into ~/blender-lts, where the lab looks. Exits non-zero on any
+    failure (pipefail), so a half-unpacked Blender is never taken for a working one."""
+    name = f"blender-{version}-linux-x64"
+    url = f"https://download.blender.org/release/Blender{version.rsplit('.', 1)[0]}/{name}.tar.xz"
+    return (f"set -eo pipefail; cd ~ && curl -fsSL {shlex.quote(url)} | tar -xJ "
+            f"&& rm -rf blender-lts && mv {name} blender-lts "
+            "&& ~/blender-lts/blender --background --version | head -1")
+
+
 def viewer_url(pod_id: str) -> str:
     return f"https://{pod_id}-{PORT}.proxy.runpod.net"
 
@@ -275,7 +290,8 @@ def delete(pod_id: str) -> None:
 
 # ---- the viewer API ------------------------------------------------------------------
 
-USER_AGENT = "Mozilla/5.0 (image-to-3dlab pod smoke test)"
+# Named honestly: Cloudflare refuses Python-urllib's anonymous default, not us.
+USER_AGENT = "image-to-3dlab pod smoke test (+https://github.com/Bingeljell/image-to-3dlab)"
 
 
 class Viewer:
@@ -284,7 +300,6 @@ class Viewer:
 
     def call(self, method: str, path: str, body: bytes | None = None,
              content_type: str = "application/json", timeout: float = 120) -> tuple[int, bytes]:
-        # Cloudflare, in front of RunPod's proxy, refuses Python-urllib's own User-Agent.
         request = urllib.request.Request(self.base + path, data=body, method=method,
                                          headers={"Content-Type": content_type,
                                                   "User-Agent": USER_AGENT})
@@ -433,7 +448,11 @@ def run_smoke(pod: Pod, args, token: str, out: Path, results: list[dict]) -> lis
 
     # Only Finish needs Blender, and only the Pixal3D model is finished.
     if "pixal3d" in args.routes:
-        step(results, "install Blender", blender)
+        ok, _ = step(results, "install Blender", blender)
+        if not ok:
+            # Recorded as failed above, so the run is NOT CLEAN; Finish still gets tested.
+            step(results, "install Blender by hand (fallback)",
+                 lambda: pod.ssh(f"bash -c {shlex.quote(blender_fallback_command())}", 900))
 
     image = args.image.read_bytes()
     models: dict[str, bytes] = {}

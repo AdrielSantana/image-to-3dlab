@@ -128,7 +128,7 @@ def test_the_viewer_calls_do_not_look_like_a_bot():
     status, _ = smoke.Viewer(f"http://127.0.0.1:{server.server_port}").call("GET", "/x")
     server.server_close()
     assert status == 200
-    assert seen["agent"] and "Python-urllib" not in seen["agent"]
+    assert seen["agent"].startswith("image-to-3dlab") and "Mozilla" not in seen["agent"]
 
 
 def test_a_network_blip_while_waiting_is_not_a_failed_step():
@@ -230,6 +230,66 @@ def test_a_one_route_run_without_pixal3d_skips_blender(tmp_path, monkeypatch):
     steps = [r["step"] for r in results]
     assert "install Blender" not in steps
     assert steps[-1] == "generate hunyuan-cuda" and all(r["ok"] for r in results)
+
+
+def test_the_blender_fallback_installs_where_the_lab_looks():
+    command = smoke.blender_fallback_command("4.2.23")
+    assert "download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz" in command
+    assert "mv blender-4.2.23-linux-x64 blender-lts" in command
+    assert command.startswith("set -eo pipefail")
+
+
+def test_a_failed_blender_install_still_tests_finish(tmp_path, monkeypatch):
+    # 2026-10-02: the viewer's Blender install failed, the pod was killed, and Finish was
+    # never tested. The run is about Finish; the install is a means.
+    ran = []
+
+    class FakePod:
+        id = "pod"
+
+        def ssh(self, command, timeout=0):
+            ran.append(command)
+            return "100000000"
+
+    class FakeViewer:
+        base = "https://pod"
+
+        def __init__(self, base):
+            pass
+
+        def call(self, method, path, body=None, content_type="", timeout=0):
+            if path.endswith("result.glb"):
+                return 200, b"glTF" + b"0" * 2048
+            if path.endswith("/events") and "finish" in path:
+                return 200, b'data: {"stages": ["photo", "compress"]}\n\n'
+            return 200, b"{}"
+
+        def json(self, method, path, payload=None, **kw):
+            if path == "/api/hf/sign-in":
+                return 200, {"signed_in": True, "repos": []}
+            return 200, {"blender": None, "blender_problem": "no Blender"}
+
+        def start(self, path, *a, **kw):
+            if "blender" in path:
+                raise RuntimeError("POST /api/blender/install: HTTP 403")
+            return {"job_id": "j"}
+
+        def wait(self, path, limit, poll=15):
+            return {"status": "done"}
+
+    class Args:
+        ref, routes = "x", ["pixal3d"]
+        image = tmp_path / "in.png"
+
+    Args.image.write_bytes(b"png")
+    monkeypatch.setattr(smoke, "Viewer", FakeViewer)
+    results = []
+    smoke.run_smoke(FakePod(), Args(), "t", tmp_path, results)
+    outcome = {r["step"]: r["ok"] for r in results}
+    assert outcome["install Blender"] is False
+    assert outcome["install Blender by hand (fallback)"] is True
+    assert outcome["Finish the Pixal3D model (Pixel Match)"] is True
+    assert any("blender-lts" in c for c in ran)
 
 
 def test_multipart_carries_fields_and_files():
