@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import http.server
 import json
+import os
+import signal
 import subprocess
 import threading
 import time
@@ -127,6 +129,26 @@ def test_the_viewer_calls_do_not_look_like_a_bot():
     server.server_close()
     assert status == 200
     assert seen["agent"] and "Python-urllib" not in seen["agent"]
+
+
+def test_a_network_blip_while_waiting_is_not_a_failed_step():
+    # A 90-minute run through Cloudflare sees dropped connections; only the deadline fails.
+    viewer = smoke.Viewer("http://127.0.0.1:9")  # nothing listens on the discard port
+    with pytest.raises(RuntimeError, match="still running"):
+        viewer.wait("/api/x/status", limit=0.3, poll=0.1)
+
+
+def test_closing_the_terminal_still_deletes_the_pod():
+    # SIGHUP/SIGTERM skip `finally` unless turned into KeyboardInterrupt.
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGHUP, signal.SIGTERM)}
+    try:
+        smoke.interrupt_on_hangup()
+        with pytest.raises(KeyboardInterrupt):
+            os.kill(os.getpid(), signal.SIGHUP)
+            time.sleep(1)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 def test_multipart_carries_fields_and_files():

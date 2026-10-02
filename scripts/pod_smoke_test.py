@@ -27,6 +27,7 @@ import getpass
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -298,11 +299,16 @@ class Viewer:
                 raise RuntimeError(f"POST {path}: HTTP {status} {payload}")
             time.sleep(10)
 
-    def wait(self, path: str, limit: float) -> dict:
+    def wait(self, path: str, limit: float, poll: float = 15) -> dict:
+        """Poll until the job ends. A dropped connection is just a missed poll: over a
+        90-minute run through Cloudflare, one blip must not fail a 30-minute setup."""
         deadline = time.time() + limit
         last = ""
         while time.time() < deadline:
-            status, payload = self.json("GET", path)
+            try:
+                status, payload = self.json("GET", path)
+            except OSError:
+                status, payload = 0, {}
             if status == 200:
                 event = payload.get("last_event") or {}
                 note = str(event.get("message") or event.get("phase") or "")[:100]
@@ -311,8 +317,17 @@ class Viewer:
                     last = note
                 if payload.get("status") in TERMINAL:
                     return payload
-            time.sleep(15)
+            time.sleep(poll)
         raise RuntimeError(f"{path} still running after {limit / 60:.0f} min")
+
+
+def interrupt_on_hangup() -> None:
+    """Closing the terminal (SIGHUP) or a kill (SIGTERM) would skip `finally` and leave
+    the pod billing until RunPod's own deadline. As Ctrl-C, they still delete it."""
+    def handler(signum, frame):
+        raise KeyboardInterrupt
+    for sig in (signal.SIGHUP, signal.SIGTERM):
+        signal.signal(sig, handler)
 
 
 def step(results: list[dict], name: str, func, *args):
@@ -486,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
     out = REPO / "output" / f"pod-smoke-{datetime.now():%Y%m%d-%H%M}"
     out.mkdir(parents=True, exist_ok=True)
     started = time.time()
+    interrupt_on_hangup()
     pod_json = rent(gpus, args.max_price, args.max_hours, args.cloud, args.country)
     results: list[dict] = []
     try:
