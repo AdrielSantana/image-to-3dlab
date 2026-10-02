@@ -6,12 +6,14 @@ machine:
 
 - **Apple Silicon:** cloned and compiled from source, because Metal kernels need the
   local Xcode toolchain. That needs full Xcode, not just the Command Line Tools.
-- **Linux with an NVIDIA card and the CUDA toolkit:** compiled locally for this card,
-  once, in a few minutes. On a 4090 that ran about twice as fast as the prebuilt.
-- **Otherwise, Linux or Windows with an NVIDIA card:** upstream's prebuilt CUDA 12 build,
-  runtime included, when the driver is new enough for it (575+, i.e. CUDA 12.9).
-  `--prebuilt` picks it even when a compiler is present. With neither, it says which
-  driver to install and stops.
+- **Linux or Windows with an NVIDIA card:** upstream's prebuilt CUDA 12 build, runtime
+  included, when the driver is new enough for it (575+, i.e. CUDA 12.9). About a minute,
+  no compiler. It runs upstream's 12 steps (our 8-step patch needs a source build); on
+  NVIDIA that costs seconds, while a compile costs 15 minutes on a fast pod and far more
+  on an 8-CPU machine.
+- **Linux, driver too old for the prebuilt, CUDA toolkit present:** compiled locally for
+  this card instead. `--compile` asks for that even when the prebuilt would run. With
+  neither, it says which driver to install and stops.
 
 The **weights** are the single-view Q8_0 set plus the BiRefNet matting model, 8.4 GB, and
 BiRefNet-lite (224 MB), the background remover Pixal3D's cut-out uses. Without lite the
@@ -54,10 +56,17 @@ UPSTREAM = "https://github.com/raven38/pixal3d.cpp.git"
 WEIGHTS_REPO = "raven38/pixal3d-sv-q8_0-v1"
 MATTE_REPO = "ilintar/trellis2-gguf"
 WEIGHTS_GB = 8.4
+# Exact Hugging Face revisions, so a fresh install gets the files that were tested
+# (fresh NVIDIA pod, 2026-10-01), not whatever was pushed since.
+WEIGHTS_REVISION = "46d399ac986f45a0d7f5b1ca5058614d8729a131"
+MATTE_REVISION = "a57397bd3d351599d9729fc144b3f87c3f87d65b"
 
 # Pinned, not "latest": every upstream release so far is a pre-release, and a prebuilt
 # that has been run end to end is worth more than a newer one that has not.
 PREBUILT_RELEASE = "v0.10.1-desktop-alpha"
+# The commit that tag points at. A tag can be moved; a commit cannot, so the CUDA source
+# build fetches this.
+PREBUILT_COMMIT = "1f432fd3f0689c504fa1e9b15b038c33584174d1"
 RELEASE_API = "https://api.github.com/repos/raven38/pixal3d.cpp/releases/tags/{tag}"
 
 # CUDA 12 rather than upstream's unversioned CUDA build (which is newer): CUDA 12 runs on
@@ -85,40 +94,42 @@ nvcc_cuda = host.nvcc_cuda_version
 
 def build_kind(key: str | None, cuda: tuple[int, int] | None, nvcc: str | None,
                nvcc_cuda: tuple[int, int] | None = None,
-               prefer_prebuilt: bool = False) -> str | None:
+               prefer_compile: bool = False) -> str | None:
     """`prebuilt`, `cuda-source`, `metal-source`, or None when nothing will run here.
 
-    A local compile beats the prebuilt when it can run: the prebuilt took 390 s a model on
-    a 4090 where a compile for that card took about 190 s. It cannot run when the toolkit
-    is newer than the driver, and an unreadable toolkit version is tried, not refused.
+    The prebuilt wins on NVIDIA whenever the driver can run it: a minute to install, where
+    a compile took 15 minutes on a 9-vCPU A40 pod (2026-10-02). The compile is faster per
+    model (about 190 s against 390 s on a 4090) but that was never worth the wait. It is
+    the fallback for an old driver, and cannot run when the toolkit is newer than the
+    driver; an unreadable toolkit version is tried, not refused.
     """
     if key == "macos-arm64":
         return "metal-source"
     prebuilt_runs = key in PREBUILTS and cuda is not None and cuda >= PREBUILT_MIN_CUDA
-    if prefer_prebuilt and prebuilt_runs:
-        return "prebuilt"
     # A Windows source build is a Visual Studio project of its own; not offered.
     compile_runs = (key == "linux-nvidia" and bool(nvcc)
                     and (nvcc_cuda is None or cuda is None or nvcc_cuda <= cuda))
-    if compile_runs:
+    if prefer_compile and compile_runs:
         return "cuda-source"
-    return "prebuilt" if prebuilt_runs else None
+    if prebuilt_runs:
+        return "prebuilt"
+    return "cuda-source" if compile_runs else None
 
 
-def current_kind(key: str | None, prefer_prebuilt: bool = False) -> str | None:
+def current_kind(key: str | None, prefer_compile: bool = False) -> str | None:
     nvcc = find_nvcc() if key == "linux-nvidia" else None
     return build_kind(key, driver_cuda() if key in PREBUILTS else None, nvcc,
-                      nvcc_cuda(nvcc) if nvcc else None, prefer_prebuilt)
+                      nvcc_cuda(nvcc) if nvcc else None, prefer_compile)
 
 
 def route_and_size(key: str | None,
-                   prefer_prebuilt: bool = False) -> tuple[str, str] | None:
-    kind = current_kind(key, prefer_prebuilt)
+                   prefer_compile: bool = False) -> tuple[str, str] | None:
+    kind = current_kind(key, prefer_compile)
     if kind == "metal-source":
         return "built from source with Metal", "compiled locally, needs full Xcode"
     if kind == "cuda-source":
         return ("compiled locally with CUDA for this card",
-                "a few minutes of compiling, once, with the CUDA toolkit")
+                "10+ minutes of compiling, once, with the CUDA toolkit")
     if kind == "prebuilt":
         name, size = PREBUILTS[key]
         return f"CUDA 12 prebuilt ({name}, {PREBUILT_RELEASE})", size
@@ -142,9 +153,9 @@ def no_route_message(key: str | None) -> str:
 
 
 def announcement(build: bool = True, weights: bool = True,
-                 prefer_prebuilt: bool = False) -> str:
+                 prefer_compile: bool = False) -> str:
     """Exactly what is about to be fetched, before anything is."""
-    found = route_and_size(target(), prefer_prebuilt)
+    found = route_and_size(target(), prefer_compile)
     route = found[0] if found else "none for this machine"
     lines = ["", "About to install:", "", "  backend: Pixal3D (raven38/pixal3d.cpp)",
              f"  route:   {route}"]
@@ -277,6 +288,12 @@ def apply_steps_patch(runner=subprocess.run) -> bool:
     return True
 
 
+def source_ref(kind: str) -> str:
+    """The Mac build has always tracked upstream's default branch; the CUDA build pins the
+    commit the prebuilts come from, which is the one tested on NVIDIA."""
+    return "HEAD" if kind == "metal-source" else PREBUILT_COMMIT
+
+
 def build_from_source(kind: str) -> Path:
     """Clone and compile: Metal on a Mac, CUDA on Linux with the toolkit installed."""
     needed = ("cmake", "ninja", "git") if kind == "metal-source" else ("cmake", "git")
@@ -294,9 +311,7 @@ def build_from_source(kind: str) -> Path:
             "xcodebuild -downloadComponent MetalToolchain\n"
             "then re-run this script with DEVELOPER_DIR set."
         )
-    # The Mac build has always tracked upstream's default branch; the CUDA build pins the
-    # same release the prebuilts come from, which is the one tested on NVIDIA.
-    fetch_source("HEAD" if kind == "metal-source" else PREBUILT_RELEASE)
+    fetch_source(source_ref(kind))
     apply_steps_patch()
     flags = cmake_flags(kind, find_nvcc(), host.compute_capability())
     generator = ["-G", "Ninja"] if shutil.which("ninja") else []
@@ -333,8 +348,10 @@ def install_weights(models: Path = MODELS) -> None:
         ) from exc
     models.mkdir(parents=True, exist_ok=True)
     print(f"\nFetching {WEIGHTS_REPO} ({WEIGHTS_GB:.1f} GB, resumable)...", flush=True)
-    snapshot_download(WEIGHTS_REPO, local_dir=models, max_workers=2)
-    hf_hub_download(MATTE_REPO, "q8/birefnet.gguf", local_dir=models)
+    snapshot_download(WEIGHTS_REPO, revision=WEIGHTS_REVISION, local_dir=models,
+                      max_workers=2)
+    hf_hub_download(MATTE_REPO, "q8/birefnet.gguf", revision=MATTE_REVISION,
+                    local_dir=models)
     flatten_matte(models)
     print(f"  weights in {models}")
     install_background_remover()
@@ -342,14 +359,9 @@ def install_weights(models: Path = MODELS) -> None:
 
 def install_background_remover(target: Path | None = None, download=None) -> None:
     """BiRefNet-lite, unless it is already there. Same file bootstrap_matte.py installs."""
-    target = target or matte.model_file(matte.LITE_MODEL)
-    if target.is_file():
-        return
-    if download is None:
-        from bootstrap_matte import download
-    print(f"\nFetching BiRefNet-lite ({matte.LITE_BYTES / 1e6:.0f} MB)...", flush=True)
-    download(target)
-    print(f"  background remover in {target}")
+    from bootstrap_matte import install_if_missing
+
+    install_if_missing(target, download)
 
 
 def rebuild_existing(runner=subprocess.run) -> Path:
@@ -394,20 +406,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rebuild", action="store_true",
                         help="Recompile an existing source build so it picks up this "
                              "repo's patches (e.g. the 8-step default). No downloads.")
-    parser.add_argument("--prebuilt", action="store_true",
-                        help="Use upstream's prebuilt CUDA build even when nvcc could "
-                             "compile a faster one. For timing the two.")
+    parser.add_argument("--compile", action="store_true",
+                        help="Compile for this card with nvcc (Linux) even when the "
+                             "prebuilt would run: ~2x faster per model, 15+ minutes once.")
     args = parser.parse_args(argv)
 
     key = target()
-    kind = current_kind(key, args.prebuilt)
+    kind = current_kind(key, args.compile)
     if kind is None:
         print(no_route_message(key))
         return 1
 
     build = not args.weights_only
     weights = not args.build_only
-    print(announcement(build=build, weights=weights, prefer_prebuilt=args.prebuilt))
+    print(announcement(build=build, weights=weights, prefer_compile=args.compile))
 
     if not args.yes:
         # Non-interactive without --yes must not silently proceed, and must not hang

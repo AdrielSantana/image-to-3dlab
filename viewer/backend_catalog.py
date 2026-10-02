@@ -45,6 +45,10 @@ GB = 1024 ** 3
 # Mac?" test, so a route gains NVIDIA support by adding a string to its `runs_on`. The
 # detection itself lives in `image_to_3dlab.host`, shared with the bootstraps.
 PLATFORM_LABELS = {APPLE: "an Apple Silicon Mac", NVIDIA: "an NVIDIA GPU"}
+# Setup page tabs, in order. AMD has a tab before it has a backend, so its users find out
+# it is coming instead of reading NVIDIA instructions.
+TAB_LABELS = {APPLE: "Mac (Apple Silicon)", NVIDIA: "NVIDIA (Linux)", "amd": "AMD"}
+VIEW_PLATFORMS = (APPLE, NVIDIA)
 
 
 def venv_python(project: Path) -> Path:
@@ -105,6 +109,10 @@ class WeightSet:
         }
 
 
+HOST_OVERRIDABLE = frozenset({"label", "tradeoff", "caveat", "setup_fetches_weights",
+                              "setup_minutes"})
+
+
 @dataclass(frozen=True)
 class Backend:
     """One generation route, as the onboarding table presents it."""
@@ -120,6 +128,9 @@ class Backend:
     rank: int | None = None
     setup_minutes: int | None = None
     caveat: str | None = None
+    # The gated Hugging Face repo the caveat warns about, if that is what it warns about.
+    # The Setup page drops the caveat once the sign-in check says the account has access.
+    gated_repo: str | None = None
     # Whether running this backend's setup actually fetches the weights. TRELLIS's
     # bootstrap does not: it clones, patches and builds the Metal port, and the weights
     # arrive lazily on the first generation run. The distinction changes what the
@@ -148,63 +159,114 @@ class Backend:
     # NVIDIA-first upstream; only our wrappers are Apple-only. Without this, a Linux user
     # read "needs Apple Silicon" as if the model itself could not run on their card.
     upstream: tuple[str, str] | None = None
+    # A route that installs differently per machine (TRELLIS.2: the Metal port on a Mac,
+    # Microsoft's own code on NVIDIA) overrides `install` and `build_probes` per host here.
+    # Hosts not listed use the plain fields.
+    install_by_host: dict[str, str] = field(default_factory=dict)
+    build_probes_by_host: dict[str, tuple[Path, ...]] = field(default_factory=dict)
+    # What the card says, per machine, where one route is really different code: TRELLIS
+    # is the Metal port on a Mac and Microsoft's own code on NVIDIA. Keys: HOST_OVERRIDABLE.
+    overrides_by_host: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Operating systems a listed machine type still cannot use, as (host, os family):
+    # TRELLIS.2 runs on NVIDIA under Linux, but its CUDA build is not set up for Windows.
+    excludes: tuple[tuple[str, str], ...] = ()
+    # A separate route in this catalogue that does the same job on NVIDIA (the MLX Hunyuan
+    # ports -> Tencent's own Hunyuan3D-2.1). Named in the note an NVIDIA machine sees.
+    nvidia_route: str | None = None
 
     @property
     def bytes_expected(self) -> int:
         return sum(w.bytes_expected for w in self.weights)
 
+    def install_for(self, host: str | None = None) -> str:
+        return self.install_by_host.get(host or host_platform(), self.install)
+
+    def probes_for(self, host: str | None = None) -> tuple[Path, ...]:
+        return self.build_probes_by_host.get(host or host_platform(), self.build_probes)
+
+    def built_on(self, host: str | None = None) -> bool:
+        """True when nothing is declared, so a weights-only backend is never 'unbuilt'."""
+        return all(p.exists() for p in self.probes_for(host))
+
     @property
     def build_present(self) -> bool:
-        """True when nothing is declared, so a weights-only backend is never 'unbuilt'."""
-        return all(p.exists() for p in self.build_probes)
+        return self.built_on()
 
-    def runs_here(self, host: str | None = None) -> bool:
-        return (host or host_platform()) in self.runs_on
+    def excluded_os(self, host: str | None = None, family: str | None = None) -> str | None:
+        """The OS family that rules this machine out, or None."""
+        family = family or _host.os_family()
+        return family if ((host or host_platform()), family) in self.excludes else None
 
-    def _platform_note(self) -> str:
-        if self.upstream:
+    def runs_here(self, host: str | None = None, family: str | None = None) -> bool:
+        host = host or host_platform()
+        return host in self.runs_on and self.excluded_os(host, family) is None
+
+    def _platform_note(self, host: str | None = None, family: str | None = None) -> str:
+        excluded = self.excluded_os(host, family)
+        if excluded:
+            return (f"{self.label} is not supported on {excluded.capitalize()} yet. "
+                    f"On an NVIDIA card it runs under Linux.")
+        # The "use the official version" advice is only true while this lab cannot run it
+        # on NVIDIA itself; once a route lists NVIDIA, the plain note is the honest one.
+        twin = BY_ID.get(self.nvidia_route) if self.nvidia_route else None
+        if twin is not None and (host or host_platform()) == NVIDIA:
+            return (f"This lab runs the Apple Silicon port here. On an NVIDIA machine, use "
+                    f"{twin.label} instead: {self.upstream[0] if self.upstream else 'it'} "
+                    f"with the vendor's own code, set up from this page.")
+        if self.upstream and NVIDIA not in self.runs_on:
             return (f"This lab runs the Apple Silicon port. {self.upstream[0]} itself is "
                     f"built for NVIDIA: on an NVIDIA machine, use the official version "
                     f"for now. Built into this lab later.")
         return (f"Needs {runs_on_phrase(self)}. Setting it up on this machine would "
                 f"download gigabytes and then fail, so the button is off.")
 
+    def setup_fetches_on(self, host: str | None = None) -> bool:
+        """Whether this machine's setup downloads the weights (vs. the first run doing so)."""
+        said = self.overrides_by_host.get(host or host_platform(), {})
+        return said.get("setup_fetches_weights", self.setup_fetches_weights)
+
     def describe(self, host: str | None = None) -> dict[str, Any]:
         weights = [w.describe() for w in self.weights]
         present = sum(w["bytes_present"] for w in weights)
-        built = self.build_present
+        built = self.built_on(host)
         supported = self.runs_here(host)
+        said = self.overrides_by_host.get(host or host_platform(), {})
+        fetches = self.setup_fetches_on(host)
         return {
             "build_present": built,
             "supported_here": supported,
             "requires": runs_on_phrase(self),
             # Said once, in words, so the screen can explain instead of a button failing.
-            "platform_note": None if supported else self._platform_note(),
+            "platform_note": None if supported else self._platform_note(host),
             "upstream": ({"label": self.upstream[0], "url": self.upstream[1]}
                          if self.upstream else None),
             "id": self.id,
-            "label": self.label,
+            "label": said.get("label", self.label),
             "kind": self.kind,
             "rank": self.rank,
             "recommended": self.rank == 1,
             "best_for": self.best_for,
-            "tradeoff": self.tradeoff,
+            "tradeoff": said.get("tradeoff", self.tradeoff),
             "license": {"name": self.license_name, "url": self.license_url},
-            "caveat": self.caveat,
-            "install": self.install,
-            "setup_minutes": self.setup_minutes,
-            "setup_fetches_weights": self.setup_fetches_weights,
+            "caveat": said.get("caveat", self.caveat),
+            "gated_repo": self.gated_repo,
+            "install": self.install_for(host),
+            "setup_minutes": said.get("setup_minutes", self.setup_minutes),
+            "setup_fetches_weights": fetches,
             "extra_steps": list(self.extra_steps),
             "weights": weights,
             "bytes_expected": self.bytes_expected,
             "human_expected": human_bytes(self.bytes_expected),
             "bytes_present": present,
             "human_present": human_bytes(present),
+            # What Remove would free: files other routes share are kept (see is_shared).
+            "bytes_removable": sum(d["bytes_present"] for d, w in zip(weights, self.weights)
+                                   if not is_shared(self, w)),
             "automated_setup": self.automated_setup,
             "state": "unsupported" if not supported else
-                     _state(weights, built, self.setup_fetches_weights),
+                     _state(weights, built, fetches),
             "action": "none" if not supported else
-                      _action(weights, built, self.setup_fetches_weights,
+                      _action(weights, built, fetches,
                               self.automated_setup),
             "percent_present": _percent(present, self.bytes_expected),
         }
@@ -220,9 +282,14 @@ CATALOG: tuple[Backend, ...] = (
         best_for="Best results we have. One pass, no repaint needed.",
         tradeoff=(
             "On a Mac it compiles locally and needs full Xcode for the Metal compiler. "
-            "On NVIDIA Linux with the CUDA toolkit it compiles for your card, which runs "
-            "about twice as fast; otherwise it downloads a prebuilt CUDA build."
+            "On NVIDIA it downloads a ready-made CUDA build; no compiling."
         ),
+        overrides_by_host={
+            APPLE: {"tradeoff": "Compiles on your Mac, and needs full Xcode for the Metal "
+                                "compiler."},
+            NVIDIA: {"tradeoff": "Downloads a ready-made CUDA build, no compiling "
+                                 "(driver 575 or newer)."},
+        },
         license_name="MIT (code + flow weights); DINOv3 License (bundled encoder)",
         license_url="https://huggingface.co/raven38/pixal3d-sv-q8_0-v1",
         install="scripts/bootstrap_pixal3d.py",
@@ -255,6 +322,7 @@ CATALOG: tuple[Backend, ...] = (
         license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
         install="uv sync + hunyuan_mlx/download_weights.py",
         upstream=("Hunyuan3D-2.1", "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1"),
+        nvidia_route="hunyuan-cuda",
         setup_minutes=25,
         build_probes=(venv_python(REPO / "hunyuan_mlx" / "shape"),
                       venv_python(REPO / "hunyuan_mlx" / "paint")),
@@ -271,6 +339,45 @@ CATALOG: tuple[Backend, ...] = (
         ),
     ),
     Backend(
+        id="hunyuan-cuda",
+        label="Hunyuan3D-2.1 (NVIDIA)",
+        rank=2,
+        best_for="Hunyuan on an NVIDIA card: Tencent's own shape and PBR paint, one run.",
+        tradeoff=(
+            "Linux only, and paint needs about 21 GB of GPU memory: a 24 GB card or bigger. "
+            "Compiles its paint rasterizer for your card on setup."
+        ),
+        license_name="Tencent Hunyuan Community License (code + weights)",
+        license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
+        install="scripts/bootstrap_hunyuan_cuda.py",
+        runs_on=(NVIDIA,),
+        excludes=((NVIDIA, "windows"),),
+        setup_minutes=30,
+        build_probes=(REPO / "vendor" / "hunyuan-cuda" / ".i2l-build-complete",),
+        caveat=(
+            "The Hunyuan weights are not licensed for use in the EU, the UK or South Korea. "
+            "Check the licence before downloading."
+        ),
+        weights=(
+            WeightSet("Hunyuan3D-2.1 shape + VAE", "tencent/Hunyuan3D-2.1", int(8.03 * GB),
+                      REPO / "vendor" / "hunyuan-cuda" / "models" / "tencent" / "Hunyuan3D-2.1"),
+            WeightSet("Hunyuan3D-2.1 PBR paint", "tencent/Hunyuan3D-2.1", int(6.89 * GB),
+                      HF_HUB_DIR / "models--tencent--Hunyuan3D-2.1"),
+            WeightSet("DINOv2-giant image encoder", "facebook/dinov2-giant", int(4.55 * GB),
+                      HF_HUB_DIR / "models--facebook--dinov2-giant",
+                      note="The paint model reads the picture with it. Upstream fetches it "
+                           "unannounced on the first run; here it is fetched at setup."),
+            WeightSet("RealESRGAN x4plus upscaler",
+                      "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/"
+                      "RealESRGAN_x4plus.pth",
+                      int(0.067 * GB),
+                      REPO / "vendor" / "hunyuan-cuda" / "ckpt" / "RealESRGAN_x4plus.pth"),
+            WeightSet("BiRefNet-lite background remover", _matte.LITE_URL, _matte.LITE_BYTES,
+                      _matte.model_file(_matte.LITE_MODEL),
+                      note="Cuts out pictures without alpha. Shared with the other routes."),
+        ),
+    ),
+    Backend(
         id="hunyuan-mlx",
         label="Hunyuan3D-MLX (dgrauet shape + Xiong paint)",
         rank=4,
@@ -283,6 +390,7 @@ CATALOG: tuple[Backend, ...] = (
         license_url="https://huggingface.co/tencent/Hunyuan3D-2.1",
         install="Manual: clone dgrauet's port into vendor/hunyuan-mlx, then uv sync",
         upstream=("Hunyuan3D-2.1", "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1"),
+        nvidia_route="hunyuan-cuda",
         automated_setup=False,
         setup_minutes=40,
         build_probes=(REPO / "vendor" / "hunyuan-mlx" / ".venv" / "bin" / "python",
@@ -315,13 +423,16 @@ CATALOG: tuple[Backend, ...] = (
         license_name="Stability AI Community License (non-commercial under $1M revenue)",
         license_url="https://huggingface.co/stabilityai/stable-fast-3d",
         install="scripts/bootstrap_sf3d.py",
-        runs_on=(APPLE, NVIDIA),
+        # Not NVIDIA: SF3D's pins (old huggingface-hub, rembg) broke the lab's shared
+        # environment there, and TRELLIS.2, Hunyuan3D-2.1 and Pixal3D beat it anyway.
+        runs_on=(APPLE,),
         setup_minutes=20,
         build_probes=(REPO / "vendor" / "stable-fast-3d" / "sf3d" / "system.py",),
         caveat=(
             "The SF3D weights are gated: accept Stability's licence on Hugging Face and "
-            "run `hf auth login` before setting it up."
+            "sign in under Hugging Face sign-in at the top of this page before setting it up."
         ),
+        gated_repo="stabilityai/stable-fast-3d",
         weights=(
             WeightSet("Stable Fast 3D", "stabilityai/stable-fast-3d", int(3.75 * GB),
                       HF_HUB_DIR / "models--stabilityai--stable-fast-3d"),
@@ -344,17 +455,40 @@ CATALOG: tuple[Backend, ...] = (
         license_url="https://huggingface.co/microsoft/TRELLIS.2-4B",
         install="viewer",
         upstream=("TRELLIS.2", "https://github.com/microsoft/TRELLIS.2"),
+        # Mac: the Metal port. Linux + NVIDIA: Microsoft's own code, built for CUDA.
+        # Windows is not supported for TRELLIS.2 yet (the bootstrap refuses it).
+        runs_on=(APPLE, NVIDIA),
+        excludes=((NVIDIA, "windows"),),
+        install_by_host={NVIDIA: "scripts/bootstrap_trellis_cuda.py"},
+        build_probes_by_host={
+            NVIDIA: (REPO / "vendor" / "trellis-cuda" / ".i2l-build-complete",),
+        },
         caveat=(
             "Its DINOv3 image encoder is gated: request access to "
             "facebook/dinov3-vitl16-pretrain-lvd1689m on Hugging Face (Meta approves by "
-            "hand) and run `hf auth login` before setting it up, or the first run stops "
+            "hand) and sign in under Hugging Face sign-in at the top of this page, or the first run stops "
             "after the 14 GB download."
         ),
+        gated_repo="facebook/dinov3-vitl16-pretrain-lvd1689m",
         setup_minutes=60,
         setup_fetches_weights=False,
+        overrides_by_host={NVIDIA: {
+            "label": "TRELLIS.2 (NVIDIA)",
+            "tradeoff": ("Microsoft's own code, built for your card. Its material model "
+                         "bleaches flat or vector-style illustrations. Prefer photographs "
+                         "or softly lit 3D-style references."),
+            "caveat": ("Its DINOv3 image encoder is gated: request access to "
+                       "facebook/dinov3-vitl16-pretrain-lvd1689m on Hugging Face (Meta "
+                       "approves by hand) and sign in under Hugging Face sign-in at the top of this page. Setup checks "
+                       "access before downloading anything."),
+            # The CUDA bootstrap fetches the weights once the build is done.
+            "setup_fetches_weights": True,
+        }},
         build_probes=(venv_python(REPO / "vendor" / "trellis-space-mac"),),
         weights=(
-            WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(14.0 * GB),
+            # Measured on a real download, 2026-10-01: 15.1 GiB (14.0 undercounted by a
+            # gigabyte, so the card read "16.4 GB of 15.3 GB").
+            WeightSet("TRELLIS.2-4B", "microsoft/TRELLIS.2-4B", int(15.15 * GB),
                       HF_HUB_DIR / "models--microsoft--TRELLIS.2-4B"),
             WeightSet("TRELLIS image-large decoder", "microsoft/TRELLIS-image-large",
                       148 * 1024 ** 2,
@@ -367,6 +501,10 @@ CATALOG: tuple[Backend, ...] = (
                       92 * 1024 ** 2,
                       HF_HUB_DIR / "models--wkcn--TinyCLIP-ViT-8M-16-Text-3M-YFCC15M",
                       note="Advisory only. Generation works without it."),
+            WeightSet("BiRefNet-lite background remover", _matte.LITE_URL, _matte.LITE_BYTES,
+                      _matte.model_file(_matte.LITE_MODEL),
+                      note="Cuts out pictures without alpha on NVIDIA. Fetched by the "
+                           "NVIDIA setup; the Mac port wants pre-masked images."),
         ),
     ),
     Backend(
@@ -424,6 +562,18 @@ CATALOG: tuple[Backend, ...] = (
 
 BY_ID = {backend.id: backend for backend in CATALOG}
 
+def is_shared(backend: "Backend", weight: "WeightSet") -> bool:
+    """Whether another route also uses this file, so removing `backend` must keep it.
+
+    The background remover is listed by every route that cuts pictures out; Pixal3D's
+    Remove once offered to delete it from under TRELLIS and Hunyuan. Its own card (a
+    tool) can still remove it: that is the explicit choice."""
+    if backend.kind == "tool":
+        return False
+    return any(other.id != backend.id and any(w.path == weight.path for w in other.weights)
+               for other in BY_ID.values())
+
+
 # The Generate tab spells one route differently from the catalogue, and renaming either
 # would break a saved setting or a download key for no gain. One alias costs a line; two
 # half-synchronised id namespaces cost an afternoon, which is what they already cost once.
@@ -463,7 +613,7 @@ def readiness(backend_id: str, host: str | None = None) -> dict[str, Any] | None
     if not supported:
         hint = described["platform_note"]
     elif not built:
-        hint = f"{backend.label} is not installed — run: {backend.install}"
+        hint = f"{backend.label} is not installed — run: {backend.install_for(host)}"
     return {
         "schema_version": 1,
         "backend": backend.id,
@@ -503,6 +653,12 @@ def catalog_status(host: str | None = None) -> dict[str, Any]:
                                  for b in CATALOG for p in b.runs_on}),
         },
         "backends": backends,
+        # The Setup page's tabs. Each machine family sees only the backends that run on it,
+        # worded for it; the tab for this machine is the only one with buttons.
+        "platforms": [{"id": p, "label": TAB_LABELS[p], "coming": p not in VIEW_PLATFORMS}
+                      for p in TAB_LABELS],
+        "views": {p: [b.describe(p) for b in sorted(CATALOG, key=_rank_key) if p in b.runs_on]
+                  for p in VIEW_PLATFORMS},
     }
 
 

@@ -76,3 +76,18 @@ def test_edge_cleaning_reaches_only_so_far():
 def test_the_lite_download_is_pinned_to_a_known_file():
     assert mt.LITE_URL.endswith("BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx")
     assert mt.LITE_BYTES == 224_005_088 and len(mt.LITE_MD5) == 32
+
+
+def test_every_rembg_looks_in_the_same_model_folder(tmp_path, monkeypatch):
+    # Seen on an NVIDIA pod: TRELLIS's newer rembg kept models in ~/.rembg/models, so it
+    # could not see BiRefNet-lite in ~/.u2net and quietly fetched u2net mid-generation.
+    import sys
+    import types
+
+    seen = {}
+    fake = types.SimpleNamespace(new_session=lambda name: seen.setdefault("home", __import__("os").environ.get("U2NET_HOME")))
+    monkeypatch.setitem(sys.modules, "rembg", fake)
+    monkeypatch.delenv("U2NET_HOME", raising=False)
+    monkeypatch.setattr(mt, "model_home", lambda: tmp_path)
+    mt.new_session("u2net")
+    assert seen["home"] == str(tmp_path)

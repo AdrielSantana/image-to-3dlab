@@ -9,7 +9,7 @@ requests>=2.32
 rembg==2.0.69
 numpy<2
 onnxruntime>=1.18
-huggingface-hub>=0.23
+huggingface-hub>=0.24  # auth_check: the Setup page asks whether gated models are reachable
 trimesh>=4.0
 fast_simplification>=0.1.7
 rtree>=1.2

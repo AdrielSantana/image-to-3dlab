@@ -97,3 +97,13 @@ def version_problem(version: tuple[int, int] | None) -> str | None:
         return (f"Blender {version[0]}.{version[1]} is older than {MIN_VERSION[0]}."
                 f"{MIN_VERSION[1]}; Finish may fail. Get a newer one from {DOWNLOAD_URL}")
     return None
+
+
+def can_install(system: str | None = None, machine: str | None = None) -> bool:
+    """Whether scripts/bootstrap_blender.py can install Blender here: blender.org's Linux
+    x86_64 tarball, unpacked in the home folder. Elsewhere Blender is an app install."""
+    import platform
+
+    system = system or platform.system()
+    machine = machine or platform.machine()
+    return system == "Linux" and machine in {"x86_64", "AMD64"}

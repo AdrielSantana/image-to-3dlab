@@ -41,11 +41,22 @@ from rig_api import (
     run_job as run_rig_job,
     status_payload as rig_status_payload,
 )
-from backend_catalog import _dir_state, catalog_status, readiness as catalog_readiness
+import backend_catalog  # noqa: E402
+import hf_api  # noqa: E402
+from backend_catalog import (
+    APPLE,
+    NVIDIA,
+    _dir_state,
+    catalog_status,
+    host_platform,
+    readiness as catalog_readiness,
+)
 from welcome_api import payload as welcome_payload
 from update_api import check as update_check
 from download_api import (
     DOWNLOADS,
+    active as download_active,
+    running_payload,
     cancel as cancel_download,
     remove as remove_weights,
     rebuild_reason,
@@ -70,8 +81,23 @@ TRELLIS_VENDOR = REPO / "vendor" / "trellis-space-mac"
 # we know the vendored checkout can actually serve SPARSE_ATTN_BACKEND=mlx.
 MLX_DISPATCH_FILE = TRELLIS_VENDOR / "TRELLIS.2" / "trellis2" / "modules" / "sparse" / "attention" / "full_attn.py"
 MLX_DISPATCH_MARKER = "config.ATTN == 'mlx'"
+# TRELLIS.2 on Linux + NVIDIA: Microsoft's own checkout, built by
+# scripts/bootstrap_trellis_cuda.py. The Mac constants above are untouched.
+TRELLIS_CUDA_VENDOR = REPO / "vendor" / "trellis-cuda"
+TRELLIS_CUDA_WRAPPER = REPO / "scripts" / "trellis_cuda_generate.py"
+TRELLIS_CUDA_PYTHON = TRELLIS_CUDA_VENDOR / ".venv" / "bin" / "python"
+TRELLIS_CUDA_MARKER = TRELLIS_CUDA_VENDOR / ".i2l-build-complete"
+# Hunyuan3D-2.1 on Linux + NVIDIA: Tencent's own checkout, built by
+# scripts/bootstrap_hunyuan_cuda.py. NVIDIA only; the Mac keeps the MLX routes.
+HUNYUAN_CUDA_VENDOR = REPO / "vendor" / "hunyuan-cuda"
+HUNYUAN_CUDA_WRAPPER = REPO / "scripts" / "hunyuan_cuda_generate.py"
+HUNYUAN_CUDA_PYTHON = HUNYUAN_CUDA_VENDOR / ".venv" / "bin" / "python"
+HUNYUAN_CUDA_MARKER = HUNYUAN_CUDA_VENDOR / ".i2l-build-complete"
 OUTPUT_ROOT = REPO / "output"
-BASELINE_PATH = REPO / "viewer" / "generate_baseline.json"
+BASELINE_PATH = REPO / "viewer" / "generate_baseline.json"  # shipped default, never written
+# Timings learned on this machine. Under output/ (git-ignored): writing the tracked file
+# above left every install with a local edit, and the installer then refused to update.
+LEARNED_BASELINE_PATH = REPO / "output" / ".generate_baseline.json"
 TINYCLIP_ADVISOR = REPO / "scripts" / "classify_trellis_input.py"
 TINYCLIP_TIMEOUT_SECONDS = 300
 
@@ -211,6 +237,9 @@ class BackendSpec:
     """Runs after the subprocess exits 0, before the output-file existence check — for
     backends whose wrapper doesn't write directly to job.output_path (SF3D writes
     ``<stem>_sf3d.glb`` instead)."""
+    hidden_fields: tuple[str, ...] = ()
+    """Element ids of Generate-tab controls this spec ignores, so the page hides them
+    (the Mac-only attention and rembg options mean nothing on the NVIDIA route)."""
 
 
 BACKENDS: dict[str, BackendSpec] = {}
@@ -253,6 +282,38 @@ def mlx_attention_status(vendor: Path | None = None, dispatch: Path | None = Non
     }
 
 
+def backends_payload() -> dict:
+    """The Generate tab's routes. `runs_here` lets the page drop a route this machine cannot
+    run: an NVIDIA pod was offered the two Mac-only Hunyuan-MLX routes."""
+    def runs_here(spec_id: str) -> bool:
+        entry = backend_catalog.resolve(spec_id)
+        return True if entry is None else entry.runs_here(backend_catalog.host_platform())
+
+    return {"backends": [
+        {"id": spec.id, "label": spec.label, "requires_alpha": spec.requires_alpha,
+         "default_settings": spec.default_settings, "stages": spec.stages,
+         "stage_labels": spec.stage_labels, "hidden_fields": list(spec.hidden_fields),
+         "runs_here": runs_here(spec.id)}
+        for spec in BACKENDS.values()
+    ]}
+
+
+def hf_sign_in_response(payload: Any) -> tuple[int, dict]:
+    """POST /api/hf/sign-in: check and save a Hugging Face token, answer with the status.
+    The token never comes back in the answer."""
+    if not isinstance(payload, dict):
+        return 400, {"error": "expected {\"token\": ...}"}
+    result = hf_api.sign_in(str(payload.get("token", "")))
+    return (422 if "error" in result else 200), result
+
+
+def catalog_payload() -> dict:
+    """The Setup page's catalogue, plus any setup already running so it can reattach."""
+    payload = with_rebuild_reasons(catalog_status())
+    payload["running_setup"] = running_payload()
+    return payload
+
+
 def with_rebuild_reasons(catalog: dict[str, Any],
                          reason: Callable[[str], str | None] = rebuild_reason) -> dict[str, Any]:
     """Say which installed backends want recompiling, so the page can offer a Rebuild
@@ -290,15 +351,54 @@ def setup_status() -> dict[str, Any]:
     }
 
 
+def trellis_cuda_bria_patched(checkout: Path | None = None) -> bool:
+    """Whether the CUDA checkout has the BRIA guardrail. Stdlib only, like this module."""
+    sys.path.insert(0, str(REPO / "scripts"))
+    import patch_trellis_cuda_no_bria
+
+    return patch_trellis_cuda_no_bria.is_patched(checkout or TRELLIS_CUDA_VENDOR / "TRELLIS.2")
+
+
+def cuda_setup_status() -> dict[str, Any]:
+    """Readiness of the NVIDIA TRELLIS.2 route, for the Generate tab's readiness strip.
+
+    Not ready without the BRIA patch, even when everything else is built: the generator
+    would refuse anyway, and the button should not promise a run that cannot start.
+    """
+    built = (TRELLIS_CUDA_MARKER.is_file() and TRELLIS_CUDA_PYTHON.is_file()
+             and TRELLIS_CUDA_WRAPPER.is_file())
+    patched = trellis_cuda_bria_patched() if built else False
+    weights = weights_on_disk()
+    missing = [w["label"] for w in weights.values() if not w["present"]]
+    hint = None
+    if not built:
+        hint = ("TRELLIS.2 for NVIDIA is not installed. Set it up from Setup & Status, or run "
+                "python scripts/bootstrap_trellis_cuda.py (Linux only, ~15 GB of weights).")
+    elif not patched:
+        hint = ("The TRELLIS.2 checkout still loads BRIA RMBG-2.0. Run "
+                "python scripts/patch_trellis_cuda_no_bria.py first.")
+    return {
+        "schema_version": 1,
+        "build": {"present": built and patched, "interpreter": str(TRELLIS_CUDA_PYTHON),
+                  "wrapper": str(TRELLIS_CUDA_WRAPPER), "hint": hint},
+        "weights": weights,
+        "missing_weights": missing,
+        "bria_patched": patched,
+        "ready": built and patched,
+        "warning": "first use will download missing weights" if missing else None,
+    }
+
+
 def run_trellis_input_advisor(image_path: Path) -> dict[str, Any]:
     """Run TinyCLIP out-of-process so the lightweight viewer never imports torch."""
-    if not PYTHON.is_file():
+    python = trellis_spec().interpreter
+    if not python.is_file():
         raise RuntimeError("TRELLIS environment is not installed")
     if not TINYCLIP_ADVISOR.is_file():
         raise RuntimeError(f"TinyCLIP advisor is missing: {TINYCLIP_ADVISOR}")
     try:
         result = subprocess.run(
-            [str(PYTHON), str(TINYCLIP_ADVISOR), str(image_path)],
+            [str(python), str(TINYCLIP_ADVISOR), str(image_path)],
             cwd=REPO,
             env=_job_env(),
             check=True,
@@ -347,8 +447,15 @@ class SetupRun:
             self.condition.notify_all()
 
 
-def setup_available() -> tuple[bool, str | None]:
-    """Whether the setup runner can start: uv on PATH and the bootstrap script present."""
+def setup_available(host: str | None = None) -> tuple[bool, str | None]:
+    """Whether the setup runner can start: uv on PATH and the bootstrap script present.
+
+    This older runner only knows the Mac bootstrap; anywhere else, Setup & Status runs the
+    right installer for the machine.
+    """
+    if (host or host_platform()) != APPLE:
+        return False, ("this setup runs the Mac port; on this machine use Setup & Status "
+                       "> TRELLIS.2 > Set up")
     if shutil.which("uv") is None:
         return False, "uv is not installed — install it first (https://docs.astral.sh/uv/)"
     bootstrap = REPO / "scripts" / "bootstrap_trellis_space_macos.py"
@@ -357,12 +464,29 @@ def setup_available() -> tuple[bool, str | None]:
     return True, None
 
 
-def _start_setup_run(run_id: str) -> SetupRun:
-    """Spawn the bootstrap and stream its output into the run's events (SSE)."""
+def blender_install_command() -> list[str]:
+    return [sys.executable, str(REPO / "scripts" / "bootstrap_blender.py"), "--yes"]
+
+
+def blender_install_refusal(caps: dict[str, Any], generating: bool,
+                            setting_up: bool) -> tuple[int, str] | None:
+    """Why Setup's Install Blender cannot start now, or None when it can."""
+    if generating:
+        return 409, "a generation is running; wait for it to finish"
+    if setting_up:
+        return 409, "another setup is running; wait for it to finish"
+    if not caps.get("blender_installable"):
+        return 409, ("Blender is already found, or this machine needs the app from "
+                     "https://www.blender.org/download/")
+    return None
+
+
+def _start_setup_run(run_id: str, command: list[str] | None = None) -> SetupRun:
+    """Spawn a setup script and stream its output into the run's events (SSE)."""
     run = SetupRun(run_id)
     bootstrap = REPO / "scripts" / "bootstrap_trellis_space_macos.py"
     proc = subprocess.Popen(
-        [sys.executable, str(bootstrap)],
+        command or [sys.executable, str(bootstrap)],
         cwd=str(REPO),
         env=_job_env(),
         stdout=subprocess.PIPE,
@@ -570,27 +694,30 @@ def uncut_image_error(border_fraction: float) -> str:
     )
 
 
-def _baseline() -> dict[str, float]:
+def _read_seconds(path: Path) -> dict[str, float]:
     try:
-        data = json.loads(BASELINE_PATH.read_text())
+        data = json.loads(path.read_text())
         seconds = data.get("seconds", data.get("stages", {}))
         return {str(k): float(v) for k, v in seconds.items() if v is not None}
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         return {}
+
+
+def _baseline() -> dict[str, float]:
+    """Stage durations for the ETA: the shipped defaults, overlaid by this machine's own."""
+    return {**_read_seconds(BASELINE_PATH), **_read_seconds(LEARNED_BASELINE_PATH)}
 
 
 def _update_baseline(job: Job) -> None:
     """Learn real stage durations after a successful job for the next ETA estimate."""
     if not job.stage_durations:
         return
-    try:
-        data = json.loads(BASELINE_PATH.read_text())
-    except (OSError, ValueError, TypeError):
-        data = {"schema_version": 1}
-    seconds = data.setdefault("seconds", {})
+    seconds = _read_seconds(LEARNED_BASELINE_PATH)
     seconds.update({name: round(value, 1) for name, value in job.stage_durations.items()})
-    data["source"] = "learned from completed clean-port Generate jobs"
-    BASELINE_PATH.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    data = {"schema_version": 1, "seconds": seconds,
+            "source": "learned from completed Generate jobs on this machine"}
+    LEARNED_BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LEARNED_BASELINE_PATH.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
 def _slugify(value: str) -> str:
@@ -857,11 +984,15 @@ def _trellis_parse_line(job: Job, line: str) -> None:
 
 
 def _cleanup_debug_files(job: Job) -> None:
-    """Debug mode off (the default): keep only the primary .glb. Deletes the manifest,
-    textures, intermediate meshes, resume caches, and run.log -- everything a run writes
+    """Debug mode off (the default): keep the .glb and what travels with it. Deletes
+    textures, intermediate meshes, resume caches and run.log -- everything a run writes
     that exists purely to diagnose a run, not to use the asset."""
-    # The licence record travels with the file (AGENTS.md), so it is never "debug".
-    keep = {job.output_path, job.output_path.with_suffix(".provenance.json")}
+    # The licence record travels with the file (AGENTS.md), so it is never "debug". For
+    # Pixal3D that record is <name>.json, and <name>.svviews/ is the camera Finish's Pixel
+    # Match needs: deleting them shipped Pixal3D models with no provenance at all.
+    out = job.output_path
+    keep = {out, out.with_suffix(".provenance.json"), out.with_suffix(".json"),
+            out.with_suffix(".svviews")}
     for path in job.directory.iterdir():
         if path in keep:
             continue
@@ -988,7 +1119,7 @@ def _run_job(job: Job) -> None:
     spec = BACKENDS[job.backend_id]
     args = [str(spec.interpreter), str(spec.wrapper), *spec.build_args(job)]
     env = _job_env()
-    if job.backend_id == "trellis":
+    if job.backend_id == "trellis" and spec.wrapper == WRAPPER:
         env.update(attention_backend_spec(job.settings["sparse_attn_backend"])[1])
     try:
         job.status = "running"
@@ -1069,6 +1200,21 @@ def _trellis_build_args(job: Job) -> list[str]:
     if not job.debug:
         # Skip the multi-hundred-MB resume caches entirely rather than write-then-delete.
         args += ["--no-save-latents", "--no-save-decode"]
+    return args
+
+
+def _trellis_cuda_build_args(job: Job) -> list[str]:
+    """The CUDA generator takes the same settings, minus the Mac-only ones: attention is
+    flash-attn, and the cut-out is always our own remover, never BRIA."""
+    args = [
+        str(job.image_path), str(job.output_path),
+        "--resolution", job.settings["resolution"],
+        "--seed", str(job.settings["seed"]),
+        "--decimation-target", str(job.settings["decimation_target"]),
+        "--texture-size", str(job.settings["texture_size"]),
+    ]
+    if not job.debug:
+        args.append("--no-save-latents")
     return args
 
 
@@ -1574,8 +1720,24 @@ def _pixal3d_readiness() -> dict[str, Any]:
     }
 
 
-BACKENDS.update({
-    "trellis": BackendSpec(
+def trellis_spec(host: str | None = None) -> BackendSpec:
+    """TRELLIS.2 for this machine: the Metal port on a Mac, Microsoft's code on NVIDIA.
+
+    One id, two installs. The NVIDIA spec mattes images itself with our remover, so it
+    does not demand a transparent upload the way the Mac port does.
+    """
+    if (host or host_platform()) == NVIDIA:
+        return BackendSpec(
+            id="trellis", label="TRELLIS.2 (NVIDIA)",
+            interpreter=TRELLIS_CUDA_PYTHON, wrapper=TRELLIS_CUDA_WRAPPER,
+            default_settings=DEFAULT_SETTINGS, stages=STAGES, stage_labels=PHASE_LABELS,
+            requires_alpha=False,
+            validate_settings=validate_settings, build_args=_trellis_cuda_build_args,
+            parse_line=_trellis_parse_line, readiness=cuda_setup_status,
+            baseline_path=BASELINE_PATH,
+            hidden_fields=("generate-attention", "generate-rembg"),
+        )
+    return BackendSpec(
         id="trellis", label="TRELLIS.2 (clean port)",
         interpreter=PYTHON, wrapper=WRAPPER,
         default_settings=DEFAULT_SETTINGS, stages=STAGES, stage_labels=PHASE_LABELS,
@@ -1583,7 +1745,90 @@ BACKENDS.update({
         validate_settings=validate_settings, build_args=_trellis_build_args,
         parse_line=_trellis_parse_line, readiness=setup_status,
         baseline_path=BASELINE_PATH,
-    ),
+    )
+
+
+# --- Hunyuan3D-2.1 on NVIDIA (Tencent's own code) ---------------------------------------
+# Upstream's demo.py defaults. The generator validates the same ranges again.
+HUNYUAN_CUDA_DEFAULT_SETTINGS: dict[str, Any] = {
+    "seed": 1234,
+    "steps": 50,
+    "octree_resolution": 384,
+    "max_num_view": 6,
+    "paint_resolution": 512,
+}
+
+
+def _hunyuan_cuda_validate_settings(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("settings must be a JSON object")
+    settings = {**HUNYUAN_CUDA_DEFAULT_SETTINGS,
+                **{k: v for k, v in raw.items() if k in HUNYUAN_CUDA_DEFAULT_SETTINGS}}
+    try:
+        settings = {key: int(value) for key, value in settings.items()}
+    except (TypeError, ValueError) as exc:
+        raise ValueError("all Hunyuan3D-2.1 settings must be integers") from exc
+    if settings["octree_resolution"] not in {256, 384, 512}:
+        raise ValueError("octree_resolution must be 256, 384 or 512")
+    if not 6 <= settings["max_num_view"] <= 9:
+        raise ValueError("max_num_view must be 6 to 9")
+    if settings["paint_resolution"] not in {512, 768}:
+        raise ValueError("paint_resolution must be 512 or 768")
+    if settings["steps"] < 1:
+        raise ValueError("steps must be at least 1")
+    return settings
+
+
+def _hunyuan_cuda_build_args(job: Job) -> list[str]:
+    s = job.settings
+    return [
+        str(job.image_path), str(job.output_path),
+        "--seed", str(s["seed"]),
+        "--steps", str(s["steps"]),
+        "--octree-resolution", str(s["octree_resolution"]),
+        "--max-num-view", str(s["max_num_view"]),
+        "--paint-resolution", str(s["paint_resolution"]),
+    ]
+
+
+def _hunyuan_cuda_readiness() -> dict[str, Any]:
+    """Ready only when built *and* every weight is on disk.
+
+    Upstream fetches missing weights on first use, unannounced. The installer names and
+    fetches them all up front, so a missing one means setup has not finished, and the run
+    must not start and download it behind the user's back.
+    """
+    import backend_catalog
+
+    built = (HUNYUAN_CUDA_MARKER.is_file() and HUNYUAN_CUDA_PYTHON.is_file()
+             and HUNYUAN_CUDA_WRAPPER.is_file())
+    weights = {w["label"]: {"label": w["label"], "present": w["present"],
+                            "human": w["human_present"]}
+               for w in backend_catalog.BY_ID["hunyuan-cuda"].describe()["weights"]}
+    missing = [label for label, w in weights.items() if not w["present"]]
+    ready = built and not missing
+    hint = None
+    if not built:
+        hint = ("Hunyuan3D-2.1 for NVIDIA is not installed. Set it up from Setup & Status, "
+                "or run python scripts/bootstrap_hunyuan_cuda.py (Linux only, ~19.5 GB).")
+    elif missing:
+        hint = ("Hunyuan3D-2.1 weights are missing: " + "; ".join(missing) + ". Run "
+                "python scripts/bootstrap_hunyuan_cuda.py --weights-only.")
+    return {
+        "schema_version": 1,
+        "build": {"present": built, "interpreter": str(HUNYUAN_CUDA_PYTHON),
+                  "wrapper": str(HUNYUAN_CUDA_WRAPPER), "hint": hint},
+        "weights": weights,
+        "missing_weights": missing,
+        "ready": ready,
+        "warning": "Not licensed in the EU, the UK or South Korea.",
+    }
+
+
+BACKENDS.update({
+    "trellis": trellis_spec(),
     "sf3d": BackendSpec(
         id="sf3d", label="Stable Fast 3D",
         interpreter=Path(sys.executable), wrapper=REPO / "pipeline.py",
@@ -1615,6 +1860,16 @@ BACKENDS.update({
         stage_labels=PIXAL3D_STAGE_LABELS, requires_alpha=False,
         validate_settings=_pixal3d_validate_settings, build_args=_pixal3d_build_args,
         parse_line=_pixal3d_parse_line, readiness=_pixal3d_readiness,
+    ),
+    # Same stage names and progress lines as the MLX Hunyuan routes, so it shares their parser.
+    "hunyuan-cuda": BackendSpec(
+        id="hunyuan-cuda", label="Hunyuan3D-2.1 (NVIDIA)",
+        interpreter=HUNYUAN_CUDA_PYTHON, wrapper=HUNYUAN_CUDA_WRAPPER,
+        default_settings=HUNYUAN_CUDA_DEFAULT_SETTINGS, stages=HUNYUAN_STAGES,
+        stage_labels=HUNYUAN_STAGE_LABELS, requires_alpha=False,
+        validate_settings=_hunyuan_cuda_validate_settings,
+        build_args=_hunyuan_cuda_build_args,
+        parse_line=_hunyuan_parse_line, readiness=_hunyuan_cuda_readiness,
     ),
 })
 
@@ -1666,6 +1921,17 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parts = self._path_parts()
+        if parts == ["api", "blender", "install"]:
+            self._start_blender_install()
+            return
+        if parts == ["api", "hf", "sign-in"]:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length)) if 0 < length <= 4096 else None
+            except (ValueError, json.JSONDecodeError):
+                payload = None
+            self._send_json(*hf_sign_in_response(payload))
+            return
         if parts == ["api", "setup", "run"]:
             self._start_setup()
             return
@@ -1762,11 +2028,7 @@ class Handler(SimpleHTTPRequestHandler):
         if job is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
+        self._start_event_stream()
         index = 0
         try:
             while True:
@@ -1818,8 +2080,11 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parts = self._path_parts()
+        if parts == ["api", "hf", "status"]:
+            self._send_json(200, hf_api.status())
+            return
         if parts == ["api", "catalog"]:
-            self._send_json(200, with_rebuild_reasons(catalog_status()))
+            self._send_json(200, catalog_payload())
             return
         if parts == ["api", "update-check"]:
             self._send_json(200, update_check())
@@ -1887,14 +2152,7 @@ class Handler(SimpleHTTPRequestHandler):
             })
             return
         if parts == ["api", "backends"]:
-            self._send_json(200, {
-                "backends": [
-                    {"id": spec.id, "label": spec.label, "requires_alpha": spec.requires_alpha,
-                     "default_settings": spec.default_settings, "stages": spec.stages,
-                     "stage_labels": spec.stage_labels}
-                    for spec in BACKENDS.values()
-                ]
-            })
+            self._send_json(200, backends_payload())
             return
         if len(parts) == 4 and parts[:2] == ["api", "setup"] and parts[3] in {"events", "status"}:
             run = DOWNLOADS.get(parts[2])
@@ -2304,13 +2562,19 @@ class Handler(SimpleHTTPRequestHandler):
         job.emit({"phase": "error", "message": "Cancellation requested"})
         self._send_json(202, {"job_id": job.id, "status": "cancelling"})
 
-    def _stream_events(self, run: Job | SetupRun) -> None:
-        """SSE pump shared by generation jobs and setup runs."""
+    def _start_event_stream(self) -> None:
+        """Headers for a server-sent event stream. X-Accel-Buffering stops proxies (nginx,
+        Cloudflare, RunPod's) from holding progress back and delivering it minutes late."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+
+    def _stream_events(self, run: Job | SetupRun) -> None:
+        """SSE pump shared by generation jobs and setup runs."""
+        self._start_event_stream()
         index = 0
         try:
             while True:
@@ -2359,6 +2623,24 @@ class Handler(SimpleHTTPRequestHandler):
             "events_url": f"/api/setup/{backend_id}/events",
             "status_url": f"/api/setup/{backend_id}/status",
         })
+
+    def _start_blender_install(self) -> None:
+        global SETUP_ACTIVE
+        with SETUP_LOCK:
+            active = JOBS.get(JOBS.active)
+            refusal = blender_install_refusal(
+                finish_capabilities(),
+                generating=active is not None
+                and active.status in {"queued", "running", "cancelling"},
+                setting_up=SETUP_ACTIVE is not None or download_active() is not None)
+            if refusal:
+                self._send_json(refusal[0], {"error": refusal[1]})
+                return
+            setup_id = uuid.uuid4().hex
+            SETUP_ACTIVE = setup_id
+            SETUP_RUNS[setup_id] = _start_setup_run(setup_id, blender_install_command())
+        self._send_json(202, {"setup_run_id": setup_id,
+                              "events_url": f"/api/setup/run/{setup_id}/events"})
 
     def _start_setup(self) -> None:
         global SETUP_ACTIVE

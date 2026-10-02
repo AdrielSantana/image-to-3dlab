@@ -153,9 +153,10 @@ function applyEvent(event) {
     f('finish-record').href = event.record_url;
     f('finish-where').textContent = `output/finish/${event.directory}/`;
     showCompare(event.source_url, event.result_url, event.directory, event.pixal3d);
+    // A skipped Pixel Match is said on the result itself, not only in a start-up line.
     f('finish-status').textContent =
       `Finished in ${formatDuration(event.elapsed_seconds)} — ` +
-      `${(event.size_bytes / 1048576).toFixed(1)} MB`;
+      `${(event.size_bytes / 1048576).toFixed(1)} MB` + (event.note ? `. ${event.note}` : '');
     loadRuns();
   } else if (event.phase === 'error' || event.phase === 'cancelled') {
     stopStreams();
@@ -286,6 +287,28 @@ f('finish-image').onchange = (event) => {
   f('finish-image-name').textContent = state.image ? state.image.name : 'the picture the model was made from';
   updateSubmit();
 };
+
+// Generate's "Finish this model": fetch the result as a file and take the source picture
+// it was made from, exactly as if both had been picked here.
+document.addEventListener('viewer:finish-this', async (event) => {
+  const { glbUrl, image, name: given } = event.detail;
+  f('finish-asset-name').textContent = 'loading the generated model…';
+  try {
+    const blob = await (await fetch(glbUrl)).blob();
+    const name = given || decodeURIComponent(glbUrl.split('/').pop().split('?')[0]) || 'model.glb';
+    state.asset = new File([blob], name.endsWith('.glb') ? name : `${name}.glb`,
+      { type: 'model/gltf-binary' });
+    f('finish-asset-name').textContent = state.asset.name;
+  } catch (error) {
+    state.asset = null;
+    f('finish-asset-name').textContent = `could not load the model: ${error.message}`;
+  }
+  if (image) {
+    state.image = image;
+    f('finish-image-name').textContent = image.name;
+  }
+  updateSubmit();
+});
 
 f('finish-repaint').onchange = () => {
   // Without a repaint the source image is still needed: the worker records it, and the

@@ -12,6 +12,8 @@
 #   --ref REF      a release tag or branch (default: the newest vX.Y.Z release)
 #   --repo URL     clone from here instead of GitHub (a fork, or a local copy for testing)
 #   --yes          no questions; for scripts and agents
+#   --start        start the lab when done (the default when run in a terminal)
+#   --no-start     only install; start it later with ./lab
 #   --dry-run      say what would happen, change nothing
 set -euo pipefail
 
@@ -20,6 +22,7 @@ DIR="${HOME}/image-to-3dlab"
 REF=""
 YES=0
 DRY=0
+START=""
 
 say()  { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -32,8 +35,10 @@ while [ $# -gt 0 ]; do
     --repo) REPO_URL="$2"; shift 2 ;;
     --yes|-y) YES=1; shift ;;
     --dry-run) DRY=1; shift ;;
-    -h|--help) sed -n '2,17p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' \
-                 || echo "Options: --dir PATH --ref REF --repo URL --yes --dry-run"; exit 0 ;;
+    --start) START=1; shift ;;
+    --no-start) START=0; shift ;;
+    -h|--help) sed -n '2,19p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' \
+                 || echo "Options: --dir PATH --ref REF --repo URL --yes --start --no-start --dry-run"; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
 done
@@ -90,6 +95,14 @@ UV="$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")"
 # --- 3. Code: clone, or update an existing install ---------------------------------------
 if [ -d "$DIR/.git" ]; then
   say "Updating the install in $DIR"
+  # Viewers up to 0.3.6 wrote learned ETA timings into this tracked file, which then
+  # blocked every update. Keep the timings where newer viewers look, and restore the file.
+  BASELINE="viewer/generate_baseline.json"
+  if [ "$DRY" != 1 ] && [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no -- "$BASELINE")" ]; then
+    mkdir -p "$DIR/output"
+    [ -e "$DIR/output/.generate_baseline.json" ] || cat "$DIR/$BASELINE" > "$DIR/output/.generate_baseline.json"
+    git -C "$DIR" checkout --quiet -- "$BASELINE"
+  fi
   # Tracked edits would be overwritten by a checkout; untracked files (outputs, weights,
   # vendor/) are git-ignored or left alone.
   if [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no)" ]; then
@@ -123,7 +136,11 @@ fi
 # --- 4. Python ----------------------------------------------------------------------------
 say "Setting up Python 3.11 and the viewer's packages (a few hundred MB, mostly PyTorch)"
 run "$UV" venv --quiet --allow-existing --python 3.11 "$DIR/.venv"
-run "$UV" pip install --quiet --python "$DIR/.venv/bin/python" -r "$DIR/requirements.txt"
+# The lock pins every package to versions tested together; requirements.txt only bounds
+# them, so installing from it gave each install whatever PyPI had that day.
+REQS="$DIR/requirements.lock"
+[ -f "$REQS" ] || REQS="$DIR/requirements.txt"
+run "$UV" pip install --quiet --python "$DIR/.venv/bin/python" -r "$REQS"
 
 # --- 5. Blender: Finish needs it, and it is the user's to install -----------------------
 # Checked with the same finder Finish uses. Missing is a note, not a failure: generating
@@ -131,12 +148,25 @@ run "$UV" pip install --quiet --python "$DIR/.venv/bin/python" -r "$DIR/requirem
 if [ "$DRY" != 1 ] && [ -x "$DIR/.venv/bin/python" ] && ! (cd "$DIR" && .venv/bin/python -c \
     'import sys; from image_to_3dlab.blender import find_blender; sys.exit(0 if find_blender() else 1)') \
     2>/dev/null; then
-  say "Blender was not found. Finish (the low-poly clean-up) needs Blender 4.2 or newer:"
-  say "  https://www.blender.org/download/  (Linux: or sudo snap install blender --classic)"
+  say "Blender was not found. Finish (the low-poly clean-up) needs Blender 4.2 or newer."
+  if [ "$OS" = Linux ]; then
+    say "  Press Install Blender in the viewer's Setup & Status (no admin rights needed)."
+  else
+    say "  https://www.blender.org/download/"
+  fi
 fi
 
-# --- 6. Done ------------------------------------------------------------------------------
-say "Done. Start the lab with:"
-printf '\n    cd %s && .venv/bin/python viewer/serve.py\n\n' "$DIR"
-say "Then open Setup & Status to choose what to install. Nothing large downloads until you"
-say "say so there. To update later, run this installer again, then restart the viewer."
+# --- 6. Done: start the lab, so the next thing a new user sees is the viewer -------------
+# In a terminal it just starts; scripts and agents (--yes, or no terminal) get the command,
+# so they are never left holding a running server.
+if [ -z "$START" ]; then
+  if [ "$YES" != 1 ] && [ -t 1 ]; then START=1; else START=0; fi
+fi
+say "Done. Open Setup & Status in the viewer to choose what to install. Nothing large"
+say "downloads until you say so there. To update later, run this installer again."
+if [ "$START" = 1 ] && [ "$DRY" != 1 ] && [ -x "$DIR/lab" ]; then
+  say "Starting the lab. Ctrl-C stops it; start it again any time with: cd $DIR && ./lab"
+  exec "$DIR/lab"
+fi
+say "Start the lab with:"
+printf '\n    cd %s && ./lab\n\n' "$DIR"

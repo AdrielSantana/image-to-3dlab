@@ -164,6 +164,18 @@ def total_memory() -> int | None:
         return None
 
 
+def patient_downloads(env: dict[str, str]) -> dict[str, str]:
+    """`env` with uv told to wait for slow downloads instead of giving up.
+
+    uv gives a read 30 seconds by default; PyTorch's 700 MB cuDNN wheel timed out on a slow
+    connection and killed a whole setup. A value the user set themselves is kept.
+    """
+    env = dict(env)
+    env.setdefault("UV_HTTP_TIMEOUT", "300")
+    env.setdefault("UV_HTTP_RETRIES", "5")
+    return env
+
+
 def build_jobs(cpus: int | None = None, memory_bytes: int | None = None,
                per_job_bytes: int = 3 * 1024 ** 3) -> int:
     """How many compile jobs to run at once: capped by CPUs *and* by memory.

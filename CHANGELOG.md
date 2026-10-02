@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-10-02
+
+### Added
+- **TRELLIS.2 on Linux with an NVIDIA card.** Setup & Status offers **Set up**, and
+  Generate 3D runs it. It uses Microsoft's own TRELLIS.2 code, not the Mac port, with the
+  same settings. Setup checks your Hugging Face access to the gated DINOv3 encoder before
+  downloading anything, says what it will fetch (~16 GB) and asks first. Tested end to end
+  on an RTX 3090. Windows is not supported for TRELLIS.2 yet. Also available as
+  `scripts/bootstrap_trellis_cuda.py` and `scripts/trellis_cuda_generate.py`.
+- **Hunyuan3D-2.1 on Linux with an NVIDIA card.** A new route, **Hunyuan3D-2.1 (NVIDIA)**,
+  runs Tencent's own code: shape, then PBR paint, in one run. Setup says what it will
+  fetch (~19.7 GB, including the DINOv2 encoder upstream downloads unannounced) and asks
+  first; it compiles the paint rasterizer for your card, so it needs the CUDA 12 toolkit
+  and a 24 GB card. Tested end to end on an RTX 3090. Not licensed in the EU, the UK or
+  South Korea. Also available as `scripts/bootstrap_hunyuan_cuda.py` and
+  `scripts/hunyuan_cuda_generate.py`.
+- **Setup & Status has a tab per machine: Mac, NVIDIA, AMD.** It opens on yours, the only
+  one with buttons; the others show what that machine gets. AMD says support is coming.
+- **Finish this model**, straight from a Generate result, with its source picture: no
+  download and re-upload.
+- **The installer starts the lab.** Run the install command and the viewer opens. On a
+  RunPod pod it prints the pod's link; over plain SSH, the tunnel command. Start it again
+  any time with `./lab`.
+- **Sign in to Hugging Face from Setup & Status.** Paste a Read token; the page checks it
+  and shows, per gated model, whether your account has access, with a link to request it.
+  A backend's "this model is gated" warning goes away once you have access. No terminal
+  needed.
+- **Install Blender from Setup & Status on Linux.** Blender 4.2 LTS from blender.org, into
+  `~/blender-lts`, no admin rights. Finish finds it.
+
+### Changed
+- **Pixal3D on NVIDIA installs the ready-made build** instead of compiling one, so setup
+  takes a fraction of the time, most of all on machines with few CPU cores. It runs 12
+  steps instead of 8, a small cost on NVIDIA. An old driver still gets a local compile,
+  and `scripts/bootstrap_pixal3d.py --compile` asks for one.
+- Generate 3D only offers the routes your machine can run.
+- With Debug off, a generated model now keeps its record (`<name>.json`) beside the GLB,
+  and a Pixal3D model keeps the camera Pixel Match needs.
+- NVIDIA and Hunyuan setups install the background remover, so a first generation never
+  fetches one you did not agree to.
+- **Fresh installs get the versions we tested.** The viewer and every NVIDIA route install
+  pinned package versions, and upstream code and weights come from fixed commits, so a
+  new release elsewhere can no longer break an install overnight.
+
+### Fixed
+- **Install Blender works on Linux.** blender.org's download server turned the installer
+  away as a bot, so it failed for everyone; found by the NVIDIA one-shot test.
+- **Updating with the install command works after you have generated.** The viewer wrote
+  learned timings into a tracked file, so the installer refused every later update. Timings
+  now live in `output/`, and the installer moves an old copy there.
+- **Pixal3D models keep their licence record.** With Debug off, it was deleted, and Finish
+  then skipped Pixel Match without saying so. Spotted by @AdrielSantana in #78. When Pixel Match is skipped, the finished
+  result now says why.
+- **Remove on one route keeps files another route uses** (the background remover).
+- Setup & Status picks a running setup back up after a refresh, shows a moving bar while
+  compiling instead of an empty one, and no longer calls a compile "stalled".
+- Generate 3D notices a setup that finished in another tab, instead of saying "not
+  installed" until a reload.
+- Live progress no longer lags behind when the lab is reached through a proxy (RunPod,
+  nginx, Cloudflare).
+- Mac-only options no longer show on NVIDIA, and routes that cut pictures out themselves no
+  longer ask for a pre-masked PNG.
+
+### Security
+- **BRIA RMBG-2.0 stays out of the NVIDIA TRELLIS.2 route too.** Upstream loads it by
+  default; `scripts/patch_trellis_cuda_no_bria.py` removes it, and the route refuses to run
+  without that patch. Pictures are cut out by our own background remover instead.
+
+### Removed
+- **Stable Fast 3D on NVIDIA.** It is Mac only again. Its pinned packages (an old
+  huggingface-hub and rembg) replaced the lab's own, which breaks the Hugging Face access
+  check and the background remover, and TRELLIS.2, Hunyuan3D-2.1 and Pixal3D all beat it
+  on NVIDIA. An existing SF3D install there is no longer offered in Generate 3D.
+
 ## [0.3.6] - 2026-10-01
 
 ### Fixed
