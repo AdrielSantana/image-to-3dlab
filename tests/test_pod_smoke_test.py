@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import http.server
 import json
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -103,6 +105,28 @@ def test_starting_the_lab_returns_at_once(tmp_path):
     subprocess.run(["bash", "-c", smoke.lab_command("pod123")], capture_output=True,
                    env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}, timeout=10)
     assert time.monotonic() - started < 3
+
+
+def test_the_viewer_calls_do_not_look_like_a_bot():
+    # 2026-10-02: RunPod's proxy is behind Cloudflare, which answers Python-urllib's
+    # default User-Agent with 403 (error 1010), so the lab "never answered".
+    seen = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["agent"] = self.headers.get("User-Agent", "")
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    status, _ = smoke.Viewer(f"http://127.0.0.1:{server.server_port}").call("GET", "/x")
+    server.server_close()
+    assert status == 200
+    assert seen["agent"] and "Python-urllib" not in seen["agent"]
 
 
 def test_multipart_carries_fields_and_files():

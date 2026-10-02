@@ -259,14 +259,19 @@ def delete(pod_id: str) -> None:
 
 # ---- the viewer API ------------------------------------------------------------------
 
+USER_AGENT = "Mozilla/5.0 (image-to-3dlab pod smoke test)"
+
+
 class Viewer:
     def __init__(self, base: str):
         self.base = base
 
     def call(self, method: str, path: str, body: bytes | None = None,
              content_type: str = "application/json", timeout: float = 120) -> tuple[int, bytes]:
+        # Cloudflare, in front of RunPod's proxy, refuses Python-urllib's own User-Agent.
         request = urllib.request.Request(self.base + path, data=body, method=method,
-                                         headers={"Content-Type": content_type})
+                                         headers={"Content-Type": content_type,
+                                                  "User-Agent": USER_AGENT})
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.status, response.read()
@@ -346,11 +351,17 @@ def run_smoke(pod: Pod, args, token: str, out: Path) -> list[dict]:
 
     def start_lab():
         pod.ssh(lab_command(pod.id), 60)
+        last = None
         for _ in range(40):
-            if viewer.call("GET", "/api/catalog", timeout=20)[0] == 200:
+            try:
+                last, _ = viewer.call("GET", "/api/catalog", timeout=20)
+            except OSError as exc:
+                last = exc
+            if last == 200:
                 return viewer.base + "/viewer/index.html"
             time.sleep(6)
-        raise RuntimeError("viewer never answered: " + pod.ssh("tail -20 ~/image-to-3dlab/lab.log"))
+        raise RuntimeError(f"viewer never answered {viewer.base} (last: {last}): "
+                           + pod.ssh("tail -20 ~/image-to-3dlab/lab.log"))
 
     ok, url = step(results, "start the lab", start_lab)
     if not ok:
