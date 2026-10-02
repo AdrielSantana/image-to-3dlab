@@ -142,8 +142,11 @@ def install_command(ref: str) -> str:
 
 def lab_command(pod_id: str) -> str:
     """./lab listens on all interfaces when it sees RUNPOD_POD_ID, which an SSH session
-    does not always inherit from the container, so it is passed explicitly."""
-    return (f"cd ~/image-to-3dlab && RUNPOD_POD_ID={shlex.quote(pod_id)} "
+    does not always inherit from the container, so it is passed explicitly.
+
+    `;`, not `&&`: with `&&` the trailing `&` backgrounds the whole list, whose stdout is
+    still the SSH channel, so ssh never returns."""
+    return (f"cd ~/image-to-3dlab; RUNPOD_POD_ID={shlex.quote(pod_id)} "
             "nohup ./lab > lab.log 2>&1 < /dev/null &")
 
 

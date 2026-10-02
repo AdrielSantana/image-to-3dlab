@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import time
 from datetime import datetime, timezone
 
 import pod_smoke_test as smoke
@@ -88,6 +90,19 @@ def test_the_lab_listens_for_runpods_proxy():
     command = smoke.lab_command("pod123")
     assert "RUNPOD_POD_ID=pod123" in command and "nohup ./lab" in command
     assert command.rstrip().endswith("&")
+
+
+def test_starting_the_lab_returns_at_once(tmp_path):
+    # 2026-10-02: `cd x && nohup ./lab ... &` backgrounded the whole list, which kept the
+    # SSH channel open, and the step timed out. A pipe holds stdout the way ssh does.
+    lab = tmp_path / "image-to-3dlab" / "lab"
+    lab.parent.mkdir()
+    lab.write_text("#!/bin/sh\nsleep 5\n")
+    lab.chmod(0o755)
+    started = time.monotonic()
+    subprocess.run(["bash", "-c", smoke.lab_command("pod123")], capture_output=True,
+                   env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}, timeout=10)
+    assert time.monotonic() - started < 3
 
 
 def test_multipart_carries_fields_and_files():
