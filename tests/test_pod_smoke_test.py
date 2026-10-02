@@ -151,6 +151,18 @@ def test_closing_the_terminal_still_deletes_the_pod():
             signal.signal(sig, handler)
 
 
+def test_a_failed_blender_install_says_why():
+    # 2026-10-02: blender.org refused the installer, and the script waited 20 minutes for
+    # a Blender that was never coming, without the installer's own error.
+    events = [{"phase": "setup", "message": "Downloading..."},
+              {"phase": "setup", "message": "HTTP Error 403: Forbidden"},
+              {"phase": "setup_done", "status": "error", "message": "exited with code 1"}]
+    status, tail = smoke.setup_run_outcome(events)
+    assert status == "error" and "403" in tail
+    assert smoke.setup_run_outcome(events[:2])[0] == "unfinished"
+    assert smoke.setup_run_outcome([{"phase": "setup_done", "status": "done"}])[0] == "done"
+
+
 def test_multipart_carries_fields_and_files():
     body, ctype = smoke.multipart({"settings": json.dumps({"backend": "trellis"})},
                                   {"image": ("in.png", b"\x89PNG")})

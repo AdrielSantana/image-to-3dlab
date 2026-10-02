@@ -184,6 +184,14 @@ def sse_events(text: str) -> list[dict]:
     return events
 
 
+def setup_run_outcome(events: list[dict]) -> tuple[str, str]:
+    """(status, the last lines it printed) from a setup run's event stream. The stream
+    ends with a `setup_done` event; one that never arrived is "unfinished"."""
+    done = next((e for e in reversed(events) if e.get("phase") == "setup_done"), None)
+    lines = [str(e.get("message", "")) for e in events if e.get("phase") == "setup"]
+    return (done.get("status", "error") if done else "unfinished"), "\n".join(lines[-15:])
+
+
 def announcement(routes: list[str], gpus: list[str], cap: float, hours: float,
                  cloud: str = "secure") -> str:
     lines = [f"This rents one RunPod pod ({cloud} cloud) and downloads model weights onto it:",
@@ -405,13 +413,16 @@ def run_smoke(pod: Pod, args, token: str, out: Path) -> list[dict]:
         _, caps = viewer.json("GET", "/api/finish/capabilities")
         if caps.get("blender"):
             return f"already there: {caps['blender']}"
-        viewer.start("/api/blender/install")
-        for _ in range(80):
-            time.sleep(15)
-            _, caps = viewer.json("GET", "/api/finish/capabilities")
-            if caps.get("blender"):
-                return f"Blender {caps.get('blender_version')}"
-        raise RuntimeError(caps.get("blender_problem") or "Blender never appeared")
+        started = viewer.start("/api/blender/install")
+        # The event stream stays open until the installer exits, so this read is the wait.
+        _, raw = viewer.call("GET", started["events_url"], timeout=20 * 60)
+        status, tail = setup_run_outcome(sse_events(raw.decode(errors="replace")))
+        if status != "done":
+            raise RuntimeError(f"installer {status}:\n{tail}")
+        _, caps = viewer.json("GET", "/api/finish/capabilities")
+        if not caps.get("blender"):
+            raise RuntimeError(caps.get("blender_problem") or "installed, but Finish cannot see it")
+        return f"Blender {caps.get('blender_version')}"
 
     step(results, "install Blender", blender)
 
