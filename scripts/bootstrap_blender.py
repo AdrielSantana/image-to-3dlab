@@ -29,6 +29,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+from image_to_3dlab import __version__  # noqa: E402
 from image_to_3dlab.blender import can_install  # noqa: E402
 
 RELEASES = "https://download.blender.org/release/Blender4.2/"
@@ -39,9 +40,10 @@ def supported(system: str, machine: str) -> bool:
     return can_install(system, machine)
 
 
-# download.blender.org sits behind Cloudflare, which refuses Python-urllib's own
-# User-Agent (403, error 1010). Every request here goes through open_url.
-USER_AGENT = "Mozilla/5.0 (image-to-3dlab Blender installer)"
+# download.blender.org sits behind Cloudflare, which refuses Python-urllib's anonymous
+# default User-Agent (403, error 1010). We say who we are instead, honestly; that passes.
+# No browser disguise: a site that turns this away has decided, and we respect it.
+USER_AGENT = f"image-to-3dlab/{__version__} (+https://github.com/Bingeljell/image-to-3dlab)"
 
 
 def open_url(url: str, method: str = "GET"):

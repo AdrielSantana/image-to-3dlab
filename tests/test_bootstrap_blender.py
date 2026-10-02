@@ -96,4 +96,7 @@ def test_downloads_do_not_look_like_a_bot():
     with boot.open_url(f"http://127.0.0.1:{server.server_port}/") as response:
         assert response.read() == b"ok"
     server.server_close()
-    assert seen["agent"] and "Python-urllib" not in seen["agent"]
+    # Named honestly, not dressed up as a browser.
+    assert seen["agent"].startswith("image-to-3dlab/")
+    assert "github.com/Bingeljell/image-to-3dlab" in seen["agent"]
+    assert "Mozilla" not in seen["agent"]
