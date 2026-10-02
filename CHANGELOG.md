@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new release elsewhere can no longer break an install overnight.
 
 ### Fixed
+- **Install Blender works on Linux.** blender.org's download server turned the installer
+  away as a bot, so it failed for everyone; found by the NVIDIA one-shot test.
 - **Updating with the install command works after you have generated.** The viewer wrote
   learned timings into a tracked file, so the installer refused every later update. Timings
   now live in `output/`, and the installer moves an old copy there.

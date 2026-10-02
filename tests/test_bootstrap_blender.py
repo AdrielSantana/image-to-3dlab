@@ -70,3 +70,30 @@ def test_announcement_names_source_size_and_destination(tmp_path):
     text = boot.announcement("blender-4.2.23-linux-x64.tar.xz", 380 * 1024 ** 2, tmp_path)
     assert "download.blender.org" in text and "380 MB" in text and str(tmp_path) in text
     assert "GPL" in text
+
+
+def test_downloads_do_not_look_like_a_bot():
+    # 2026-10-02 pod run: download.blender.org is behind Cloudflare, which answers
+    # Python-urllib's default User-Agent with 403 (error 1010). Install Blender on Linux
+    # failed for everyone, silently.
+    import http.server
+    import threading
+
+    seen = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["agent"] = self.headers.get("User-Agent", "")
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    with boot.open_url(f"http://127.0.0.1:{server.server_port}/") as response:
+        assert response.read() == b"ok"
+    server.server_close()
+    assert seen["agent"] and "Python-urllib" not in seen["agent"]

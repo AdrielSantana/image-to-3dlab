@@ -39,6 +39,16 @@ def supported(system: str, machine: str) -> bool:
     return can_install(system, machine)
 
 
+# download.blender.org sits behind Cloudflare, which refuses Python-urllib's own
+# User-Agent (403, error 1010). Every request here goes through open_url.
+USER_AGENT = "Mozilla/5.0 (image-to-3dlab Blender installer)"
+
+
+def open_url(url: str, method: str = "GET"):
+    request = urllib.request.Request(url, method=method, headers={"User-Agent": USER_AGENT})
+    return urllib.request.urlopen(request, timeout=60)
+
+
 def target(home: Path | None = None) -> Path:
     return (home or Path.home()) / "blender-lts"
 
@@ -80,10 +90,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("This installs the Linux x86_64 build. On a Mac or Windows, install "
                          "Blender from https://www.blender.org/download/")
     home = Path.home()
-    with urllib.request.urlopen(RELEASES) as response:
+    with open_url(RELEASES) as response:
         name = newest_tarball(response.read().decode("utf-8", "replace"))
-    head = urllib.request.Request(RELEASES + name, method="HEAD")
-    with urllib.request.urlopen(head) as response:
+    with open_url(RELEASES + name, method="HEAD") as response:
         size = int(response.headers.get("Content-Length", 0))
     print(announcement(name, size, home), flush=True)
     if not args.yes:
@@ -95,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     archive = home / f".{name}.partial"
     print(f"Downloading {name}...", flush=True)
-    with urllib.request.urlopen(RELEASES + name) as response, archive.open("wb") as out:
+    with open_url(RELEASES + name) as response, archive.open("wb") as out:
         shutil.copyfileobj(response, out, length=1024 * 1024)
     print("Unpacking...", flush=True)
     dest = unpack(archive, home)
