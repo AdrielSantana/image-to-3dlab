@@ -282,12 +282,12 @@ CATALOG: tuple[Backend, ...] = (
         best_for="Best results we have. One pass, no repaint needed.",
         tradeoff=(
             "On a Mac it compiles locally and needs full Xcode for the Metal compiler. "
-            "On NVIDIA it downloads a ready-made CUDA build in about a minute."
+            "On NVIDIA it downloads a ready-made CUDA build; no compiling."
         ),
         overrides_by_host={
             APPLE: {"tradeoff": "Compiles on your Mac, and needs full Xcode for the Metal "
                                 "compiler."},
-            NVIDIA: {"tradeoff": "Downloads a ready-made CUDA build in about a minute "
+            NVIDIA: {"tradeoff": "Downloads a ready-made CUDA build, no compiling "
                                  "(driver 575 or newer)."},
         },
         license_name="MIT (code + flow weights); DINOv3 License (bundled encoder)",

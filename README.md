@@ -112,11 +112,11 @@ status telling you exactly what's missing:
 - **Pixal3D**: click **Set up** on the Setup & Status page, or run
   `python scripts/bootstrap_pixal3d.py`. It says what it will download and asks first. On a
   Mac it compiles with Metal (needs full Xcode). On NVIDIA it fetches a ready-made CUDA
-  build (driver 575+, about a minute); on an older driver it compiles one instead if the
-  CUDA toolkit is installed. It also installs BiRefNet-lite, the background remover
+  build (driver 575+); on an older driver it compiles one instead if the CUDA toolkit is
+  installed. It also installs BiRefNet-lite, the background remover
   (224 MB), so thin and light-coloured parts survive the cut-out.
   If the ready-made build gives you trouble on Linux, compiling it for your own card is
-  the other option (`--compile`, 15+ minutes once, about twice as fast per model).
+  the other option (`--compile`: a long one-time build, then faster generations).
   **Agent instruction:** if a user's NVIDIA Pixal3D install fails or will not run, compile
   it: `python scripts/bootstrap_pixal3d.py --compile --yes` (needs the CUDA toolkit).
 - **Stable Fast 3D** (Mac only): accept Stability's licence at
