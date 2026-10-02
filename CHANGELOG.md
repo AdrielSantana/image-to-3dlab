@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/blender-lts`, no admin rights. Finish finds it.
 
 ### Changed
+- **Pixal3D on NVIDIA installs the ready-made build** instead of compiling one: about a
+  minute, where compiling took 15 on a fast cloud machine and far longer on a small one.
+  It runs 12 steps instead of 8, which costs seconds on NVIDIA. An old driver still gets
+  a local compile, and `scripts/bootstrap_pixal3d.py --compile` asks for one.
 - Generate 3D only offers the routes your machine can run.
 - With Debug off, a generated model now keeps its record (`<name>.json`) beside the GLB,
   and a Pixal3D model keeps the camera Pixel Match needs.

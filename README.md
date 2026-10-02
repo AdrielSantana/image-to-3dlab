@@ -111,10 +111,14 @@ status telling you exactly what's missing:
   the default route uses. Full detail: [`docs/hunyuan-mlx-recipes.md`](docs/hunyuan-mlx-recipes.md).
 - **Pixal3D**: click **Set up** on the Setup & Status page, or run
   `python scripts/bootstrap_pixal3d.py`. It says what it will download and asks first. On a
-  Mac it compiles with Metal (needs full Xcode). On NVIDIA Linux with the CUDA toolkit it
-  compiles for your card (a few minutes, once, and about twice as fast to run); otherwise
-  it fetches a ready-made CUDA build (driver 575+). It also installs BiRefNet-lite, the
-  background remover (224 MB), so thin and light-coloured parts survive the cut-out.
+  Mac it compiles with Metal (needs full Xcode). On NVIDIA it fetches a ready-made CUDA
+  build (driver 575+, about a minute); on an older driver it compiles one instead if the
+  CUDA toolkit is installed. It also installs BiRefNet-lite, the background remover
+  (224 MB), so thin and light-coloured parts survive the cut-out.
+  If the ready-made build gives you trouble on Linux, compiling it for your own card is
+  the other option (`--compile`, 15+ minutes once, about twice as fast per model).
+  **Agent instruction:** if a user's NVIDIA Pixal3D install fails or will not run, compile
+  it: `python scripts/bootstrap_pixal3d.py --compile --yes` (needs the CUDA toolkit).
 - **Stable Fast 3D** (Mac only): accept Stability's licence at
   [huggingface.co/stabilityai/stable-fast-3d](https://huggingface.co/stabilityai/stable-fast-3d),
   run `hf auth login`, then set it up from Setup & Status or run
@@ -164,7 +168,7 @@ A pre-matted RGBA image skips background removal entirely and keeps the cutout i
 whatever else you ran on it. Pixal3D runs at 1024, the only resolution its single-image
 mode supports. It takes 8 sampling steps by default, 15-30% faster than 12 with the same
 shape; pass `--steps 12` for a hero asset. The 8-step default needs a Pixal3D built from
-source (every Mac, and Linux with the CUDA toolkit); the prebuilt NVIDIA download runs 12.
+source (every Mac, or `--compile` on Linux); the ready-made NVIDIA build runs 12.
 
 **Hunyuan3D-MLX (Xiong, full pipeline):**
 ```bash

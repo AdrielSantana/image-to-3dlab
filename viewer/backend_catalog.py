@@ -282,15 +282,13 @@ CATALOG: tuple[Backend, ...] = (
         best_for="Best results we have. One pass, no repaint needed.",
         tradeoff=(
             "On a Mac it compiles locally and needs full Xcode for the Metal compiler. "
-            "On NVIDIA Linux with the CUDA toolkit it compiles for your card, which runs "
-            "about twice as fast; otherwise it downloads a prebuilt CUDA build."
+            "On NVIDIA it downloads a ready-made CUDA build in about a minute."
         ),
         overrides_by_host={
             APPLE: {"tradeoff": "Compiles on your Mac, and needs full Xcode for the Metal "
                                 "compiler."},
-            NVIDIA: {"tradeoff": "With the CUDA toolkit it compiles for your card, which "
-                                 "runs about twice as fast; otherwise it downloads a "
-                                 "prebuilt CUDA build."},
+            NVIDIA: {"tradeoff": "Downloads a ready-made CUDA build in about a minute "
+                                 "(driver 575 or newer)."},
         },
         license_name="MIT (code + flow weights); DINOv3 License (bundled encoder)",
         license_url="https://huggingface.co/raven38/pixal3d-sv-q8_0-v1",

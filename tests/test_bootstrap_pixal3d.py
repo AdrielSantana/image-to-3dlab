@@ -164,18 +164,20 @@ def test_the_viewer_runs_this_script_with_yes():
 
 # Pixal3D's CUDA 12 prebuilt is compiled with CUDA 12.9. On the RunPod 4090 (driver 570,
 # CUDA 12.8) it died at its first kernel: "the provided PTX was compiled with an
-# unsupported toolchain". On a newer driver it ran, but at about half the speed of a local
-# compile (390 s against ~190 s, RunPod 2026-09-23). So a compiler, when there is one and
-# the driver can run what it makes, wins; the prebuilt is the fallback.
+# unsupported toolchain". On a newer driver it runs, at about half the speed of a local
+# compile (390 s against ~190 s, RunPod 2026-09-23), but the compile took 15 minutes on an
+# A40 pod (2026-10-02). So the prebuilt wins whenever the driver can run it; a compiler is
+# the fallback for an old driver.
 NVCC = "/usr/local/cuda/bin/nvcc"
 
 
 @pytest.mark.parametrize("key,cuda,nvcc,nvcc_cuda,expected", [
     ("linux-nvidia", (12, 9), None, None, "prebuilt"),
-    ("linux-nvidia", (13, 0), NVCC, (12, 8), "cuda-source"),
+    ("linux-nvidia", (13, 0), NVCC, (12, 8), "prebuilt"),
+    # Driver too old for the prebuilt: compile instead.
     ("linux-nvidia", (12, 8), NVCC, (12, 8), "cuda-source"),
     # A version we could not read is tried rather than refused.
-    ("linux-nvidia", (13, 0), NVCC, None, "cuda-source"),
+    ("linux-nvidia", (12, 8), NVCC, None, "cuda-source"),
     # A toolkit newer than the driver builds kernels the driver cannot run.
     ("linux-nvidia", (13, 0), NVCC, (13, 1), "prebuilt"),
     ("linux-nvidia", (12, 8), NVCC, (13, 0), None),
@@ -191,16 +193,16 @@ def test_the_driver_and_compiler_pick_the_route(key, cuda, nvcc, nvcc_cuda, expe
     assert boot.build_kind(key, cuda, nvcc, nvcc_cuda) == expected
 
 
-def test_prebuilt_can_be_asked_for_when_it_would_run():
-    """For timing one against the other on the same machine."""
+def test_a_compile_can_be_asked_for_when_it_would_run():
+    """For an agent following the README's "compile it locally" note."""
     assert boot.build_kind("linux-nvidia", (13, 0), NVCC, (12, 8),
-                           prefer_prebuilt=True) == "prebuilt"
-    # Asking for it on a driver it cannot run on still compiles instead.
-    assert boot.build_kind("linux-nvidia", (12, 8), NVCC, (12, 8),
-                           prefer_prebuilt=True) == "cuda-source"
+                           prefer_compile=True) == "cuda-source"
+    # Asking for it with no compiler still gets the prebuilt.
+    assert boot.build_kind("linux-nvidia", (13, 0), None, None,
+                           prefer_compile=True) == "prebuilt"
 
 
-def test_the_prebuilt_flag_reaches_the_route(monkeypatch):
+def test_the_compile_flag_reaches_the_route(monkeypatch):
     monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
     monkeypatch.setattr(boot, "driver_cuda", lambda: (13, 0))
     monkeypatch.setattr(boot, "find_nvcc", lambda: NVCC)
@@ -209,9 +211,9 @@ def test_the_prebuilt_flag_reaches_the_route(monkeypatch):
     chosen = []
     monkeypatch.setattr(boot, "install_build", lambda key, kind: chosen.append(kind))
     monkeypatch.setattr(boot, "install_weights", lambda *a: None)
-    assert boot.main(["--yes", "--prebuilt"]) == 0
+    assert boot.main(["--yes", "--compile"]) == 0
     assert boot.main(["--yes"]) == 0
-    assert chosen == ["prebuilt", "cuda-source"]
+    assert chosen == ["cuda-source", "prebuilt"]
 
 
 def test_an_old_driver_without_a_compiler_is_told_what_to_update(monkeypatch, capsys):
