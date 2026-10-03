@@ -5,10 +5,9 @@ Two halves, the same way the viewer tracks every backend. The **code** is Stabil
 repository in `vendor/stable-fast-3d`, installed into this interpreter together with its
 two compiled extensions, a texture baker and a UV unwrapper:
 
-- **Apple Silicon:** the baker is built with Metal. It needs Homebrew's `libomp`.
-- **Linux with an NVIDIA card:** the baker is built with CUDA when the CUDA toolkit
-  (`nvcc`) is installed, and with its CPU kernel otherwise. The model runs on the GPU
-  either way.
+- **Apple Silicon only:** the baker is built with Metal. It needs Homebrew's `libomp`.
+  NVIDIA is not supported: SF3D pins packages (an old huggingface-hub and rembg) that
+  broke the lab's own environment there, and the newer NVIDIA routes beat it anyway.
 
 The **weights** are SF3D itself (3.8 GB, **gated**: accept Stability's licence on Hugging
 Face and log in first) and DINOv2 (1.1 GB), which SF3D would otherwise fetch unannounced
@@ -30,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +41,8 @@ from image_to_3dlab import host
 
 VENDOR = REPO / "vendor" / "stable-fast-3d"
 UPSTREAM = "https://github.com/Stability-AI/stable-fast-3d.git"
+# Upstream's head since January 2025, and the code every SF3D run here has used.
+COMMIT = "ff21fc491b4dc5314bf6734c7c0dabd86b5f5bb2"
 
 # (repo, files, approximate gigabytes). DINOv2 is here because SF3D's image tokenizer
 # downloads it on first use otherwise, which is exactly the surprise AGENTS.md forbids.
@@ -60,7 +60,6 @@ LICENCE = (
 
 # Looked up through the module so a test can pretend to be another machine.
 target = host.build_target
-find_nvcc = host.find_nvcc
 
 
 class GatedAccess(Exception):
@@ -72,63 +71,14 @@ def total_gb() -> float:
     return sum(size for _, _, size in WEIGHTS)
 
 
-def nvcc_version(nvcc: str) -> str | None:
-    """`12.8` from nvcc's banner, or None."""
-    try:
-        out = subprocess.run([nvcc, "--version"], capture_output=True, text=True,
-                             timeout=30, check=False).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
-    match = re.search(r"release (\d+\.\d+)", out or "")
-    return match[1] if match else None
-
-
-def torch_cuda_version() -> str | None:
-    """The CUDA version this interpreter's torch was built for; None for a CPU torch."""
-    try:
-        import torch
-    except ImportError:
-        return None
-    return torch.version.cuda
-
-
-def cuda_baker(nvcc: str | None) -> tuple[bool, str]:
-    """Whether the baker's CUDA kernel can be built here, and why not if it cannot.
-
-    torch's extension builder refuses an nvcc whose major version differs from torch's
-    own CUDA, and a fresh install's torch (CUDA 13) often meets an older toolkit.
-    """
-    if not nvcc:
-        return False, "no CUDA toolkit found"
-    have, want = nvcc_version(nvcc), torch_cuda_version()
-    if not want:
-        return False, "this PyTorch has no CUDA support"
-    if not have or have.split(".")[0] != want.split(".")[0]:
-        return False, f"the CUDA toolkit is {have or 'unknown'} but PyTorch was built for {want}"
-    return True, ""
-
-
-def build_env(key: str, base: dict[str, str]) -> dict[str, str]:
-    """Environment for building SF3D's extensions on this machine."""
-    env = dict(base)
-    if key == "macos-arm64":
-        env.update(USE_CUDA="0", USE_METAL="1")
-        return env
-    nvcc = find_nvcc()
-    cuda, _ = cuda_baker(nvcc)
-    env.update(USE_CUDA="1" if cuda else "0", USE_METAL="0")
-    if cuda:
-        env["PATH"] = os.pathsep.join([str(Path(nvcc).parent), env.get("PATH", "")])
-    return env
+def build_env(base: dict[str, str]) -> dict[str, str]:
+    """Environment for building SF3D's extensions: the Metal baker, no CUDA."""
+    return {**base, "USE_CUDA": "0", "USE_METAL": "1"}
 
 
 def route(key: str | None) -> str | None:
     if key == "macos-arm64":
         return "PyTorch on MPS, texture baker built with Metal"
-    if key == "linux-nvidia":
-        cuda, why = cuda_baker(find_nvcc())
-        baker = "CUDA" if cuda else f"its CPU kernel ({why})"
-        return f"PyTorch on CUDA, texture baker built with {baker}"
     return None
 
 
@@ -167,25 +117,30 @@ def pip_install_command() -> list[str]:
                      "Install uv (https://docs.astral.sh/uv/) and run this again.")
 
 
+def fetch_commands(vendor: Path = VENDOR) -> list[list[str]]:
+    """Check out exactly COMMIT, shallow: `git clone --branch` takes no commit."""
+    git = ["git", "-C", str(vendor)]
+    return [["git", "init", "-q", str(vendor)],
+            [*git, "remote", "add", "origin", UPSTREAM],
+            [*git, "fetch", "-q", "--depth", "1", "origin", COMMIT],
+            [*git, "checkout", "-q", "FETCH_HEAD"]]
+
+
 def install_code(key: str) -> None:
     if key == "macos-arm64" and not Path("/opt/homebrew/opt/libomp").exists():
         raise SystemExit("SF3D's Metal baker needs libomp: brew install libomp")
     if not (VENDOR / ".git").is_dir():
-        print(f"Cloning {UPSTREAM}", flush=True)
-        VENDOR.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "clone", "--depth", "1", UPSTREAM, str(VENDOR)], check=True)
-    # The CPU baker must accept the GPU tensors SF3D hands it; patch before building,
-    # since the baker is installed as a copy, not in place.
-    subprocess.run([sys.executable, str(REPO / "scripts" / "patch_sf3d_cpu_baker.py"),
-                    str(VENDOR / "texture_baker" / "texture_baker" / "baker.py")],
-                   check=True)
+        print(f"Fetching {UPSTREAM} @ {COMMIT[:12]}", flush=True)
+        VENDOR.mkdir(parents=True, exist_ok=True)
+        for command in fetch_commands():
+            subprocess.run(command, check=True)
     print("Installing SF3D's packages and building its extensions...", flush=True)
     # --no-build-isolation so the extensions compile against the torch already installed
     # here, not a fresh one pip would fetch into a throwaway build environment.
     install = pip_install_command()
     subprocess.run([*install, "setuptools", "wheel"], check=True)
     subprocess.run([*install, "--no-build-isolation", "-r", "requirements.txt"],
-                   cwd=VENDOR, env=build_env(key, dict(os.environ)), check=True)
+                   cwd=VENDOR, env=build_env(dict(os.environ)), check=True)
 
 
 def install_weights() -> None:
@@ -217,9 +172,8 @@ def main(argv: list[str] | None = None) -> int:
 
     key = target()
     if route(key) is None:
-        # Windows needs its own compiler setup for the extensions; not offered yet.
-        print("SF3D installs on an Apple Silicon Mac or on Linux with an NVIDIA card. "
-              "Nothing downloaded.")
+        print("SF3D installs on an Apple Silicon Mac only. On NVIDIA, use TRELLIS.2, "
+              "Hunyuan3D-2.1 or Pixal3D. Nothing downloaded.")
         return 1
 
     code = not args.weights_only

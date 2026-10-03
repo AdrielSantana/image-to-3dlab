@@ -169,3 +169,89 @@ def test_the_finish_page_reads_what_the_machine_can_do():
     assert "f('finish-repaint').disabled = true;" in FINISH
     assert "!state.ready" in FINISH
     assert 'id="finish-machine-note"' in INDEX
+
+
+def test_setup_page_reattaches_to_a_run_already_in_progress():
+    # The catalog names the running setup; load() must watch it, or a refresh mid-setup
+    # loses the progress bar for the rest of a 30-60 minute build.
+    assert "state.catalog.running_setup" in SETUP
+    assert "resume(state.catalog.running_setup)" in SETUP
+
+
+def test_setup_confirmation_mentions_the_build_before_the_download():
+    assert "This builds the code for this machine first, then:" in SETUP
+
+
+def test_setup_title_says_setting_up_until_the_build_exists():
+    # NVIDIA TRELLIS.2 compiles for half an hour before downloading; "Downloading" misled.
+    assert "'Setting up'" in SETUP
+
+
+def test_setup_page_has_machine_tabs():
+    # One page for every machine read as a contradiction on NVIDIA ("Mac port here",
+    # "use the NVIDIA one instead"). Tabs: this machine's live cards, others read-only.
+    assert 'id="setup-tabs"' in (VIEWER / "index.html").read_text()
+    assert "function renderTabs(" in SETUP and "readOnly" in SETUP
+
+
+def test_a_build_without_a_percentage_shows_the_bar_working():
+    assert "classList.toggle('busy'" in SETUP
+    css = (VIEWER / "styles" / "generate.css").read_text()
+    assert ".progress-track.busy" in css
+
+
+def test_another_machines_tab_says_whose_it_is():
+    assert "Showing what runs on" in SETUP
+
+
+def test_overlapping_setup_renders_cannot_double_a_card():
+    # Seen live: first load drew the page twice at once (startup + tab open). Each cleared
+    # the list, awaited the Blender check, then appended, so Blender showed twice. Only
+    # the newest render may write, and it writes after its await, never across one.
+    assert "state.renderToken" in SETUP
+    body = SETUP[SETUP.index("async function renderBackends"):]
+    body = body[:body.index("\n}\n")]
+    assert body.index("await blenderCard()") < body.index("host.innerHTML = ''")
+
+
+def test_the_finished_line_shows_the_pixel_match_note():
+    finish_js = (VIEWER / "modes" / "finish.js").read_text()
+    assert "event.note" in finish_js
+
+
+def test_remove_button_counts_only_what_it_would_free():
+    assert "backend.bytes_removable" in SETUP
+
+
+def test_generate_hands_a_model_straight_to_finish():
+    # On a remote machine, finishing a fresh model meant downloading it to a laptop and
+    # uploading it again. Generate's result has a button that hands both files over.
+    index = (VIEWER / "index.html").read_text()
+    generate = (VIEWER / "modes" / "generate.js").read_text()
+    finish_js = (VIEWER / "modes" / "finish.js").read_text()
+    assert 'id="generate-finish"' in index
+    assert "'viewer:finish-this'" in generate and "mode: 'finish'" in generate
+    listener = finish_js[finish_js.index("addEventListener('viewer:finish-this'"):]
+    assert "state.asset" in listener and "state.image" in listener and "updateSubmit()" in listener
+
+
+def test_a_route_needing_a_top_up_is_not_called_nothing_installed():
+    # An upgrader whose TRELLIS worked yesterday saw "No backend installed yet" because one
+    # new small file (the background remover) was missing. Partial routes are named.
+    body = SETUP[SETUP.index("function summarise"):]
+    body = body[:body.index("\n}\n")]
+    assert "state === 'partial'" in body and "Resume download" in body
+    assert "NVIDIA support is on the way" not in SETUP
+
+
+def test_setup_has_a_hugging_face_sign_in_card():
+    # `hf auth login` was the one terminal step left between the install command and a
+    # working TRELLIS. The Setup page takes the token itself.
+    assert "async function hfCard" in SETUP and "/api/hf/sign-in" in SETUP
+    assert "type=\"password\"" in SETUP or "type = 'password'" in SETUP
+    body = SETUP[SETUP.index("async function renderBackends"):]
+    assert "await hfCard()" in body[:body.index("\n}\n")]
+
+
+def test_blender_card_offers_an_install_on_linux():
+    assert "/api/blender/install" in SETUP and "blender_installable" in SETUP

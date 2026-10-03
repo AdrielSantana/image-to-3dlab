@@ -404,7 +404,7 @@ def test_job_status_payload_handles_no_events_yet(tmp_path):
 
 def test_backend_registry_lists_every_backend():
     assert set(api.BACKENDS) == {
-        "trellis", "sf3d", "hunyuan-mlx", "hunyuan-mlx-xiong", "pixal3d",
+        "trellis", "sf3d", "hunyuan-mlx", "hunyuan-mlx-xiong", "pixal3d", "hunyuan-cuda",
     }
     for spec in api.BACKENDS.values():
         assert spec.stages, f"{spec.id} must declare at least one stage"
@@ -686,14 +686,15 @@ def test_job_manager_disambiguates_colliding_folder_names(tmp_path):
     assert job2.output_path.name == "dup-2.glb"
 
 
-def test_cleanup_debug_files_keeps_only_output_glb(tmp_path):
+def test_cleanup_debug_files_keeps_the_glb_and_its_record(tmp_path):
     job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "run.glb", {}, "trellis")
     job.output_path.write_bytes(b"glb")
     job.manifest_path.write_text("{}")
     (tmp_path / "run_latents.pt").write_bytes(b"x")
     (tmp_path / "run.log").write_text("log")
     api._cleanup_debug_files(job)
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["run.glb"]
+    # The manifest is the run's record (for Pixal3D, its licence record), not debug output.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["run.glb", "run.json"]
 
 
 # --- alpha-transparency check: a missing Pillow install is a broken environment, not a
@@ -1129,9 +1130,323 @@ def test_reconcile_notes_a_finish_run_in_its_steps_log(tmp_path, monkeypatch):
     assert "died mid-run" in (job_dir / "steps" / "run.log").read_text()
 
 
+# --- TRELLIS.2 on NVIDIA: same id, Microsoft's own code, the Mac path unchanged ---
+def test_trellis_on_a_mac_keeps_the_metal_port():
+    spec = api.trellis_spec(api.APPLE)
+    assert spec.wrapper == api.WRAPPER and spec.interpreter == api.PYTHON
+    assert spec.requires_alpha is True
+    assert spec.readiness is api.setup_status
+
+
+def test_trellis_on_nvidia_runs_the_cuda_generator():
+    spec = api.trellis_spec(api.NVIDIA)
+    assert spec.id == "trellis"
+    assert spec.wrapper == api.TRELLIS_CUDA_WRAPPER and spec.wrapper.is_file()
+    assert spec.interpreter == api.TRELLIS_CUDA_PYTHON
+    # It mattes with our own remover, so an opaque upload is fine.
+    assert spec.requires_alpha is False
+    assert spec.readiness is api.cuda_setup_status
+
+
+def test_cuda_args_drop_the_mac_only_flags(tmp_path):
+    settings = api.validate_settings({"allow_rembg": True, "sparse_attn_backend": "mlx"})
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb",
+                  settings, "trellis")
+    args = api._trellis_cuda_build_args(job)
+    assert args[:2] == [str(tmp_path / "in.png"), str(tmp_path / "out.glb")]
+    assert "--allow-rembg" not in args and "--sparse-attn-backend" not in args
+    assert "--no-save-latents" in args
+    job.debug = True
+    assert "--no-save-latents" not in api._trellis_cuda_build_args(job)
+
+
+def test_cuda_args_are_ones_the_generator_accepts(tmp_path):
+    import trellis_cuda_generate
+
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb",
+                  api.validate_settings({}), "trellis")
+    parsed = trellis_cuda_generate.parse_args(api._trellis_cuda_build_args(job))
+    assert parsed.resolution == "1024" and parsed.save_latents is False
+
+
+def _cuda_install(tmp_path, monkeypatch, *, built=True, patched=True):
+    vendor = tmp_path / "trellis-cuda"
+    python = vendor / ".venv" / "bin" / "python"
+    marker = vendor / ".i2l-build-complete"
+    if built:
+        python.parent.mkdir(parents=True)
+        python.write_text("")
+        marker.write_text("{}")
+    monkeypatch.setattr(api, "TRELLIS_CUDA_PYTHON", python)
+    monkeypatch.setattr(api, "TRELLIS_CUDA_MARKER", marker)
+    monkeypatch.setattr(api, "weights_on_disk", lambda *a, **k: {})
+    monkeypatch.setattr(api, "trellis_cuda_bria_patched", lambda *a: patched)
+
+
+def test_cuda_route_is_ready_when_built_and_patched(tmp_path, monkeypatch):
+    _cuda_install(tmp_path, monkeypatch)
+    assert api.cuda_setup_status()["ready"] is True
+
+
+def test_cuda_route_is_not_ready_without_the_bria_patch(tmp_path, monkeypatch):
+    _cuda_install(tmp_path, monkeypatch, patched=False)
+    status = api.cuda_setup_status()
+    assert status["ready"] is False and status["bria_patched"] is False
+    assert "patch_trellis_cuda_no_bria.py" in status["build"]["hint"]
+
+
+def test_cuda_route_not_built_points_at_its_bootstrap(tmp_path, monkeypatch):
+    _cuda_install(tmp_path, monkeypatch, built=False)
+    status = api.cuda_setup_status()
+    assert status["ready"] is False
+    assert "bootstrap_trellis_cuda.py" in status["build"]["hint"]
+
+
+def test_bria_patch_probe_reads_the_real_checkout_rule(tmp_path):
+    assert api.trellis_cuda_bria_patched(tmp_path / "missing") is False
+
+
+def test_the_old_mac_setup_runner_refuses_other_machines():
+    ok, reason = api.setup_available(api.NVIDIA)
+    assert ok is False and "Setup & Status" in reason
+
+
 def test_cleanup_keeps_the_provenance_sidecar(tmp_path):
     job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", {}, "trellis")
-    for name in ("out.glb", "out.provenance.json", "out.json", "out_latents.pt"):
+    for name in ("out.glb", "out.provenance.json", "out.json", "out_latents.pt", "run.log"):
         (tmp_path / name).write_text("x")
     api._cleanup_debug_files(job)
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["out.glb", "out.provenance.json"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "out.glb", "out.json", "out.provenance.json"]
+
+
+def test_cleanup_keeps_pixal3d_licence_record_and_camera(tmp_path):
+    # Seen on a real NVIDIA pod: with Debug off, a Pixal3D model kept only its .glb. Its
+    # licence record is <name>.json and its camera is <name>.svviews/, so it shipped with
+    # no provenance, and Finish silently skipped Pixel Match. Both travel with the model.
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", {}, "pixal3d")
+    for name in ("out.glb", "out.json", "input__matted.png", "run.log"):
+        (tmp_path / name).write_text("x")
+    (tmp_path / "out.svviews").mkdir()
+    (tmp_path / "out.svviews" / "transforms.json").write_text("{}")
+    api._cleanup_debug_files(job)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out.glb", "out.json", "out.svviews"]
+    assert (tmp_path / "out.svviews" / "transforms.json").is_file()
+
+
+def test_nvidia_trellis_hides_the_mac_only_controls():
+    assert set(api.trellis_spec(api.NVIDIA).hidden_fields) == {"generate-attention", "generate-rembg"}
+    assert api.trellis_spec(api.APPLE).hidden_fields == ()
+
+
+def test_hidden_fields_name_real_generate_controls():
+    html = (Path(api.__file__).parent / "index.html").read_text()
+    for field in api.trellis_spec(api.NVIDIA).hidden_fields:
+        assert f'id="{field}"' in html
+
+
+def test_hidden_rows_are_not_shown_anyway_by_their_own_display_rule():
+    # `.field { display: grid }` beat the hidden attribute, so the Mac-only controls the
+    # page had correctly marked hidden still showed on NVIDIA. Each row class used for a
+    # hidden field needs an explicit [hidden] rule.
+    css = (Path(api.__file__).parent / "styles" / "generate.css").read_text()
+    assert ".field[hidden]" in css and ".check[hidden]" in css
+
+
+def test_drop_prompt_follows_whether_the_route_needs_a_cut_out():
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    assert "function updateDropPrompt()" in js
+    assert js.count("updateDropPrompt();") >= 2  # on metadata load and on backend change
+
+
+def test_catalog_names_the_setup_already_running(monkeypatch):
+    monkeypatch.setattr(api, "running_payload", lambda: {"backend": "trellis"})
+    assert api.catalog_payload()["running_setup"] == {"backend": "trellis"}
+    monkeypatch.setattr(api, "running_payload", lambda: None)
+    assert api.catalog_payload()["running_setup"] is None
+
+
+def test_backend_dropdown_takes_its_names_from_the_server():
+    # The option text was fixed in index.html, so NVIDIA showed "TRELLIS.2 (clean port)".
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    assert "function applyBackendLabels()" in js and "applyBackendLabels();" in js
+
+
+def test_learned_timings_never_dirty_a_tracked_file(tmp_path, monkeypatch):
+    # Seen on a real pod: the viewer rewrote the tracked viewer/generate_baseline.json after
+    # a generation, and the curl installer then refused every update ("local edits to
+    # tracked files"). Learned timings go to a git-ignored file; the shipped one is read-only.
+    shipped = tmp_path / "shipped.json"
+    shipped.write_text('{"seconds": {"decode": 100.0, "load": 10.0}}')
+    learned = tmp_path / "output" / ".generate_baseline.json"
+    monkeypatch.setattr(api, "BASELINE_PATH", shipped)
+    monkeypatch.setattr(api, "LEARNED_BASELINE_PATH", learned)
+    assert api._baseline() == {"decode": 100.0, "load": 10.0}
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", {}, "trellis")
+    job.stage_durations = {"decode": 42.0}
+    api._update_baseline(job)
+    assert shipped.read_text() == '{"seconds": {"decode": 100.0, "load": 10.0}}'
+    assert api._baseline() == {"decode": 42.0, "load": 10.0}
+
+
+def test_learned_baseline_lives_under_the_ignored_output_folder():
+    assert api.LEARNED_BASELINE_PATH.parent == api.REPO / "output"
+
+
+# --- Hunyuan3D-2.1 on NVIDIA: Tencent's own code, NVIDIA only ---------------------------
+def test_hunyuan_cuda_runs_the_cuda_generator():
+    spec = api.BACKENDS["hunyuan-cuda"]
+    assert spec.wrapper == api.HUNYUAN_CUDA_WRAPPER and spec.wrapper.is_file()
+    assert spec.interpreter == api.HUNYUAN_CUDA_PYTHON
+    assert spec.requires_alpha is False  # the generator mattes with our own remover
+
+
+def test_hunyuan_cuda_defaults_match_the_generator():
+    import hunyuan_cuda_generate as gen
+
+    for key, value in api.HUNYUAN_CUDA_DEFAULT_SETTINGS.items():
+        assert gen.DEFAULTS[key] == value, key
+
+
+@pytest.mark.parametrize("payload", [{"octree_resolution": 1024}, {"max_num_view": 12},
+                                     {"paint_resolution": 1024}, {"steps": 0},
+                                     {"seed": "x"}, "not a dict"])
+def test_hunyuan_cuda_rejects_bad_settings(payload):
+    with pytest.raises(ValueError):
+        api._hunyuan_cuda_validate_settings(payload)
+
+
+def test_hunyuan_cuda_args_are_ones_the_generator_accepts(tmp_path):
+    import hunyuan_cuda_generate as gen
+
+    settings = api._hunyuan_cuda_validate_settings({"octree_resolution": 512})
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", settings,
+                  "hunyuan-cuda")
+    args = gen.parse_args(api._hunyuan_cuda_build_args(job))
+    assert args.octree_resolution == 512 and args.output == tmp_path / "out.glb"
+
+
+def test_hunyuan_cuda_progress_moves_through_its_stages(tmp_path):
+    """The generator's own progress lines, through the shared Hunyuan parser."""
+    job = api.Job("0" * 32, tmp_path, tmp_path / "in.png", tmp_path / "out.glb", {},
+                  "hunyuan-cuda")
+    for line in ("loaded shape pipeline in 12.0s",
+                 "shape generated in 40.0s -> /x/shape.glb",
+                 "mesh loaded; paint models ready in 30.0s",
+                 "paint stage done in 90.0s -> /x/out.glb",
+                 "DONE in 130.0s -> /x/out.glb"):
+        api._hunyuan_parse_line(job, line)
+    phases = [event["phase"] for event in job.events]
+    assert phases == ["shape", "shape", "paint_setup", "paint_finish", "paint_finish"]
+    assert job.events[-1]["overall_pct"] == 100
+
+
+def test_hunyuan_cuda_is_not_ready_with_weights_missing(tmp_path, monkeypatch):
+    """Upstream would fetch them unannounced on the first run; the button must not allow it."""
+    for name in ("HUNYUAN_CUDA_MARKER", "HUNYUAN_CUDA_PYTHON"):
+        path = tmp_path / name
+        path.write_text("")
+        monkeypatch.setattr(api, name, path)
+    import backend_catalog
+
+    monkeypatch.setattr(backend_catalog, "_dir_state", lambda path: (False, 0))
+    status = api._hunyuan_cuda_readiness()
+    assert status["build"]["present"] is True
+    assert status["ready"] is False
+    assert "--weights-only" in status["build"]["hint"]
+
+
+def test_hunyuan_cuda_is_ready_when_built_and_fetched(tmp_path, monkeypatch):
+    for name in ("HUNYUAN_CUDA_MARKER", "HUNYUAN_CUDA_PYTHON"):
+        path = tmp_path / name
+        path.write_text("")
+        monkeypatch.setattr(api, name, path)
+    import backend_catalog
+
+    monkeypatch.setattr(backend_catalog, "_dir_state", lambda path: (True, 1))
+    assert api._hunyuan_cuda_readiness()["ready"] is True
+
+
+def test_hunyuan_cuda_is_not_ready_before_setup(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "HUNYUAN_CUDA_MARKER", tmp_path / "absent")
+    status = api._hunyuan_cuda_readiness()
+    assert status["ready"] is False and "bootstrap_hunyuan_cuda.py" in status["build"]["hint"]
+
+
+def test_hunyuan_cuda_fields_exist_in_the_page():
+    html = (Path(api.__file__).parent / "index.html").read_text()
+    assert 'value="hunyuan-cuda"' in html and 'data-backend="hunyuan-cuda"' in html
+    for field in ("hycuda-seed", "hycuda-steps", "hycuda-octree", "hycuda-views",
+                  "hycuda-paint-res"):
+        assert f'id="{field}"' in html, field
+
+
+def test_progress_streams_tell_proxies_not_to_buffer():
+    # Seen through RunPod's proxy: progress arrived in batches, minutes behind, because
+    # proxies (nginx, Cloudflare, RunPod) hold event streams back unless told not to.
+    sent = []
+
+    class Fake:
+        def send_response(self, code):
+            sent.append(("status", code))
+
+        def send_header(self, name, value):
+            sent.append((name, value))
+
+        def end_headers(self):
+            sent.append(("end",))
+
+    api.Handler._start_event_stream(Fake())
+    assert ("Content-Type", "text/event-stream") in sent
+    assert ("X-Accel-Buffering", "no") in sent and sent[-1] == ("end",)
+
+
+def test_generate_tab_rechecks_readiness_when_opened():
+    # Seen on a real pod: setup finished, the user opened Generate 3D, and it still said
+    # "not installed yet" with Generate greyed out until a reload, because readiness was
+    # only checked on page load and on a model change.
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    listener = js[js.index("addEventListener('viewer:modechange'"):]
+    listener = listener[:listener.index("});")]
+    assert "'generate'" in listener and "refreshSetup()" in listener
+
+
+def test_backends_say_whether_they_run_on_this_machine(monkeypatch):
+    # The Generate dropdown offered the Mac-only Hunyuan-MLX routes on an NVIDIA pod.
+    monkeypatch.setattr(api.backend_catalog, "host_platform", lambda: api.NVIDIA)
+    here = {b["id"]: b["runs_here"] for b in api.backends_payload()["backends"]}
+    assert here["hunyuan-cuda"] is True and here["hunyuan-mlx-xiong"] is False
+    monkeypatch.setattr(api.backend_catalog, "host_platform", lambda: api.APPLE)
+    here = {b["id"]: b["runs_here"] for b in api.backends_payload()["backends"]}
+    assert here["hunyuan-mlx-xiong"] is True and here["hunyuan-cuda"] is False
+
+
+def test_dropdown_hides_routes_that_do_not_run_here():
+    js = (Path(api.__file__).parent / "modes" / "generate.js").read_text()
+    assert "option.hidden = meta.runs_here === false" in js
+
+
+def test_sign_in_answers_with_status_or_a_plain_error(monkeypatch):
+    monkeypatch.setattr(api.hf_api, "sign_in", lambda token: (
+        {"signed_in": True, "user": "ada", "repos": []} if token == "good"
+        else {"error": "Hugging Face refused that token."}))
+    assert api.hf_sign_in_response({"token": "good"}) == (
+        200, {"signed_in": True, "user": "ada", "repos": []})
+    code, body = api.hf_sign_in_response({"token": "nope"})
+    assert code == 422 and "error" in body
+    assert api.hf_sign_in_response("not a dict")[0] == 400
+
+
+def test_blender_install_is_refused_when_it_cannot_or_should_not_run():
+    ok = {"blender_installable": True}
+    assert api.blender_install_refusal(ok, generating=False, setting_up=False) is None
+    assert api.blender_install_refusal(ok, generating=True, setting_up=False)[0] == 409
+    assert api.blender_install_refusal(ok, generating=False, setting_up=True)[0] == 409
+    code, message = api.blender_install_refusal(
+        {"blender_installable": False}, generating=False, setting_up=False)
+    assert code == 409 and "blender.org" in message
+
+
+def test_blender_install_runs_the_bootstrap_with_yes():
+    command = api.blender_install_command()
+    assert command[-2].endswith("bootstrap_blender.py") and command[-1] == "--yes"

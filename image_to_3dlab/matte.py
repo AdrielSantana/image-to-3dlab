@@ -8,6 +8,8 @@ head in Pixal3D (2026-09-22), a grey slab around every SF3D model (2026-09-24).
 
 from __future__ import annotations
 
+import os
+
 # A real cutout leaves a lot of the frame empty -- a centred subject is typically 30-60%
 # transparent. This floor only has to separate that from an alpha channel that cuts nothing.
 MATTE_MIN_TRANSPARENT = 0.02
@@ -44,7 +46,6 @@ LITE_MD5 = "4fab47adc4ff364be1713e97b7e66334"  # rembg's own known hash for this
 
 def model_home():
     """Where rembg keeps its models (its own U2NET_HOME convention)."""
-    import os
     from pathlib import Path
 
     return Path(os.environ.get("U2NET_HOME", Path.home() / ".u2net"))
@@ -103,6 +104,9 @@ def clean_edges(rgba, solid: int = 250, reach: int = 4):
 
 
 def new_session(model: str | None = None):
+    # Newer rembg keeps models in ~/.rembg/models unless told otherwise, so a backend's own
+    # venv missed BiRefNet-lite here and fetched u2net. One folder for every rembg.
+    os.environ.setdefault("U2NET_HOME", str(model_home()))
     import rembg
 
     return rembg.new_session(model or matte_model())

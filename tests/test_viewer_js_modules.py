@@ -930,6 +930,27 @@ def test_generate_preview_iframe_asks_for_the_embedded_view():
     assert ".embedded #mode-switch" in css
 
 
+@pytest.mark.skipif(NODE is None, reason="Node is required to execute browser ES modules")
+def test_a_gated_warning_goes_once_access_is_confirmed_and_no_sooner():
+    module_url = (REPO / "viewer" / "components" / "gated-caveat.js").as_uri()
+    program = f"""
+      import {{ showsCaveat }} from {json.dumps(module_url)};
+      const gated = {{ caveat: 'gated', gated_repo: 'org/model' }};
+      const other = {{ caveat: 'not licensed in the EU', gated_repo: null }};
+      console.log(JSON.stringify([
+        showsCaveat(gated, {{ 'org/model': 'yes' }}),
+        showsCaveat(gated, {{ 'org/model': 'no' }}),
+        showsCaveat(gated, {{ 'org/model': 'unknown' }}),
+        showsCaveat(gated, {{}}),
+        showsCaveat(other, {{ 'org/model': 'yes' }}),
+        showsCaveat({{ caveat: null }}, {{}}),
+      ]));
+    """
+    result = subprocess.run([NODE, "--input-type=module", "--eval", program],
+                            check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [False, True, True, True, True, False]
+
+
 def viewer_scripts() -> list[Path]:
     """Every first-party viewer script; vendored libraries are someone else's to parse."""
     viewer = REPO / "viewer"
