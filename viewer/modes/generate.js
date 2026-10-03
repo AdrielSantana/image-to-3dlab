@@ -30,6 +30,36 @@ const gen = {
 };
 const setupState = { ready: false };
 function currentBackend() { return g('generate-backend').value; }
+// Hide the controls the server says this machine's route ignores (e.g. the Mac-only
+// attention and rembg options on NVIDIA). A control is hidden with its wrapping row.
+function applyHiddenFields() {
+  const hidden = new Set(backendMeta[currentBackend()]?.hidden_fields || []);
+  for (const el of document.querySelectorAll('.backend-fields [id]')) {
+    const row = el.closest('.field, label.check');
+    if (row && (el.tagName === 'SELECT' || el.tagName === 'INPUT')) row.hidden = hidden.has(el.id);
+  }
+}
+// The server names each route for this machine (TRELLIS.2 is "(NVIDIA)" there).
+function applyBackendLabels() {
+  const select = g('generate-backend');
+  for (const option of select.options) {
+    const meta = backendMeta[option.value];
+    if (!meta) continue;
+    if (meta.label) option.textContent = meta.label;
+    // Only routes this machine can run: no Mac-only MLX routes on an NVIDIA box.
+    option.hidden = meta.runs_here === false;
+  }
+  if (select.selectedOptions[0]?.hidden) {
+    const first = [...select.options].find((o) => !o.hidden);
+    if (first) { select.value = first.value; select.onchange?.(); }
+  }
+}
+// Only routes that need a cut-out ask for one; the rest matte the image themselves.
+function updateDropPrompt() {
+  g('generate-prompt').innerHTML = backendRequiresAlpha()
+    ? 'Drop a pre-masked PNG here<br>or click to choose an image'
+    : 'Drop an image here<br>or click to choose one';
+}
 function backendRequiresAlpha() {
   const meta = backendMeta[currentBackend()];
   return meta ? meta.requires_alpha : true; // fail conservative if metadata hasn't loaded yet
@@ -140,6 +170,15 @@ function applyGenerateProgress(event) {
     // screen.
     g('generate-frame').src = `/viewer/index.html?a=${encodeURIComponent(src)}&la=Generated&restricted=1`;
     g('generate-glb').href = event.result_url;
+    // Straight to Finish with both files, instead of a download and a re-upload (which on
+    // a remote machine means a round trip through someone's laptop).
+    g('generate-finish').onclick = () => {
+      document.dispatchEvent(new CustomEvent('viewer:finish-this', {
+        detail: { glbUrl: event.result_url, image: gen.file,
+          name: gen.file ? `${gen.file.name.replace(/\.[^.]+$/, '')}.glb` : null },
+      }));
+      document.dispatchEvent(new CustomEvent('viewer:navigate', { detail: { mode: 'finish' } }));
+    };
     const savedNote = g('generate-saved-note');
     if (gen.outputDir) {
       savedNote.style.display = 'block';
@@ -263,6 +302,13 @@ g('generate-submit').onclick = async () => {
       paint_steps: Number(g('xiong-paint-steps').value),
       paint_tex: Number(g('xiong-paint-tex').value),
     }),
+    'hunyuan-cuda': () => ({
+      seed: Number(g('hycuda-seed').value),
+      steps: Number(g('hycuda-steps').value),
+      octree_resolution: Number(g('hycuda-octree').value),
+      max_num_view: Number(g('hycuda-views').value),
+      paint_resolution: Number(g('hycuda-paint-res').value),
+    }),
   };
   const settings = {
     backend: backendId,
@@ -332,8 +378,8 @@ async function refreshSetup() {
         }
       }
     }
-    if (backendId === 'trellis') {
-      const mlx = s.mlx_attention || {};
+    if (backendId === 'trellis' && s.mlx_attention) { // Mac only; NVIDIA reports none
+      const mlx = s.mlx_attention;
       const sel = g('generate-attention');
       if (sel) {
         for (const opt of sel.querySelectorAll('option')) {
@@ -385,7 +431,10 @@ async function loadBackendMeta() {
     for (const b of data.backends) merged[b.id] = b;
     backendMeta = merged;
   } catch (e) { /* keep the trellis-only placeholder; page stays usable */ }
+  applyBackendLabels();
   buildStageRows(currentBackend());
+  applyHiddenFields();
+  updateDropPrompt();
   refreshSetup();
 }
 g('generate-backend').onchange = () => {
@@ -394,6 +443,8 @@ g('generate-backend').onchange = () => {
     block.hidden = block.dataset.backend !== backendId;
   }
   buildStageRows(backendId);
+  applyHiddenFields();
+  updateDropPrompt();
   jobProgress.reset();
   if (gen.file) renderAlphaBadge(); // the image is unchanged; only the wording depends on the backend
   updateGenerateButton();
@@ -405,3 +456,9 @@ g('generate-backend').onchange = () => {
 g('health-goto').onclick = () => document.getElementById('mode-setup').click();
 
 loadBackendMeta();
+
+// Opening the tab re-asks whether the route is ready: a setup that finished while the page
+// sat on Setup & Status would otherwise leave "not installed yet" and a dead button here.
+document.addEventListener('viewer:modechange', (event) => {
+  if (event.detail.mode === 'generate') refreshSetup();
+});

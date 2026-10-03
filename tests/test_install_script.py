@@ -209,3 +209,91 @@ def test_both_installers_look_for_blender_with_finishs_own_finder_and_never_inst
         assert "from image_to_3dlab.blender import find_blender" in text
         assert "blender.org/download" in text
         assert "apt install blender" not in text and "winget install" not in text
+
+
+def test_update_moves_learned_timings_aside_instead_of_refusing(tmp_path, upstream, fake_bin):
+    # Seen on a real pod: viewer releases up to 0.3.6 rewrote the tracked
+    # viewer/generate_baseline.json after every generation, so every user who had generated
+    # once was refused an update. Their timings move to output/ and the update goes on.
+    (upstream / "viewer").mkdir()
+    (upstream / "viewer" / "generate_baseline.json").write_text('{"seconds": {}}\n')
+    _git(upstream, "add", ".")
+    _git(upstream, "commit", "-q", "-m", "baseline")
+    _git(upstream, "tag", "v0.2.1")
+    target = tmp_path / "lab"
+    run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(target))
+    learned = '{"seconds": {"decode": 42.0}}\n'
+    (target / "viewer" / "generate_baseline.json").write_text(learned)
+    (upstream / "VERSION").write_text("0.3.0\n")
+    _git(upstream, "commit", "-q", "-am", "four")
+    _git(upstream, "tag", "v0.3.0")
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(target))
+    assert done.returncode == 0, done.stderr
+    assert (target / "VERSION").read_text() == "0.3.0\n"
+    assert (target / "output" / ".generate_baseline.json").read_text() == learned
+    assert (target / "viewer" / "generate_baseline.json").read_text() == '{"seconds": {}}\n'
+
+
+def _with_lab(upstream):
+    lab = upstream / "lab"
+    lab.write_text('#!/bin/sh\necho "LAB STARTED $*"\n')
+    lab.chmod(0o755)
+    _git(upstream, "add", ".")
+    _git(upstream, "commit", "-q", "-m", "lab")
+    _git(upstream, "tag", "v0.2.2")
+
+
+def test_start_opens_the_lab_when_asked(tmp_path, upstream, fake_bin):
+    # The goal: run the curl command, end up in the viewer. Nothing to type in between.
+    _with_lab(upstream)
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(tmp_path / "lab"),
+               "--start")
+    assert done.returncode == 0, done.stderr
+    assert "LAB STARTED" in done.stdout
+
+
+def test_without_a_terminal_it_says_how_to_start_instead(tmp_path, upstream, fake_bin):
+    # Scripts and agents (no terminal, or --yes) must not be left holding a running server.
+    _with_lab(upstream)
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(tmp_path / "lab"))
+    assert done.returncode == 0, done.stderr
+    assert "LAB STARTED" not in done.stdout and "./lab" in done.stdout
+
+
+def test_the_real_launcher_is_executable_and_uses_auto():
+    lab = SCRIPT.parent / "lab"
+    assert lab.is_file() and lab.stat().st_mode & 0o111
+    assert "serve.py --auto" in lab.read_text()
+
+
+def test_installs_from_the_lock_file_when_there_is_one(tmp_path, upstream, fake_bin):
+    # Unpinned requirements meant every fresh install got whatever PyPI had that day: on
+    # 2026-10-01 huggingface-hub jumped to 2.x between two installs.
+    (upstream / "requirements.lock").write_text("Pillow==10.4.0\n")
+    _git(upstream, "add", ".")
+    _git(upstream, "commit", "-q", "-m", "lock")
+    _git(upstream, "tag", "v0.2.3")
+    done = run(tmp_path, fake_bin, "--repo", str(upstream), "--dir", str(tmp_path / "lab"))
+    assert done.returncode == 0, done.stderr
+    uv_calls = (tmp_path / "uv.log").read_text()
+    assert "requirements.lock" in uv_calls and "requirements.txt" not in uv_calls
+
+
+def test_the_shipped_lock_pins_what_broke_before():
+    lock = (SCRIPT.parent / "requirements.lock").read_text()
+    for line in ("numpy==1.", "rembg==2.0.69", "huggingface-hub=="):
+        assert line in lock, line
+
+
+def test_the_lock_covers_every_requirement():
+    # Regenerate with: uv pip compile --universal --python-version 3.11 requirements.txt
+    #                  -o requirements.lock
+    import re
+
+    lock = (SCRIPT.parent / "requirements.lock").read_text().lower().replace("_", "-")
+    for raw in (SCRIPT.parent / "requirements.txt").read_text().splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name = re.split(r"[<>=!~\[; ]", line, maxsplit=1)[0].lower().replace("_", "-")
+        assert f"\n{name}==" in lock, f"{name} is in requirements.txt but not the lock"

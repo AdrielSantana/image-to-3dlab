@@ -16,6 +16,7 @@ from pathlib import Path
 # `audit_model_weights` all import this module normally, and a second copy under the same
 # name is how a monkeypatch here stops reaching the code under test.
 import backend_catalog as bc
+import pytest
 
 
 def test_every_backend_states_a_licence_and_links_to_it():
@@ -132,12 +133,13 @@ def test_onboarding_is_needed_only_when_nothing_is_ready(monkeypatch, tmp_path):
     empty = bc.catalog_status(host=bc.APPLE)
     assert empty["needs_onboarding"] is True
     assert empty["ready_count"] == 0
-    assert all(b["state"] == "missing" for b in empty["backends"])
+    # NVIDIA-only routes (Hunyuan3D-2.1) are "unsupported" on a Mac, not "missing".
+    here = [b for b in empty["backends"] if b["supported_here"]]
+    assert here and all(b["state"] == "missing" for b in here)
     # "build" where the viewer can do it, "manual" where it cannot. Both mean "not yet";
     # neither means "nothing to offer", which is what an unsupported machine gets.
-    assert all(b["action"] in {"build", "manual"} for b in empty["backends"])
-    assert all(b["action"] == ("build" if b["automated_setup"] else "manual")
-               for b in empty["backends"])
+    assert all(b["action"] in {"build", "manual"} for b in here)
+    assert all(b["action"] == ("build" if b["automated_setup"] else "manual") for b in here)
 
 
 def test_backends_are_listed_best_first():
@@ -355,17 +357,85 @@ def test_there_is_only_ever_one_catalogue_module():
     assert sys.modules["backend_catalog"] is bc
 
 
-def test_a_mac_port_points_other_machines_at_the_official_nvidia_version():
-    """TRELLIS.2 and Hunyuan3D are NVIDIA-first upstream; only our ports are Mac-only.
+def test_a_mac_hunyuan_port_points_nvidia_at_the_nvidia_route():
+    """The MLX Hunyuan ports are Mac-only; on NVIDIA the lab has Tencent's own code.
 
-    A Linux or Windows user must not read "needs Apple Silicon" as the whole truth.
+    A Linux user must not read "needs Apple Silicon" as the whole truth, nor be sent off
+    to another repo for something this lab now runs.
     """
-    for backend_id in ("trellis", "hunyuan_xiong", "hunyuan-mlx"):
+    twin = bc.BY_ID["hunyuan-cuda"]
+    for backend_id in ("hunyuan_xiong", "hunyuan-mlx"):
         entry = bc.BY_ID[backend_id].describe(bc.NVIDIA)
         assert entry["supported_here"] is False
         assert entry["upstream"]["url"].startswith("https://github.com/"), backend_id
-        assert "port" in entry["platform_note"] and "NVIDIA" in entry["platform_note"]
-        assert entry["upstream"]["label"] in entry["platform_note"], backend_id
+        assert twin.label in entry["platform_note"], backend_id
+        assert "later" not in entry["platform_note"], backend_id
+
+
+def test_hunyuan_cuda_is_nvidia_linux_only():
+    entry = bc.BY_ID["hunyuan-cuda"]
+    assert entry.runs_here(bc.NVIDIA, "linux")
+    assert not entry.runs_here(bc.NVIDIA, "windows")
+    assert not entry.runs_here(bc.APPLE, "darwin")
+    assert "EU" in entry.caveat
+
+
+def test_trellis_is_supported_on_nvidia_now_not_pointed_elsewhere():
+    """TRELLIS.2 has its own NVIDIA route (Microsoft's code, built for CUDA), so an NVIDIA
+    Linux machine gets a Set up button rather than a link to the official repo."""
+    trellis = bc.BY_ID["trellis"]
+    assert trellis.runs_on == (bc.APPLE, bc.NVIDIA)
+    entry = trellis.describe(bc.NVIDIA)
+    if trellis.excluded_os(bc.NVIDIA):  # this test machine is Windows
+        pytest.skip("TRELLIS.2 on NVIDIA is Linux only")
+    assert entry["supported_here"] is True
+    assert entry["platform_note"] is None
+    assert entry["install"] == "scripts/bootstrap_trellis_cuda.py"
+    assert entry["upstream"]["url"] == "https://github.com/microsoft/TRELLIS.2"
+
+
+def test_trellis_install_and_build_probe_differ_per_machine():
+    trellis = bc.BY_ID["trellis"]
+    assert trellis.install_for(bc.APPLE) == "viewer"
+    assert trellis.install_for(bc.NVIDIA) == "scripts/bootstrap_trellis_cuda.py"
+    mac = trellis.probes_for(bc.APPLE)
+    nvidia = trellis.probes_for(bc.NVIDIA)
+    assert mac == (bc.venv_python(bc.REPO / "vendor" / "trellis-space-mac"),)
+    assert all("trellis-cuda" in str(p) for p in nvidia) and nvidia
+
+
+def test_trellis_nvidia_build_is_judged_by_its_own_probe(monkeypatch, tmp_path):
+    import dataclasses
+
+    marker = tmp_path / ".i2l-build-complete"
+    trellis = dataclasses.replace(bc.BY_ID["trellis"],
+                                  build_probes_by_host={bc.NVIDIA: (marker,)})
+    assert trellis.built_on(bc.NVIDIA) is False
+    marker.write_text("{}")
+    assert trellis.built_on(bc.NVIDIA) is True
+
+
+def test_trellis_on_windows_nvidia_is_refused_with_a_reason():
+    trellis = bc.BY_ID["trellis"]
+    assert trellis.runs_here(bc.NVIDIA, "windows") is False
+    assert trellis.runs_here(bc.NVIDIA, "linux") is True
+    note = trellis._platform_note(bc.NVIDIA, "windows")
+    assert "Windows" in note and "Linux" in note
+
+
+def test_the_mac_trellis_route_is_unchanged():
+    entry = bc.BY_ID["trellis"].describe(bc.APPLE)
+    assert entry["supported_here"] is True
+    assert entry["install"] == "viewer"
+    assert entry["setup_fetches_weights"] is False
+
+
+def test_readiness_hint_names_the_nvidia_installer(monkeypatch):
+    if bc.BY_ID["trellis"].excluded_os(bc.NVIDIA):
+        pytest.skip("TRELLIS.2 on NVIDIA is Linux only")
+    monkeypatch.setattr(bc.Backend, "built_on", lambda self, host=None: False)
+    payload = bc.readiness("trellis", host=bc.NVIDIA)
+    assert "bootstrap_trellis_cuda.py" in payload["build"]["hint"]
 
 
 def test_a_route_with_no_official_elsewhere_keeps_the_plain_note():
@@ -376,9 +446,89 @@ def test_a_route_with_no_official_elsewhere_keeps_the_plain_note():
 
 def test_trellis_warns_about_the_gated_dinov3_before_setup():
     caveat = bc.BY_ID["trellis"].caveat or ""
-    assert "dinov3" in caveat.lower() and "hf auth login" in caveat
+    assert "dinov3" in caveat.lower() and "Hugging Face sign-in" in caveat
+
+
+def test_every_gated_repo_is_one_the_sign_in_check_asks_about():
+    # The Setup page hides a gated warning only on the sign-in check's "yes"; a repo it never
+    # asks about would keep its warning forever.
+    import hf_api
+
+    checked = {repo for repo, _ in hf_api.GATED}
+    gated = {b.id: b.gated_repo for b in bc.CATALOG if b.gated_repo}
+    assert gated == {"trellis": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+                     "sf3d": "stabilityai/stable-fast-3d"}
+    assert set(gated.values()) <= checked
+    assert bc.BY_ID["trellis"].describe(bc.APPLE)["gated_repo"] == gated["trellis"]
 
 
 def test_pixal3d_setup_counts_the_background_remover_it_now_installs():
     sources = [w.source for w in bc.BY_ID["pixal3d"].weights]
     assert any("BiRefNet" in s for s in sources)
+
+
+def test_trellis_on_nvidia_is_described_as_what_it_is():
+    # Seen on a real NVIDIA pod: the card said "clean port", "Slowest" and that the first
+    # run stops after the 14 GB download; the confirmation promised a Metal build and no
+    # downloads. On NVIDIA it is Microsoft's own code, and setup fetches the weights after
+    # checking Hugging Face access first.
+    entry = bc.BY_ID["trellis"].describe(bc.NVIDIA)
+    assert entry["label"] == "TRELLIS.2 (NVIDIA)"
+    assert "port" not in entry["label"] and "Slowest" not in entry["tradeoff"]
+    assert entry["setup_fetches_weights"] is True
+    assert "Hugging Face sign-in" in entry["caveat"] and "stops after" not in entry["caveat"]
+
+
+def test_trellis_on_nvidia_needs_its_weights_to_be_ready():
+    entry = bc.BY_ID["trellis"].describe(bc.NVIDIA)
+    none_present = [{"bytes_present": 0, "bytes_expected": 10 * bc.GB}]
+    assert bc._state(none_present, built=True, setup_fetches=entry["setup_fetches_weights"]) != "ready"
+
+
+def test_host_overrides_only_name_fields_describe_knows():
+    for backend in bc.CATALOG:
+        for overrides in backend.overrides_by_host.values():
+            assert set(overrides) <= bc.HOST_OVERRIDABLE, backend.id
+
+
+def test_setup_fetch_flag_is_answered_per_machine():
+    trellis = bc.BY_ID["trellis"]
+    assert trellis.setup_fetches_on(bc.NVIDIA) is True
+    assert trellis.setup_fetches_on(bc.APPLE) is False
+    assert bc.BY_ID["pixal3d"].setup_fetches_on(bc.NVIDIA) is True
+
+
+# --- Setup page tabs: one per machine family, so nobody reads another machine's cards ---
+def test_catalog_offers_a_tab_per_machine_family():
+    tabs = bc.catalog_status(bc.NVIDIA)["platforms"]
+    assert [t["id"] for t in tabs] == [bc.APPLE, bc.NVIDIA, "amd"]
+    assert next(t for t in tabs if t["id"] == "amd")["coming"] is True
+
+
+def test_each_tab_lists_only_what_runs_on_that_machine():
+    views = bc.catalog_status(bc.NVIDIA)["views"]
+    nvidia = {b["id"] for b in views[bc.NVIDIA]}
+    apple = {b["id"] for b in views[bc.APPLE]}
+    assert "hunyuan-cuda" in nvidia and "hunyuan_xiong" not in nvidia
+    assert "hunyuan_xiong" in apple and "hunyuan-cuda" not in apple
+    assert {"pixal3d", "trellis"} <= nvidia & apple
+
+
+def test_a_tab_describes_its_own_machine():
+    views = bc.catalog_status(bc.NVIDIA)["views"]
+    trellis_mac = next(b for b in views[bc.APPLE] if b["id"] == "trellis")
+    trellis_nv = next(b for b in views[bc.NVIDIA] if b["id"] == "trellis")
+    assert trellis_nv["label"] == "TRELLIS.2 (NVIDIA)" and trellis_mac["label"] != trellis_nv["label"]
+    pixal_mac = next(b for b in views[bc.APPLE] if b["id"] == "pixal3d")
+    pixal_nv = next(b for b in views[bc.NVIDIA] if b["id"] == "pixal3d")
+    assert "Xcode" in pixal_mac["tradeoff"] and "NVIDIA" not in pixal_mac["tradeoff"]
+    assert "CUDA" in pixal_nv["tradeoff"] and "Xcode" not in pixal_nv["tradeoff"]
+
+
+def test_a_routes_removable_bytes_leave_out_shared_files():
+    # Pixal3D's Remove button counted the shared background remover as its own.
+    pixal = bc.BY_ID["pixal3d"]
+    lite = next(w for w in pixal.weights if "BiRefNet" in w.source)
+    assert bc.is_shared(pixal, lite) is True
+    assert bc.is_shared(bc.BY_ID["matte"], bc.BY_ID["matte"].weights[0]) is False
+    assert "bytes_removable" in pixal.describe(bc.NVIDIA)

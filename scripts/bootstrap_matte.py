@@ -43,6 +43,18 @@ def md5_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def install_if_missing(target: Path | None = None, download=None) -> None:
+    """BiRefNet-lite, unless it is already there. Setups that cut out pictures call this
+    so a first generation never fetches a remover nobody agreed to."""
+    target = target or matte.model_file(matte.LITE_MODEL)
+    if target.is_file():
+        return
+    download = download or globals()["download"]
+    print(f"\nFetching BiRefNet-lite ({matte.LITE_BYTES / 1e6:.0f} MB)...", flush=True)
+    download(target)
+    print(f"  background remover in {target}")
+
+
 def download(target: Path, opener=urllib.request.urlopen) -> Path:
     """Fetch to a temporary name, verify, then move into place. A bad file is never kept."""
     target.parent.mkdir(parents=True, exist_ok=True)

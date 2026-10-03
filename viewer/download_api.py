@@ -37,6 +37,7 @@ from image_to_3dlab import processes  # noqa: E402
 from backend_catalog import (  # noqa: E402
     BY_ID,
     HF_HUB_DIR,
+    NVIDIA,
     Backend,
     human_bytes,
     runs_on_phrase,
@@ -67,7 +68,42 @@ COMMANDS: dict[str, list[str]] = {
     "qwen-image": [sys.executable, str(REPO / "scripts" / "bootstrap_qwen_image.py"),
                    "--yes"],
     "matte": [sys.executable, str(REPO / "scripts" / "bootstrap_matte.py"), "--yes"],
+    # NVIDIA-only: Tencent's own Hunyuan3D-2.1, built for CUDA. The catalogue marks it
+    # unsupported everywhere else, so start() refuses before this runs on a Mac.
+    "hunyuan-cuda": [sys.executable, str(REPO / "scripts" / "bootstrap_hunyuan_cuda.py"),
+                     "--yes"],
 }
+
+# Where a route installs differently per machine, the machine's own command wins. TRELLIS.2
+# on NVIDIA is Microsoft's code built for CUDA, not the Metal port; --yes because the
+# Setup & Status dialog has already named the route and its ~15 GB.
+HOST_COMMANDS: dict[tuple[str, str], list[str]] = {
+    ("trellis", NVIDIA): [sys.executable, str(REPO / "scripts" / "bootstrap_trellis_cuda.py"),
+                          "--yes"],
+}
+
+
+def _this_host() -> str:
+    # Through the module, so a test that pretends to be another machine reaches this too.
+    import backend_catalog
+
+    return backend_catalog.host_platform()
+
+
+def command_for(backend_id: str, host: str | None = None,
+                rebuild: bool = False) -> list[str] | None:
+    """The command that sets this backend up (or rebuilds it) on this machine, or None."""
+    if rebuild:
+        return REBUILDS.get(backend_id)
+    return HOST_COMMANDS.get((backend_id, host or _this_host()), COMMANDS.get(backend_id))
+
+
+def building_label(backend_id: str, host: str | None = None) -> str:
+    """What a setup with no bytes to measure is doing, for the progress line."""
+    if (backend_id, host or _this_host()) in HOST_COMMANDS or backend_id == "hunyuan-cuda":
+        return "building the CUDA version"
+    return "building the Metal port"
+
 
 # Recompiling an installed build so it picks up this repo's patches (Pixal3D's 8-step
 # default needs scripts/patch_pixal3d_steps.py compiled in). Downloads nothing, so it
@@ -139,13 +175,15 @@ def is_stalled(present: int, idle_seconds: float) -> bool:
 
 def describe_progress(
     backend: Backend, present: int, rate: float | None, eta: float | None, stalled: bool,
-    step: str | None = None,
+    step: str | None = None, fetched: int | None = None,
 ) -> dict[str, Any]:
-    """The progress line. `step` is setup's latest log line, shown until weights arrive,
-    because "0 B of 8.4 GB" during a build download reads as stuck."""
+    """The progress line. `step` is setup's latest log line, shown until this setup has
+    fetched something, because "0 B of 8.4 GB" during a build download reads as stuck.
+    `fetched` is what this run downloaded; files another route left (the shared background
+    remover) are counted in `present` but say nothing about this setup's progress."""
     expected = backend.bytes_expected
     percent = 0 if expected <= 0 else max(0, min(99, round(present / expected * 100)))
-    if present == 0 and step:
+    if (present if fetched is None else fetched) == 0 and step:
         detail = step
     elif stalled:
         detail = f"stalled — no new data for {int(STALL_SECONDS)}s ({human_bytes(present)} so far)"
@@ -166,7 +204,7 @@ class DownloadRun:
     def __init__(self, backend: Backend, rebuild: bool = False):
         self.backend = backend
         self.rebuild = rebuild
-        self.command = (REBUILDS if rebuild else COMMANDS)[backend.id]
+        self.command = command_for(backend.id, rebuild=rebuild)
         self.status = "queued"
         self.started = time.monotonic()
         self.events: list[dict[str, Any]] = []
@@ -194,11 +232,20 @@ def active() -> DownloadRun | None:
     return next((r for r in DOWNLOADS.values() if r.status not in TERMINAL), None)
 
 
+def running_payload() -> dict[str, Any] | None:
+    """The setup in progress, so a Setup page loaded mid-run can reattach to it."""
+    run = active()
+    if run is None:
+        return None
+    return {"backend": run.backend.id, "rebuild": run.rebuild,
+            "events_url": f"/api/setup/{run.backend.id}/events"}
+
+
 def start(backend_id: str, rebuild: bool = False) -> DownloadRun:
     backend = BY_ID.get(backend_id)
     if backend is None:
         raise KeyError(f"unknown backend: {backend_id}")
-    if backend_id not in (REBUILDS if rebuild else COMMANDS):
+    if command_for(backend_id, rebuild=rebuild) is None:
         raise RuntimeError(f"{backend.label} has no automated "
                            f"{'rebuild' if rebuild else 'setup'} yet")
     # Checked here rather than only in the browser, because the API is the thing that
@@ -245,8 +292,12 @@ def remove(backend_id: str) -> dict[str, Any]:
     if run is not None and run.status not in TERMINAL:
         raise RuntimeError("that backend is downloading right now; cancel it first")
 
+    from backend_catalog import is_shared
+
     freed, removed = 0, []
     for weight in backend.weights:
+        if is_shared(backend, weight):
+            continue  # another route uses it too (the background remover)
         path = weight.path.resolve()
         if not _inside_known_roots(path):
             raise RuntimeError(f"refusing to delete outside the repo or cache: {path}")
@@ -355,18 +406,23 @@ def _run(run: DownloadRun) -> None:
                   "detail": _explain(code, list(run.log))})
     else:
         run.status = "done"
-        fetched = run.backend.setup_fetches_weights
         run.emit({"phase": "done", "overall_pct": 100,
                   "detail": "rebuilt · the next run uses this repo's patches" if run.rebuild
-                  else f"done · {human_bytes(present)} on disk" if fetched else
-                  "built · weights download on the first generation run"})
+                  else done_detail(run.backend, present)})
+
+
+def done_detail(backend: Backend, present: int) -> str:
+    """The last line of a finished setup, true for this machine's route."""
+    if backend.setup_fetches_on(_this_host()):
+        return f"done · {human_bytes(present)} on disk"
+    return "built · weights download on the first generation run"
 
 
 def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
     """Poll the target directories and report growth, rate and stalls."""
     samples: list[tuple[float, int]] = []
     last_growth = time.monotonic()
-    last_bytes = run.bytes_present()
+    last_bytes = started = run.bytes_present()
     while not stop.wait(POLL_SECONDS):
         now = time.monotonic()
         present = run.bytes_present()
@@ -377,9 +433,10 @@ def _watch_size(run: DownloadRun, stop: threading.Event) -> None:
             last_bytes = present
         remaining = max(0, run.backend.bytes_expected - present)
         rate, eta = rate_and_eta(samples, remaining)
+        fetched = max(0, present - started)
         run.emit(describe_progress(
-            run.backend, present, rate, eta, stalled=is_stalled(present, now - last_growth),
-            step=run.log[-1] if run.log else None,
+            run.backend, present, rate, eta, stalled=is_stalled(fetched, now - last_growth),
+            step=run.log[-1] if run.log else None, fetched=fetched,
         ))
 
 
@@ -391,7 +448,7 @@ def _watch_elapsed(run: DownloadRun, stop: threading.Event) -> None:
     healthy hour-long compile is worse than saying nothing.
     """
     estimate = (REBUILD_MINUTES if run.rebuild else run.backend.setup_minutes or 0) * 60
-    what = "rebuilding" if run.rebuild else "building the Metal port"
+    what = "rebuilding" if run.rebuild else building_label(run.backend.id)
     while not stop.wait(POLL_SECONDS * 2):
         elapsed = time.monotonic() - run.started
         percent = 0 if estimate <= 0 else max(0, min(95, round(elapsed / estimate * 100)))
@@ -408,13 +465,17 @@ def _explain(code: int, log: list[str]) -> str:
     A bare "exited with code 1" sends someone to the log to work out whether they are
     offline, unauthorised or out of disk. These three cover what actually happens.
     """
-    tail = "\n".join(log[-12:]).lower()
+    # Wide enough to see past a Python traceback to the error that caused it.
+    tail = "\n".join(log[-60:]).lower()
     if "401" in tail or "gated" in tail or "authenticate" in tail or "token" in tail:
         return ("refused: this model needs a Hugging Face login and its terms accepted. "
-                "Run `huggingface-cli login`, accept the terms on the model page, and retry.")
+                "Sign in under Hugging Face sign-in at the top of this page, accept the "
+                "terms on the model page, and retry.")
     if "no space left" in tail or "enospc" in tail:
         return "ran out of disk space. Free some room and retry; what downloaded is kept."
-    if "temporary failure in name resolution" in tail or "connection" in tail:
-        return "network error. Check the connection and retry; what downloaded is kept."
+    if ("temporary failure in name resolution" in tail or "connection" in tail
+            or "timed out" in tail or "failed to download" in tail):
+        return ("network error: a download failed or timed out. Check the connection and "
+                "press Set up again; it picks up where it left off.")
     last = next((line for line in reversed(log) if line.strip()), "")
     return f"setup exited with code {code}. Last line: {last}"
