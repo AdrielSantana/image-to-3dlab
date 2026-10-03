@@ -220,6 +220,42 @@ def test_an_unsupported_machine_is_refused_before_anything_downloads(monkeypatch
     assert "hunyuan_xiong" not in dl.DOWNLOADS
 
 
+def test_trellis_on_nvidia_runs_the_cuda_bootstrap_with_yes():
+    command = dl.command_for("trellis", host=dl.NVIDIA)
+    assert command[1].endswith("bootstrap_trellis_cuda.py")
+    assert command[-1] == "--yes"
+
+
+def test_trellis_on_a_mac_still_runs_the_metal_bootstrap():
+    command = dl.command_for("trellis", host="apple-silicon")
+    assert command == dl.COMMANDS["trellis"]
+    assert command[1].endswith("bootstrap_trellis_space_macos.py")
+
+
+def test_a_route_without_a_host_command_uses_the_shared_one():
+    assert dl.command_for("pixal3d", host=dl.NVIDIA) == dl.COMMANDS["pixal3d"]
+    assert dl.command_for("pixal3d", rebuild=True) == dl.REBUILDS["pixal3d"]
+    assert dl.command_for("trellis", rebuild=True) is None
+
+
+def test_the_command_follows_the_machine(monkeypatch):
+    import backend_catalog
+
+    monkeypatch.setattr(backend_catalog, "host_platform", lambda: backend_catalog.NVIDIA)
+    assert dl.command_for("trellis")[1].endswith("bootstrap_trellis_cuda.py")
+    assert dl.building_label("trellis") == "building the CUDA version"
+    monkeypatch.setattr(backend_catalog, "host_platform", lambda: backend_catalog.APPLE)
+    assert dl.building_label("trellis") == "building the Metal port"
+
+
+def test_a_setup_run_on_nvidia_holds_the_cuda_command(monkeypatch):
+    import backend_catalog
+
+    monkeypatch.setattr(backend_catalog, "host_platform", lambda: backend_catalog.NVIDIA)
+    run = dl.DownloadRun(backend_catalog.BY_ID["trellis"])
+    assert run.command[1].endswith("bootstrap_trellis_cuda.py")
+
+
 def test_every_route_claiming_automated_setup_actually_has_a_command():
     """The flag and the command table are two halves of one fact; a drift shows the user
     a button that throws "has no automated setup yet" only after they click it."""
@@ -327,3 +363,89 @@ def test_the_catalog_carries_a_rebuild_reason_only_where_the_backend_runs():
     out = generate_api.with_rebuild_reasons(catalog, reason=lambda backend_id: "stale")
     assert out["backends"][0]["rebuild_reason"] == "stale"
     assert out["backends"][1]["rebuild_reason"] is None
+
+
+def test_a_page_loaded_mid_setup_can_find_the_run_again(monkeypatch):
+    # A setup runs 30-60 minutes; a refreshed or reopened Setup page must reattach to it
+    # instead of showing idle "Set up" buttons that refuse with "already running".
+    monkeypatch.setattr(dl, "DOWNLOADS", {})
+    assert dl.running_payload() is None
+    run = dl.DownloadRun(dl.BY_ID["pixal3d"])
+    run.status = "running"
+    dl.DOWNLOADS["pixal3d"] = run
+    assert dl.running_payload() == {
+        "backend": "pixal3d", "rebuild": False,
+        "events_url": "/api/setup/pixal3d/events",
+    }
+    run.status = "done"
+    assert dl.running_payload() is None
+
+
+def test_a_download_timeout_buried_above_a_traceback_is_still_explained():
+    # Seen on a real pod: uv's "Failed to download ... operation timed out" sat above a
+    # 20-line Python traceback, so the user got the traceback's last line instead.
+    log = ["  x Failed to download `nvidia-cudnn-cu12==9.10.2.21`",
+           "  |-> Request failed after 3 retries", "  `-> operation timed out",
+           "Traceback (most recent call last):"] + [f"  frame {i}" for i in range(20)] + [
+           "subprocess.CalledProcessError: Command '[uv, pip, install]' returned 1."]
+    message = dl._explain(1, log)
+    assert "network" in message and "Set up again" in message
+
+
+def test_finished_nvidia_trellis_setup_does_not_promise_a_later_download(monkeypatch):
+    monkeypatch.setattr(dl, "_this_host", lambda: dl.NVIDIA)
+    assert dl.done_detail(dl.BY_ID["trellis"], present=16 * 1024 ** 3).startswith("done ·")
+    monkeypatch.setattr(dl, "_this_host", lambda: "apple")
+    assert "first generation run" in dl.done_detail(dl.BY_ID["trellis"], present=0)
+
+
+def test_hunyuan_cuda_sets_up_with_its_own_bootstrap_and_says_cuda():
+    command = dl.command_for("hunyuan-cuda", host=dl.NVIDIA)
+    assert command[1].endswith("bootstrap_hunyuan_cuda.py") and command[-1] == "--yes"
+    assert dl.building_label("hunyuan-cuda", host=dl.NVIDIA) == "building the CUDA version"
+
+
+def test_files_already_on_disk_do_not_make_a_build_look_stalled():
+    # Seen on a real pod: the shared background remover (214 MB) was already there from
+    # another route, so Hunyuan's rasterizer compile read "stalled" after 90 s. Only bytes
+    # this setup has fetched count, and until there are some the step is shown.
+    backend = dl.BY_ID["hunyuan-cuda"]
+    line = dl.describe_progress(backend, present=214 * 1024 ** 2, rate=None, eta=None,
+                                stalled=dl.is_stalled(0, 10 * dl.STALL_SECONDS),
+                                step="Building custom-rasterizer", fetched=0)
+    assert line["detail"] == "Building custom-rasterizer" and line["stalled"] is False
+
+
+def _sharing(tmp_path, monkeypatch):
+    """Two routes and the remover's own card, all declaring one remover file."""
+    import dataclasses
+
+    shared = tmp_path / "birefnet-lite.onnx"
+    shared.write_bytes(b"x" * 10)
+    own = tmp_path / "own-weights"
+    own.mkdir()
+    (own / "w.bin").write_bytes(b"y" * 20)
+    real = dl.BY_ID["pixal3d"]
+    lite = dataclasses.replace(real.weights[0], path=shared)
+    mine = dataclasses.replace(real.weights[0], path=own)
+    monkeypatch.setitem(dl.BY_ID, "route-a", dataclasses.replace(real, id="route-a", weights=(mine, lite)))
+    monkeypatch.setitem(dl.BY_ID, "route-b", dataclasses.replace(real, id="route-b", weights=(lite,)))
+    monkeypatch.setitem(dl.BY_ID, "remover", dataclasses.replace(
+        dl.BY_ID["matte"], id="remover", weights=(lite,)))
+    monkeypatch.setattr(dl, "_inside_known_roots", lambda path: True)
+    return shared, own
+
+
+def test_removing_a_route_keeps_files_another_route_uses(tmp_path, monkeypatch):
+    # Seen on a real pod: Pixal3D offered "Delete 213.6 MB of weights", and that was the
+    # background remover TRELLIS and Hunyuan cut out with.
+    shared, own = _sharing(tmp_path, monkeypatch)
+    result = dl.remove("route-a")
+    assert not own.exists() and shared.is_file()
+    assert result["freed_bytes"] == 20
+
+
+def test_the_removers_own_card_can_still_remove_it(tmp_path, monkeypatch):
+    shared, _ = _sharing(tmp_path, monkeypatch)
+    dl.remove("remover")
+    assert not shared.exists()

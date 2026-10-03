@@ -528,3 +528,39 @@ def test_the_finish_page_calls_it_pixel_match():
     html = Path("viewer/index.html").read_text()
     assert "Pixel Match" in html
     assert 'id="finish-repaint" type="checkbox" checked' not in html
+
+
+def test_a_skipped_pixel_match_is_said_plainly_and_stays_on_screen(tmp_path):
+    # Seen on a real NVIDIA pod: Pixel Match stayed ticked, no stage ran, and the only word
+    # about it was a start-up line replaced a second later. The note rides on the finished
+    # result, and says what Pixel Match needs.
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"some-other-model", b"png", {})
+    note = finish.photo_note(job, job.settings)
+    assert note and "Pixel Match" in note and "skipped" in note and "Pixal3D" in note
+    assert finish.photo_note(job, {**job.settings, "skip_photo": True}) is None
+
+
+def test_no_note_when_the_camera_is_found(tmp_path):
+    _pixal3d_run(tmp_path / "generated")
+    manager = finish.FinishJobManager(tmp_path / "finish", tmp_path / "generated")
+    job = manager.create("robot.glb", b"glb-bytes", b"png", {})
+    assert finish.photo_note(job, job.settings) is None
+
+
+def test_capabilities_offer_a_blender_install_only_where_one_can_run():
+    # Linux x86_64 with no Blender: the Setup card gets an Install Blender button.
+    linux = finish.capabilities("nvidia", find=lambda: None, version=lambda _: None,
+                                installable=lambda: True)
+    assert linux["blender_installable"] is True
+    mac = finish.capabilities("apple-silicon", find=lambda: None, version=lambda _: None,
+                              installable=lambda: False)
+    assert mac["blender_installable"] is False
+
+
+def test_no_install_offered_once_blender_is_found(tmp_path):
+    exe = tmp_path / "blender"
+    exe.write_text("")
+    found = finish.capabilities("nvidia", find=lambda: exe, version=lambda _: (4, 2),
+                                installable=lambda: True)
+    assert found["blender_installable"] is False

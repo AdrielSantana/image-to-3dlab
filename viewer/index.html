@@ -90,6 +90,7 @@
       </label>
     </header>
 
+    <div id="setup-tabs" class="setup-tabs" role="tablist"></div>
     <div id="setup-summary" class="setup-summary">checking…</div>
     <div id="setup-backends" class="setup-backends"></div>
 
@@ -221,6 +222,7 @@
           <option value="hunyuan-mlx">Hunyuan3D-MLX (dgrauet shape + Xiong paint)</option>
           <option value="hunyuan-mlx-xiong">Hunyuan3D-MLX (Xiong, full pipeline)</option>
           <option value="pixal3d">Pixal3D (C++/GGML, Metal)</option>
+          <option value="hunyuan-cuda">Hunyuan3D-2.1 (NVIDIA)</option>
         </select></div>
       <div id="generate-drop">
         <div id="generate-prompt">Drop a pre-masked PNG here<br>or click to choose an image</div>
@@ -250,6 +252,19 @@
         <div class="field"><label for="generate-texture">Texture size</label>
           <select id="generate-texture"><option>1024</option><option selected>2048</option><option>3072</option><option>4096</option></select></div>
         <label class="check"><input id="generate-rembg" type="checkbox"><span>allow rembg</span><small>only for images without alpha</small></label>
+      </div>
+
+      <div class="backend-fields" data-backend="hunyuan-cuda" hidden>
+        <div class="field"><label for="hycuda-seed">Seed</label><input id="hycuda-seed" type="number" step="1" value="1234"></div>
+        <div class="field"><label for="hycuda-steps">Shape steps</label><input id="hycuda-steps" type="number" min="1" step="1" value="50"></div>
+        <div class="field"><label for="hycuda-octree">Octree resolution</label>
+          <select id="hycuda-octree"><option>256</option><option selected>384</option><option>512</option></select>
+          <small>Higher is more detail and more GPU memory.</small></div>
+        <div class="field"><label for="hycuda-views">Paint views</label>
+          <select id="hycuda-views"><option selected>6</option><option>7</option><option>8</option><option>9</option></select>
+          <small>More views cover more of the model and take longer.</small></div>
+        <div class="field"><label for="hycuda-paint-res">Paint resolution</label>
+          <select id="hycuda-paint-res"><option selected>512</option><option>768</option></select></div>
       </div>
 
       <div class="backend-fields" data-backend="pixal3d" hidden>
@@ -329,7 +344,7 @@
       <div class="field"><label for="generate-output-name">Output name</label>
         <input id="generate-output-name" type="text" placeholder="leave blank for auto: image__backend__timestamp">
         <small>Folder <em>and</em> file share this name — <code>&lt;name&gt;/&lt;name&gt;.glb</code>.</small></div>
-      <label class="check"><input id="generate-debug" type="checkbox"><span>debug</span><small>keep the manifest, textures, and intermediate files instead of just the .glb</small></label>
+      <label class="check"><input id="generate-debug" type="checkbox"><span>debug</span><small>also keep textures, intermediate meshes and the log (the .glb and its licence record are always kept)</small></label>
 
       <button id="generate-submit" disabled>Generate</button>
       <button id="generate-cancel">Cancel job</button>
@@ -349,7 +364,7 @@
       </div>
       <div id="generate-duration" style="display:none; font-size:15px; color:#cfe3ff; margin-bottom:8px;"></div>
       <div id="generate-viewer"><iframe id="generate-frame" title="generated model viewer"></iframe></div>
-      <div id="generate-downloads"><a id="generate-glb" download>Download GLB</a><a id="generate-manifest" download>Download manifest</a></div>
+      <div id="generate-downloads"><button id="generate-finish" type="button">Finish this model →</button><a id="generate-glb" download>Download GLB</a><a id="generate-manifest" download>Download manifest</a></div>
       <div id="generate-saved-note" style="display:none; margin-top:6px; font-size:11px; opacity:.6;"></div>
       <div id="generate-summary"></div>
     </div>

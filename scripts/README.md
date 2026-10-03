@@ -32,12 +32,17 @@ game-ready LODs), start with [the prop sheet guide](../docs/prop-sheets.md).
 | `bootstrap_macos.sh` | Create the project virtualenv and install the SF3D backend and its native dependencies (needs Python 3.10/3.11 and Homebrew's libomp). |
 | `bootstrap_trellis_macos.sh` | Clone and install the `shivampkumar/trellis-mac` port, with the Metal acceleration backends when Xcode's Metal compiler is present and a slower CPU bake fallback when it is not. |
 | `bootstrap_trellis_space_macos.py` | Bootstrap TRELLIS.2 on macOS from Microsoft's pinned Space source. |
+| `bootstrap_trellis_cuda.py` | Install TRELLIS.2 for Linux with an NVIDIA card: Microsoft's own code, built for CUDA. |
+| `bootstrap_hunyuan_cuda.py` | Install Hunyuan3D-2.1 for Linux with an NVIDIA card: Tencent's own code, built for CUDA. |
 | `bootstrap_sf3d.py` | Install Stable Fast 3D: its code and compiled extensions, then its gated weights. |
 | `bootstrap_pixal3d.py` | Install Pixal3D (raven38/pixal3d.cpp): a `trellis-cli` build plus its Q8_0 weights. |
+| `bootstrap_blender.py` | Install Blender 4.2 LTS for Finish on Linux, from blender.org. |
 | `bootstrap_matte.py` | Install BiRefNet-lite, the background remover every backend uses once it is present. |
 | `bootstrap_qwen_image.py` | Install the text-to-image route: a stable-diffusion.cpp binary and Qwen-Image weights. |
 | `pixal3d_generate.py` | End-to-end Pixal3D generation: image -> textured GLB, on a Mac or an NVIDIA card. |
 | `trellis_space_generate.py` | Full image -> GLB generation through the CLEAN `trellis-space-mac` port on Apple Silicon. |
+| `trellis_cuda_generate.py` | Full image -> GLB generation through Microsoft's own TRELLIS.2 on an NVIDIA card. |
+| `hunyuan_cuda_generate.py` | Full image -> textured GLB through Tencent's own Hunyuan3D-2.1 on an NVIDIA card. |
 | `hunyuan_mlx_generate.py` | End-to-end Hunyuan3D-MLX generation: image -> textured GLB. |
 | `hunyuan_mlx_xiong_generate.py` | End-to-end, single-repo Hunyuan3D-MLX generation: image -> textured GLB. |
 | `hunyuan_shape_octree_test.py` | Shape-only generation at a given octree_resolution, with visible progress. |
@@ -45,7 +50,11 @@ game-ready LODs), start with [the prop sheet guide](../docs/prop-sheets.md).
 | `trellis_rebake.py` | Re-bake a GLB from a cached decode, without re-sampling or loading the model. |
 | `export_decode_highpoly.py` | Export a cached decode as a high-poly PLY, to bake detail from. |
 | `runpod_trellis2_cuda_probe.py` | Run a frozen-shape TRELLIS.2 Stage-3 material probe on CUDA. |
-| `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA wheels for the RunPod control run; not used by any local path. |
+| `trellis-cuda.txt` | In `locks/`. Every package but PyTorch for the NVIDIA TRELLIS.2 route, pinned; regenerate with `lock_nvidia_routes.py`. |
+| `hunyuan-cuda.txt` | In `locks/`. Every package but PyTorch for the NVIDIA Hunyuan3D-2.1 route, pinned; regenerate with `lock_nvidia_routes.py`. |
+| `lock_nvidia_routes.py` | Regenerate the NVIDIA routes' lock files (scripts/locks/*.txt) with uv. |
+| `pod_smoke_test.py` | Run the NVIDIA one-shot on a fresh RunPod pod, through the viewer's own web API. |
+| `runpod_trellis2_cuda_requirements.txt` | Pinned CUDA 13 wheels from the RunPod control run; `bootstrap_trellis_cuda.py` installs them on compute-capability 12.0 cards. |
 
 ## Before you spend a run
 
@@ -196,8 +205,8 @@ The `*_pose.py` files are pure curve maths with no `bpy`, which is why they have
 | `patch_pixal3d_low_vram.py` | Make Pixal3D's low-VRAM mode reachable, via `PIXAL3D_LOW_VRAM=1`. |
 | `patch_pixal3d_steps.py` | Let Pixal3D (pixal3d.cpp) run fewer sampling steps, via `PIXAL3D_STEPS=N`. |
 | `photo_paint.py` | Paint a finished model with the real pixels of its source photos, where they can see. |
-| `patch_sf3d_cpu_baker.py` | Let SF3D's texture baker run on the CPU while the model runs on an NVIDIA GPU. |
 | `patch_trellis_no_bria.py` | Disable TRELLIS' configured background model for license-controlled runs. |
+| `patch_trellis_cuda_no_bria.py` | Stop the NVIDIA TRELLIS.2 checkout loading BRIA RMBG-2.0, before it ever downloads it. |
 | `patch_trellis_mlx_attention.py` | Add an `mlx` sparse-attention backend to a vendored TRELLIS.2 checkout. |
 | `render_glb_comparison.py` | Render several GLBs from one fixed camera and lay them out as a comparison image. |
 | `patch_ovoxel_pack_options.py` | Let `o_voxel.postprocess.to_glb` forward xatlas packing options. |
