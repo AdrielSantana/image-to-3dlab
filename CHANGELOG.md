@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real cut-out.
 - Hands that hang close to the thighs no longer stick to them when a character walks: the
   skin-weight clean-up was handing those hand points to the leg bones.
+- Animated characters no longer bend their wrists inward on every move: the hand now turns
+  with its forearm when an A-pose rest is lined up with the motion's T-pose.
 
 ## [0.4.3] - 2026-10-10
 
