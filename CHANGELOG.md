@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the picture's transparency, and a picture from Create has none that means anything, so the
   backdrop was built as a wall behind the model. A test now checks that every route gets a
   real cut-out.
+- Hands that hang close to the thighs no longer stick to them when a character walks: the
+  skin-weight clean-up was handing those hand points to the leg bones.
 
 ## [0.4.3] - 2026-10-10
 

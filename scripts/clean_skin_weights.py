@@ -8,7 +8,9 @@ generated martial artist's right fingertips carried weight from his right toe. A
 nothing shows; once the hand rises and the toe stays down, those vertices stretch between
 the two into spikes. Real blends sit close together in the tree (finger to finger, arm to
 chest, spine to leg are all within a few hops), so a weight whose bone is more than
-`MAX_HOPS` bones from the vertex's main bone is an error, not a blend.
+`MAX_HOPS` bones from the vertex's main bone is an error, not a blend, unless that bone
+also sits right beside the vertex: a hand hanging against the thigh is nearer the thigh
+bone than its own, and dropping its hand weight glued it to the leg.
 
 The rule is pure (`tree_hops`, `prune_weights`); only `main()` needs `bpy`.
 """
@@ -21,6 +23,10 @@ from pathlib import Path
 
 # Finger tip to a neighbouring finger's tip is 4 hops through the knuckles and the hand.
 MAX_HOPS = 4
+# A bone this close to a vertex (beyond its nearest bone), as a share of the skeleton's
+# height, is never dropped however far away it is in the tree: a hand beside the thigh
+# stays a hand, while a toe is half the body away from a fingertip.
+CLOSE_SHARE = 0.05
 
 
 def tree_hops(parents: dict[str, str | None]) -> dict[str, dict[str, int]]:
@@ -44,31 +50,38 @@ def tree_hops(parents: dict[str, str | None]) -> dict[str, dict[str, int]]:
     return hops
 
 
-def nearest_bone(point, segments: dict) -> str:
-    """The bone whose head-to-tail segment passes closest to `point` (numpy 3-vectors)."""
+def _segment_distance(point, head, tail) -> float:
     import numpy as np
 
-    best, best_d = None, float("inf")
-    for bone, (head, tail) in segments.items():
-        axis = tail - head
-        length2 = float(axis @ axis)
-        t = 0.0 if length2 == 0 else min(1.0, max(0.0, float((point - head) @ axis) / length2))
-        d = float(np.linalg.norm(point - (head + t * axis)))
-        if d < best_d:
-            best, best_d = bone, d
-    return best
+    axis = tail - head
+    length2 = float(axis @ axis)
+    t = 0.0 if length2 == 0 else min(1.0, max(0.0, float((point - head) @ axis) / length2))
+    return float(np.linalg.norm(point - (head + t * axis)))
+
+
+def nearest_bone(point, segments: dict) -> str:
+    """The bone whose head-to-tail segment passes closest to `point` (numpy 3-vectors)."""
+    return min(segments, key=lambda bone: _segment_distance(point, *segments[bone]))
+
+
+def close_bones(point, segments: dict, slack: float) -> set[str]:
+    """Bones whose segment passes within `slack` of the nearest one's distance to `point`."""
+    distances = {bone: _segment_distance(point, *ends) for bone, ends in segments.items()}
+    nearest = min(distances.values())
+    return {bone for bone, d in distances.items() if d <= nearest + slack}
 
 
 def prune_weights(weights: dict[str, float], hops: dict[str, dict[str, int]], anchor: str,
-                  max_hops: int = MAX_HOPS) -> dict[str, float]:
+                  max_hops: int = MAX_HOPS, close: set[str] = frozenset()) -> dict[str, float]:
     """One vertex's {bone: weight}, without bones far from `anchor`, the bone the vertex
     sits nearest to. Where a vertex is decides, not its biggest weight: some fingertips
-    were weighted wholly to the toe. Unchanged when nothing is dropped; renormalised to
-    the original total otherwise; all of it to `anchor` when nothing near is left."""
+    were weighted wholly to the toe. Bones in `close` (right beside the vertex) are always
+    kept. Unchanged when nothing is dropped; renormalised to the original total otherwise;
+    all of it to `anchor` when nothing near is left."""
     if not weights:
         return weights
     near = hops.get(anchor, {})
-    kept = {b: w for b, w in weights.items() if near.get(b, max_hops + 1) <= max_hops}
+    kept = {b: w for b, w in weights.items() if b in close or near.get(b, max_hops + 1) <= max_hops}
     if len(kept) == len(weights):
         return weights
     total = sum(weights.values())
@@ -87,13 +100,16 @@ def clean_mesh(mesh, arm, max_hops: int = MAX_HOPS) -> int:  # pragma: no cover 
     hops = tree_hops(parents)
     to_arm = arm.matrix_world.inverted() @ mesh.matrix_world
     segments = {b.name: (np.array(b.head_local), np.array(b.tail_local)) for b in arm.data.bones}
+    ends = np.array([e for pair in segments.values() for e in pair])
+    slack = CLOSE_SHARE * float(np.ptp(ends, axis=0).max())
     names = {g.index: g.name for g in mesh.vertex_groups}
     changed = 0
     for vertex in mesh.data.vertices:
         weights = {names[g.group]: g.weight for g in vertex.groups
                    if g.weight > 0 and names[g.group] in parents}
-        anchor = nearest_bone(np.array(to_arm @ vertex.co), segments)
-        cleaned = prune_weights(weights, hops, anchor, max_hops)
+        point = np.array(to_arm @ vertex.co)
+        anchor = nearest_bone(point, segments)
+        cleaned = prune_weights(weights, hops, anchor, max_hops, close_bones(point, segments, slack))
         if cleaned is weights:
             continue
         changed += 1
