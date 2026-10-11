@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Walk (woman)** in the Animate presets: a walk made with Kimodo from "A woman walks
+  forward.", with a narrower step than the plain walk.
+
 ### Fixed
 - The two **Mac Hunyuan3D routes** now get your picture cut out first. Their shape stage trusts
   the picture's transparency, and a picture from Create has none that means anything, so the
