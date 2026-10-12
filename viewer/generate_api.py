@@ -138,6 +138,8 @@ PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
 PIXAL3D_CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 PIXAL3D_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 PIXAL3D_WRAPPER = REPO / "scripts" / "pixal3d_generate.py"
+# Front + back: the multi-view set (scripts/bootstrap_pixal3d.py --multiview).
+PIXAL3D_MV_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-q8_0-v1"
 
 # Routes that cut their own picture out with our remover (image_to_3dlab/matte.py), so the
 # server need not (requires_alpha=False). (backend id, host or None for any) -> the file
@@ -1768,7 +1770,8 @@ def _pixal3d_validate_settings(raw: Any) -> dict[str, Any]:
         raw = {}
     if not isinstance(raw, dict):
         raise ValueError("settings must be a JSON object")
-    settings = {**PIXAL3D_DEFAULT_SETTINGS, **raw}
+    # "back_name" is the server's own record of a saved back picture: never the client's.
+    settings = {**PIXAL3D_DEFAULT_SETTINGS, **{k: v for k, v in raw.items() if k != "back_name"}}
     try:
         settings["res"] = int(settings["res"])
         settings["seed"] = int(settings["seed"])
@@ -1796,7 +1799,8 @@ def _pixal3d_build_args(job: Job) -> list[str]:
         "--res", str(s["res"]),
         "--seed", str(s["seed"]),
         "--fov", str(s["fov"]),
-    ] + ([] if s.get("steps", "auto") == "auto" else ["--steps", str(s["steps"])])
+    ] + ([] if s.get("steps", "auto") == "auto" else ["--steps", str(s["steps"])]) + (
+        ["--back", str(job.directory / s["back_name"])] if s.get("back_name") else [])
 
 
 def _pixal3d_parse_line(job: Job, line: str) -> None:
@@ -1819,6 +1823,22 @@ def _pixal3d_parse_line(job: Job, line: str) -> None:
             "overall_pct": min(99, round(index / 6 * 100)),
             "message": PIXAL3D_STAGE_LABELS[stage],
         })
+
+
+def pixal3d_front_back_ready(models: Path = PIXAL3D_MV_MODELS) -> tuple[bool, str | None]:
+    """Whether every file the multi-view set's manifest requires is present, and if not,
+    what to say. The build itself is the single-view readiness check's business."""
+    listing = models / "pixal3d-models.json"
+    if not listing.is_file():
+        return False, ("Front + back needs Pixal3D's multi-view weights (5.9 GB). Get them from "
+                       "Setup & Status, or run python scripts/bootstrap_pixal3d.py --multiview.")
+    required = [entry["name"] for entry in json.loads(listing.read_text()).get("files", [])
+                if entry.get("required", True)]
+    missing = [name for name in required if not (models / name).is_file()]
+    if missing:
+        return False, ("Front + back is missing " + ", ".join(missing) + ". Run "
+                       "python scripts/bootstrap_pixal3d.py --multiview to finish the download.")
+    return True, None
 
 
 def _pixal3d_readiness() -> dict[str, Any]:
@@ -2627,6 +2647,22 @@ class Handler(SimpleHTTPRequestHandler):
             except ValueError as exc:
                 self._send_json(422, {"error": str(exc)})
                 return
+            back_field = form.get("back")
+            if back_field is not None and back_field.get("filename"):
+                if backend_id != "pixal3d":
+                    self._send_json(422, {"error": "a back picture works with Pixal3D only"})
+                    return
+                ready, hint = pixal3d_front_back_ready()
+                if not ready:
+                    self._send_json(503, {"error": hint, "needs_setup": True})
+                    return
+                back_suffix = Path(str(back_field["filename"])).suffix.lower()
+                if back_suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+                    self._send_json(422, {"error": "unsupported back picture; use PNG, JPG or WebP"})
+                    return
+                settings["back_name"] = f"back{back_suffix}"
+            else:
+                back_field = None
             suffix = Path(str(image_field["filename"])).suffix.lower()
             if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
                 self._send_json(422, {"error": "unsupported image type; use PNG, JPG, WebP, or BMP"})
@@ -2638,6 +2674,8 @@ class Handler(SimpleHTTPRequestHandler):
             image_path = provisional / f"input{suffix}"
             with image_path.open("wb") as handle:
                 handle.write(image_field["data"])
+            if back_field is not None:
+                (provisional / settings["back_name"]).write_bytes(back_field["data"])
             try:
                 cut_needed = spec.requires_alpha and needs_cut(image_path)
             except RuntimeError as exc:
