@@ -328,6 +328,18 @@ def test_outward_sign_is_unknown_for_an_open_sheet():
     assert pp.outward_sign(positions, faces) == 0.0
 
 
+def test_outward_sign_is_unknown_for_open_sheets_at_different_depths():
+    # Two parallel squares enclose no volume even though their signed sum is not zero.
+    positions, faces, _ = _occluded_scene()
+    assert pp.outward_sign(positions, faces) == 0.0
+
+
+def test_outward_sign_survives_vertices_split_at_a_uv_seam():
+    positions, faces, _ = _slab(thickness=0.5)
+    # The slab's walls already sit on their own vertices: a split mesh, welded back here.
+    assert pp.outward_sign(positions, faces) == 1.0
+
+
 @pytest.mark.parametrize("flip", [False, True])
 def test_the_far_side_of_a_thin_sheet_keeps_its_own_paint(flip):
     positions, faces, uvs = _slab(flip=flip)
@@ -381,3 +393,23 @@ def test_the_cut_out_fade_can_be_switched_off():
     _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
                                  settings=pp.Settings(cutout_edge=0.0))
     assert weight[32, 31] == pytest.approx(1.0)
+
+
+# --- inner depth edges: an ear in front of a head, a collar in front of a neck ---------------
+
+
+def _occluded_scene():
+    """A big square at z=0 (left half of the texture) with a small one floating in front of
+    its middle at z=0.3 (right half). Their shared outline is an inner depth edge."""
+    back = _quad(z=0.0, half=0.5)
+    front = _quad(z=0.3, half=0.25)
+    positions = np.vstack([back[0], front[0]])
+    faces = np.vstack([back[1], front[1] + 4])
+    uvs = np.vstack([back[2] * [0.5, 1], front[2] * [0.5, 1] + [0.5, 0]])
+    return positions, faces, uvs
+
+
+def _full_photo(size: int) -> np.ndarray:
+    photo = np.full((size, size, 4), 200, dtype=np.uint8)
+    photo[..., 3] = 255
+    return photo

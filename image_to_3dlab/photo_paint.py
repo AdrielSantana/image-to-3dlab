@@ -165,17 +165,26 @@ def vertex_normals(positions: np.ndarray, faces: np.ndarray) -> np.ndarray:
 
 def outward_sign(positions: np.ndarray, faces: np.ndarray) -> float:
     """+1 if `vertex_normals` point out of the mesh, -1 if the winding is inside out, 0 if
-    the mesh is open (or flat) and has no inside to tell.
+    the mesh is open and has no inside to tell.
 
-    Reads the signed volume about the centroid; an open sheet encloses ~nothing.
+    Closed means almost no edge belongs to a single triangle (a hole's rim), counted after
+    welding vertices that a UV seam split apart. Edges shared by three or more triangles
+    are untidy but not holes. Then the signed volume gives the winding.
     """
+    _, weld = np.unique(np.round(positions, 6), axis=0, return_inverse=True)
+    welded = weld.reshape(-1)[faces]
+    edges = np.sort(np.concatenate([welded[:, [0, 1]], welded[:, [1, 2]], welded[:, [2, 0]]]), axis=1)
+    _, uses = np.unique(edges, axis=0, return_counts=True)
+    if (uses == 1).mean() > OPEN_EDGE_SHARE:
+        return 0.0
     centred = positions - positions.mean(axis=0)
     v0, v1, v2 = (centred[faces[:, k]] for k in range(3))
-    volume = np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0
-    extent = np.ptp(positions, axis=0).max()
-    if abs(volume) <= 1e-6 * extent ** 3:
-        return 0.0
-    return 1.0 if volume > 0 else -1.0
+    volume = np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum()
+    return 1.0 if volume > 0 else -1.0 if volume < 0 else 0.0
+
+
+# Generated meshes measure 0-0.02% hole edges (2026-10-12); a loose sheet is all rim.
+OPEN_EDGE_SHARE = 0.02
 
 
 def erode(mask: np.ndarray, pixels: int) -> np.ndarray:
@@ -247,7 +256,8 @@ DEFAULT_SETTINGS = Settings()
 
 def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View,
                  view_positions: np.ndarray, faces: np.ndarray,
-                 settings: Settings | None = None) -> tuple[np.ndarray, np.ndarray]:
+                 settings: Settings | None = None, outward: float | None = None
+                 ) -> tuple[np.ndarray, np.ndarray]:
     """How much to trust this view's pixel at each texel, and that pixel's colour.
 
     Everything is in view space. `view_positions` are the mesh's vertices (for the
@@ -277,7 +287,8 @@ def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View
     # On a closed mesh, only surfaces facing the camera take its paint: the far side of a
     # thin sheet (cloak, ponytail) sits inside the depth tolerance and would otherwise get
     # the near side's colours. An open mesh has no outside to tell, so either side counts.
-    outward = outward_sign(view_positions, faces)
+    if outward is None:
+        outward = outward_sign(view_positions, faces)
     facing = np.maximum(facing * outward, 0.0) if outward else np.abs(facing)
 
     edge = erode(seen, settings.edge_px)[iy, ix] / max(settings.edge_px, 1)
@@ -319,8 +330,9 @@ def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
     total_w = np.zeros(len(points))
     colour = np.zeros((len(points), 3))
     strongest = np.zeros(len(points))
+    outward = outward_sign(view_pos, faces)
     for view in views:
-        weight, rgb = view_weights(points, texel_n, view, view_pos, faces, settings)
+        weight, rgb = view_weights(points, texel_n, view, view_pos, faces, settings, outward)
         total_w += weight
         colour += weight[:, None] * rgb
         strongest = np.maximum(strongest, weight)
