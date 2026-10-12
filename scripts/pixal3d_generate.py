@@ -40,14 +40,18 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+import numpy as np
+
+from image_to_3dlab.glb_turn import turn_cameras, turn_glb
 from image_to_3dlab.host import executable
 from image_to_3dlab.matte import cut_out, fallback_note, is_matted, matte_model
-from image_to_3dlab.glb_turn import turn_cameras, turn_glb
 from image_to_3dlab.provenance import LICENSES, sha256_file
 
 PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
 CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
+# Front + back: the multi-view set (scripts/bootstrap_pixal3d.py --multiview).
+MV_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-q8_0-v1"
 
 # The gauge camera the single-view path is designed around: 20 degrees, as radians.
 DEFAULT_FOV = 0.3490658503988659
@@ -117,6 +121,83 @@ def manifest(image: Path, output: Path, *, res: int, seed: int, fov: float, gss:
         }] if matted_here and matte_model else [],
         "timings_seconds": {"total": round(seconds, 1)},
     }
+
+
+# --- Front + back -------------------------------------------------------------------------
+#
+# Two pictures through two cameras half a turn apart, both the single-view gauge camera's
+# distance and field of view, so a front + back run frames its subject the way a
+# single-view run does. Validated on eight characters, 2026-10-10 to 10-12.
+
+GAUGE_CAMERA = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, -2.83564091],
+                         [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
+HALF_TURN = np.diag([-1.0, -1.0, 1.0, 1.0])
+VIEW_SIZE = 768
+
+
+def pad_view(cut_out, size: int = VIEW_SIZE):
+    """The subject centred on a transparent square, its longer side at 90% of it.
+
+    Height decides for a standing figure; width for anything wider than tall (a T-pose),
+    which would otherwise spill off the sides.
+    """
+    from PIL import Image
+
+    rgba = cut_out.convert("RGBA")
+    box = rgba.getchannel("A").point(lambda a: 255 if a > 128 else 0).getbbox()
+    subject = rgba.crop(box) if box else rgba
+    scale = 0.9 * size / max(subject.width, subject.height)
+    subject = subject.resize((max(1, round(subject.width * scale)),
+                              max(1, round(subject.height * scale))), Image.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(subject, ((size - subject.width) // 2, (size - subject.height) // 2), subject)
+    return canvas
+
+
+def _rig(fov: float = DEFAULT_FOV) -> dict:
+    frames = [("view_000.png", GAUGE_CAMERA), ("view_180.png", HALF_TURN @ GAUGE_CAMERA)]
+    return {"camera_angle_x": fov, "mesh_scale": 1, "frames": [
+        {"file_path": name, "transform_matrix": matrix.tolist(), "camera_angle_x": fov}
+        for name, matrix in frames]}
+
+
+def write_front_back_views(front, back, model_dir: Path, paint_dir: Path) -> None:
+    """Stage the two cut-outs for Pixal3D (`model_dir`, 768 px) and for Pixel Match
+    (`paint_dir`, the run's `.svviews`), with one camera rig for both.
+
+    Pixel Match gets copies at the pictures' own size (never below 768), framed the same
+    way, so a 1024 picture keeps its detail in the paint; the camera is angle-based, so
+    the same rig serves both sizes.
+    """
+    paint_size = max(VIEW_SIZE, *front.size, *back.size)
+    for folder, size in ((model_dir, VIEW_SIZE), (paint_dir, paint_size)):
+        folder.mkdir(parents=True, exist_ok=True)
+        pad_view(front, size).save(folder / "view_000.png")
+        pad_view(back, size).save(folder / "view_180.png")
+        (folder / "transforms.json").write_text(json.dumps(_rig(), indent=2) + "\n")
+
+
+def build_multiview_command(views: Path, output: Path, res: int, seed: int,
+                            models: Path = MV_MODELS, cli: Path = CLI,
+                            gss: float = DEFAULT_GSS, gsh: float | None = None) -> list[str]:
+    """The `trellis-cli` invocation for a front + back run: cameras come from `views`."""
+    command = [str(cli), "--views", str(views), "--models", str(models),
+               "--pixal3d-weights", "mv", "--res", str(res), "--seed", str(seed),
+               "--gss", str(gss)]
+    if gsh is not None:
+        command += ["--gsh", str(gsh)]
+    return command + [str(output)]
+
+
+def multiview_readiness(cli: Path = CLI, models: Path = MV_MODELS) -> dict[str, object]:
+    """Whether a front + back run can start: the CLI and every file the set's manifest
+    marks required."""
+    listing = models / "pixal3d-models.json"
+    required = ([entry["name"] for entry in json.loads(listing.read_text())["files"]
+                 if entry.get("required", True)] if listing.is_file() else ["pixal3d-models.json"])
+    missing = [name for name in required if not (models / name).is_file()]
+    return {"cli_built": cli.is_file(), "models_dir": str(models), "missing": missing,
+            "ready": cli.is_file() and not missing}
 
 
 def face_front(output: Path) -> None:
@@ -381,17 +462,33 @@ def main() -> int:
         "--no-matte", dest="matte", action="store_false",
         help="never matte; use the image exactly as given (u2net can eat thin structures)",
     )
-    parser.add_argument("--models", type=Path, default=MODELS)
+    parser.add_argument(
+        "--back", type=Path, default=None,
+        help="a picture of the back (scripts/make_back_view.py draws one): builds from front "
+             "and back with the multi-view weights, and Finish paints from both",
+    )
+    parser.add_argument("--models", type=Path, default=None,
+                        help="weights folder (default: single-view, or multi-view with --back)")
     parser.add_argument("--cli", type=Path, default=CLI)
     args = parser.parse_args()
 
-    if not args.image.is_file():
-        raise SystemExit(f"not found: {args.image}")
-    state = readiness(args.cli, args.models)
-    if not state["ready"]:
-        raise SystemExit(
-            f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d.py"
-        )
+    for picture in (args.image, args.back):
+        if picture is not None and not picture.is_file():
+            raise SystemExit(f"not found: {picture}")
+    if args.back is not None:
+        args.models = args.models or MV_MODELS
+        state = multiview_readiness(args.cli, args.models)
+        if not state["ready"]:
+            raise SystemExit(
+                f"front + back needs the multi-view weights ({state['missing'] or 'trellis-cli'}"
+                " missing). Run: python scripts/bootstrap_pixal3d.py --multiview  (5.9 GB)")
+    else:
+        args.models = args.models or MODELS
+        state = readiness(args.cli, args.models)
+        if not state["ready"]:
+            raise SystemExit(
+                f"pixal3d.cpp is not ready: {state}. Run scripts/bootstrap_pixal3d.py"
+            )
 
     steps, steps_note = resolve_steps(args.steps, cli=args.cli)
 
@@ -423,10 +520,28 @@ def main() -> int:
         print(f"[pixal3d] matted image: {image}", flush=True)
 
     started = time.time()
-    command = build_command(
-        image, args.output, args.res, args.seed, args.fov,
-        args.models, args.cli, matted, args.gss, args.gsh,
-    )
+    if args.back is not None:
+        from PIL import Image
+
+        back = args.back.resolve()
+        with Image.open(back) as opened:
+            back_cut = opened.convert("RGBA") if has_alpha(back) else None
+        if back_cut is None:
+            back_path, _ = matte(back, args.output.with_name(f"{args.output.stem}__back_matted.png"))
+            back_cut = Image.open(back_path).convert("RGBA")
+        with Image.open(image) as opened:
+            front_cut = opened.convert("RGBA")
+        model_views = args.output.with_suffix(".mvinput")
+        write_front_back_views(front_cut, back_cut, model_views,
+                               args.output.with_suffix(".svviews"))
+        command = build_multiview_command(model_views, args.output, args.res, args.seed,
+                                          args.models, args.cli, args.gss, args.gsh)
+        print(f"[pixal3d] front + back: {image.name} + {back.name}", flush=True)
+    else:
+        command = build_command(
+            image, args.output, args.res, args.seed, args.fov,
+            args.models, args.cli, matted, args.gss, args.gsh,
+        )
     print(f"[pixal3d] res={args.res} seed={args.seed} gss={args.gss} matted={matted}",
           flush=True)
     print(f"[pixal3d] {steps_note}", flush=True)
@@ -458,6 +573,9 @@ def main() -> int:
                       gss=args.gss, gsh=args.gsh, matted=matted, matted_here=matted_here,
                       matte_model=used_matte,
                       seconds=seconds, steps=steps)
+    if args.back is not None:
+        record["back_input"] = {"path": str(args.back), "sha256": sha256_file(args.back)}
+        record["parameters"]["views"] = "front + back"
     record_path = args.output.with_name(f"{args.output.stem}.json")
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 
