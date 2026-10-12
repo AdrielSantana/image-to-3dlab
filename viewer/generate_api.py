@@ -2175,6 +2175,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "image"]:
             self._create_image_job()
             return
+        if parts == ["api", "image", "back"]:
+            self._create_back_job()
+            return
         if len(parts) == 4 and parts[:2] == ["api", "assets"] and parts[3] == "name":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -2199,6 +2202,35 @@ class Handler(SimpleHTTPRequestHandler):
             self._cancel_image_job(parts[2])
             return
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def _create_back_job(self) -> None:
+        """Draw the back of a picture already in output/ (front + back builds)."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length)) if 0 < length <= 4096 else {}
+            front = image_api.back_source(OUTPUT_ROOT, str(payload.get("picture", "")))
+            seed = int(payload.get("seed", 3))
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json(422, {"error": str(exc)})
+            return
+        if not image_api.BINARY.exists():
+            self._send_json(503, {"error": "stable-diffusion.cpp is not installed.", "needs_setup": True})
+            return
+        try:
+            image_api.resolve_weights()
+            if image_api.resolve_vision() is None:
+                raise image_api.MissingWeights([image_api.VISION_FILE[1]])
+        except image_api.MissingWeights as exc:
+            self._send_json(503, {"error": str(exc), "needs_setup": True, "missing": exc.missing})
+            return
+        try:
+            job = image_api.start_back(front, seed)
+        except RuntimeError as exc:
+            self._send_json(409, {"error": str(exc)})
+            return
+        self._send_json(202, {"job_id": job.id, "settings": job.settings,
+                              "events_url": f"/api/image/{job.id}/events",
+                              "status_url": f"/api/image/{job.id}/status"})
 
     def _create_image_job(self) -> None:
         """Start one text-to-image run. The prompt is the only required field."""
