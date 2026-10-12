@@ -8,23 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- A guide to **picking a picture** for 3D: soft 3D-render style over flat anime art, A-pose
-  over T-pose, open hands, positive wording, and a prompt to start from
-  ([docs/prompt-guide.md](docs/prompt-guide.md)).
-- **Walk (woman)** in the Animate presets: a walk made with Kimodo from "A woman walks
-  forward.", with a narrower step than the plain walk.
-
-### Fixed
-- The two **Mac Hunyuan3D routes** now get your picture cut out first. Their shape stage trusts
-  the picture's transparency, and a picture from Create has none that means anything, so the
-  backdrop was built as a wall behind the model. A test now checks that every route gets a
-  real cut-out.
-- Hands that hang close to the thighs no longer stick to them when a character walks: the
-  skin-weight clean-up was handing those hand points to the leg bones.
-- Animated characters no longer bend their wrists inward on every move: the hand now turns
-  with its forearm when an A-pose rest is lined up with the motion's T-pose.
-- The studio's **Steps** panel shows how long each finished step took, while a run is going
-  and on any asset opened later (older assets too, from the run history).
 - **Front + back** in Create: for a character or a prop, Qwen draws the back of your picture,
   Pixal3D builds the shape from both, and Pixel Match paints from both, so the sides and back
   match your picture instead of being guessed. On by default when its downloads are present
@@ -36,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the model's outline (a pixel or two, about 1% in size), then detailed spots such as brows,
   eyes and ink lines onto where the model built them. It only moves what it is sure of, a
   few pixels at most. `scripts/photo_paint.py` reports what moved; `--no-align` turns it off.
+- The studio's **Steps** panel shows how long each finished step took, while a run is going
+  and on any asset opened later (older assets too, from the run history).
+- A guide to **picking a picture** for 3D: soft 3D-render style over flat anime art, A-pose
+  over T-pose, open hands, positive wording, and a prompt to start from
+  ([docs/prompt-guide.md](docs/prompt-guide.md)).
+- **Walk (woman)** in the Animate presets: a walk made with Kimodo from "A woman walks
+  forward.", with a narrower step than the plain walk.
 
 ### Changed
 - **Create** now asks for characters in an **A-pose** (arms angled down, a gap from the body,
@@ -46,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Slower on very dense meshes (about 12 s to 37 s on a million triangles).
 
 ### Fixed
+- The two **Mac Hunyuan3D routes** now get your picture cut out first. Their shape stage trusts
+  the picture's transparency, and a picture from Create has none that means anything, so the
+  backdrop was built as a wall behind the model. A test now checks that every route gets a
+  real cut-out.
+- Hands that hang close to the thighs no longer stick to them when a character walks: the
+  skin-weight clean-up was handing those hand points to the leg bones.
+- Animated characters no longer bend their wrists inward on every move: the hand now turns
+  with its forearm when an A-pose rest is lined up with the motion's T-pose.
 - The studio shows the **front and back pictures side by side** while a Front + back run builds
   its 3D model and when you open the asset, and no longer tells you to make a picture 3D while
   it is already being made.
