@@ -163,6 +163,21 @@ def vertex_normals(positions: np.ndarray, faces: np.ndarray) -> np.ndarray:
     return normals / np.where(length > 0, length, 1.0)
 
 
+def outward_sign(positions: np.ndarray, faces: np.ndarray) -> float:
+    """+1 if `vertex_normals` point out of the mesh, -1 if the winding is inside out, 0 if
+    the mesh is open (or flat) and has no inside to tell.
+
+    Reads the signed volume about the centroid; an open sheet encloses ~nothing.
+    """
+    centred = positions - positions.mean(axis=0)
+    v0, v1, v2 = (centred[faces[:, k]] for k in range(3))
+    volume = np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0
+    extent = np.ptp(positions, axis=0).max()
+    if abs(volume) <= 1e-6 * extent ** 3:
+        return 0.0
+    return 1.0 if volume > 0 else -1.0
+
+
 def erode(mask: np.ndarray, pixels: int) -> np.ndarray:
     """Distance, in whole pixels up to `pixels`, from each True pixel to the nearest False.
 
@@ -254,7 +269,12 @@ def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View
 
     to_camera = view.position - texel_points
     to_camera /= np.linalg.norm(to_camera, axis=1, keepdims=True)
-    facing = np.abs((texel_normals * to_camera).sum(axis=1))
+    facing = (texel_normals * to_camera).sum(axis=1)
+    # On a closed mesh, only surfaces facing the camera take its paint: the far side of a
+    # thin sheet (cloak, ponytail) sits inside the depth tolerance and would otherwise get
+    # the near side's colours. An open mesh has no outside to tell, so either side counts.
+    outward = outward_sign(view_positions, faces)
+    facing = np.maximum(facing * outward, 0.0) if outward else np.abs(facing)
 
     edge = erode(seen, settings.edge_px)[iy, ix] / max(settings.edge_px, 1)
     matte = view.image[iy, ix, 3] / 255.0

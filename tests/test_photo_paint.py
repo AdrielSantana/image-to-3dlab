@@ -289,3 +289,51 @@ def test_unseen_paint_takes_on_the_photo_palette():
     # The hidden back quad is untouched without matching, and shifted towards the photo with it.
     assert tuple(plain[32, 80]) == (120, 60, 60)
     assert matched[32, 80, 0] > 120 and matched[32, 80, 1] < 60
+
+
+# --- thin sheets: only surfaces that face the camera take its paint -------------------------
+
+
+def _slab(thickness: float = 0.002, flip: bool = False):
+    """A closed, very thin box: front face on the left half of the texture, back face on the
+    right half. Thinner than the visibility tolerance, so depth alone cannot tell them apart."""
+    t, h = thickness / 2, 0.5
+    corners = np.array([[-h, -h], [h, -h], [h, h], [-h, h]], dtype=np.float64)
+    front = np.column_stack([corners, np.full(4, t)])
+    back = np.column_stack([corners, np.full(4, -t)])
+    quad_uv = np.array([[0, 1], [1, 1], [1, 0], [0, 0]], dtype=np.float64) * [0.5, 1]
+    positions = [front, back]
+    uvs = [quad_uv, quad_uv + [0.5, 0]]
+    faces = [np.array([[0, 1, 2], [0, 2, 3]]), np.array([[4, 6, 5], [4, 7, 6]])]
+    # Four side walls, outward, on their own vertices with a collapsed UV (cover no texels).
+    for a, b in ((0, 1), (1, 2), (2, 3), (3, 0)):
+        base = 8 + 4 * (len(faces) - 2)
+        positions.append(np.array([front[a], back[a], back[b], front[b]]))
+        uvs.append(np.full((4, 2), 0.999))
+        faces.append(np.array([[base, base + 1, base + 2], [base, base + 2, base + 3]]))
+    positions, uvs, faces = np.vstack(positions), np.vstack(uvs), np.vstack(faces)
+    if flip:
+        faces = faces[:, ::-1]
+    return positions, faces, uvs
+
+
+def test_outward_sign_reads_the_winding_of_a_closed_mesh():
+    positions, faces, _ = _slab(thickness=0.5)
+    assert pp.outward_sign(positions, faces) == 1.0
+    assert pp.outward_sign(positions, faces[:, ::-1]) == -1.0
+
+
+def test_outward_sign_is_unknown_for_an_open_sheet():
+    positions, faces, _ = _quad()
+    assert pp.outward_sign(positions, faces) == 0.0
+
+
+@pytest.mark.parametrize("flip", [False, True])
+def test_the_far_side_of_a_thin_sheet_keeps_its_own_paint(flip):
+    positions, faces, uvs = _slab(flip=flip)
+    texture = np.full((32, 64, 3), 128, dtype=np.uint8)
+    view = _camera(size=64, image=_split_photo(64))
+    out, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                   settings=pp.Settings(match_colour=False))
+    assert weight[16, 8] == pytest.approx(1.0) and tuple(out[16, 8]) == (255, 0, 0)
+    assert weight[16, 40] == 0.0 and tuple(out[16, 40]) == (128, 128, 128)
