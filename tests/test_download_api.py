@@ -441,3 +441,66 @@ def test_the_removers_own_card_can_still_remove_it(tmp_path, monkeypatch):
     shared, _ = _sharing(tmp_path, monkeypatch)
     dl.remove("remover")
     assert not shared.exists()
+
+
+# --- a weight that is one file inside a shared Hugging Face folder ----------------------------
+
+
+def _hf_folder(tmp_path):
+    """A Hugging Face cache folder holding a big model and a small extra, both as snapshot
+    links into blobs/, the way the hub lays them out."""
+    repo = tmp_path / "models--Qwen--Qwen3-VL-8B-Instruct-GGUF"
+    (repo / "blobs").mkdir(parents=True)
+    snap = repo / "snapshots" / "abc123"
+    snap.mkdir(parents=True)
+    for name, size in (("Qwen3VL-8B-Instruct-Q4_K_M.gguf", 50), ("mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf", 7)):
+        blob = repo / "blobs" / f"sha-{size}"
+        blob.write_bytes(b"z" * size)
+        (snap / name).symlink_to(os.path.relpath(blob, snap))
+    return repo
+
+
+def _vision_weight(repo):
+    from backend_catalog import WeightSet
+    return WeightSet("vision", "Qwen/Qwen3-VL-8B-Instruct-GGUF", 7, repo,
+                     pattern="snapshots/*/mmproj-*.gguf")
+
+
+def test_a_patterned_weight_measures_only_its_own_file(tmp_path):
+    weight = _vision_weight(_hf_folder(tmp_path))
+    assert weight.state() == (True, 7)
+    assert weight.describe()["bytes_present"] == 7
+
+
+def test_a_patterned_weight_is_missing_when_its_file_is(tmp_path):
+    repo = _hf_folder(tmp_path)
+    for link in repo.glob("snapshots/*/mmproj-*"):
+        link.unlink()
+    assert _vision_weight(repo).state() == (False, 0)
+
+
+def test_removing_a_patterned_weight_deletes_its_file_and_keeps_the_folder(tmp_path, monkeypatch):
+    import dataclasses
+    repo = _hf_folder(tmp_path)
+    monkeypatch.setitem(dl.BY_ID, "front-back-test", dataclasses.replace(
+        dl.BY_ID["matte"], id="front-back-test", weights=(_vision_weight(repo),)))
+    monkeypatch.setattr(dl, "_inside_known_roots", lambda path: True)
+    result = dl.remove("front-back-test")
+    assert result["freed_bytes"] == 7
+    assert not list(repo.glob("snapshots/*/mmproj-*")) and not (repo / "blobs" / "sha-7").exists()
+    assert (repo / "blobs" / "sha-50").is_file() and repo.is_dir()   # Qwen's own model stays
+
+
+def test_a_patterned_weight_does_not_make_its_whole_folder_shared(tmp_path):
+    import dataclasses
+    from backend_catalog import WeightSet, is_shared
+    repo = _hf_folder(tmp_path)
+    whole = WeightSet("llm", "Qwen/Qwen3-VL-8B-Instruct-GGUF", 50, repo)
+    qwen = dataclasses.replace(dl.BY_ID["qwen-image"], id="q-test", weights=(whole,))
+    extra = dataclasses.replace(dl.BY_ID["matte"], id="x-test", kind="3d", weights=(_vision_weight(repo),))
+    import backend_catalog
+    backend_catalog.BY_ID.update({"q-test": qwen, "x-test": extra})
+    try:
+        assert not is_shared(qwen, whole)
+    finally:
+        backend_catalog.BY_ID.pop("q-test"), backend_catalog.BY_ID.pop("x-test")

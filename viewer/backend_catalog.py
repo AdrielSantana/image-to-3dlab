@@ -92,9 +92,28 @@ class WeightSet:
     bytes_expected: int
     path: Path
     note: str | None = None
+    # One file inside a folder another download owns (Qwen's vision projector sits in the
+    # same Hugging Face folder as its 5 GB text model): a glob under `path`. Presence,
+    # progress and Remove then see only the matching files, never the whole folder.
+    pattern: str | None = None
+
+    def files(self) -> list[Path]:
+        return sorted(self.path.glob(self.pattern)) if self.pattern and self.path.is_dir() else []
+
+    def state(self) -> tuple[bool, int]:
+        """Whether this download is on disk, and how many bytes of it."""
+        if self.pattern is None:
+            return _dir_state(self.path)
+        total = 0
+        for item in self.files():
+            try:
+                total += item.stat().st_size  # follows the snapshot link to its blob
+            except OSError:
+                continue
+        return total > 0, total
 
     def describe(self) -> dict[str, Any]:
-        present, actual = _dir_state(self.path)
+        present, actual = self.state()
         return {
             "label": self.label,
             "source": self.source,
@@ -627,7 +646,8 @@ def is_shared(backend: "Backend", weight: "WeightSet") -> bool:
     tool) can still remove it: that is the explicit choice."""
     if backend.kind == "tool":
         return False
-    return any(other.id != backend.id and any(w.path == weight.path for w in other.weights)
+    return any(other.id != backend.id and any(w.path == weight.path and w.pattern == weight.pattern
+                                              for w in other.weights)
                for other in BY_ID.values())
 
 
