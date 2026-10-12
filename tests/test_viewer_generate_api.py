@@ -1601,3 +1601,28 @@ def test_matte_upload_cuts_out_and_keeps_the_original(tmp_path, monkeypatch):
     assert (cut.name, model) == ("input.png", "u2net")
     assert Image.open(cut).mode == "RGBA"
     assert (tmp_path / "original.jpg").is_file()
+
+
+# --- every engine gets a real cut-out ------------------------------------------------------
+# Qwen-Image writes RGBA whose alpha is opaque noise, so an engine that trusts the alpha
+# builds the backdrop as geometry: the Mac Hunyuan routes put a grey wall behind a knight
+# (2026-10-12). Each route either has the server cut the picture (requires_alpha) or cuts
+# it in its own code with our remover; this keeps a new route from slipping through.
+
+
+@pytest.mark.parametrize("host", [api.APPLE, api.backend_catalog.NVIDIA])
+def test_every_route_gets_a_real_cut_out(host):
+    specs = {**api.BACKENDS, "trellis": api.trellis_spec(host)}
+    for backend_id, spec in specs.items():
+        if spec.requires_alpha:
+            continue
+        cutter = api.SELF_CUTTING.get((backend_id, host)) or api.SELF_CUTTING.get((backend_id, None))
+        assert cutter is not None, f"{backend_id} on {host}: nothing cuts its picture out"
+        source = (api.REPO / cutter).read_text()
+        assert "image_to_3dlab.matte" in source or "from image_to_3dlab import matte" in source, \
+            f"{backend_id}: {cutter} does not use our remover"
+
+
+def test_the_mac_hunyuan_routes_have_the_server_cut_the_picture():
+    assert api.BACKENDS["hunyuan-mlx"].requires_alpha is True
+    assert api.BACKENDS["hunyuan-mlx-xiong"].requires_alpha is True
