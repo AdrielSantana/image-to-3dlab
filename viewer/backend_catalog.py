@@ -634,6 +634,31 @@ CATALOG: tuple[Backend, ...] = (
                            "Qwen3-0.6B's config and tokenizer (~16 MB, no weights)."),
         ),
     ),
+    Backend(
+        id="front-back",
+        label="Front + back",
+        kind="tool",
+        best_for=("Builds characters and props from a front and a back picture: Qwen draws "
+                  "the back, Pixal3D builds the shape from both, and Pixel Match paints from "
+                  "both, so the sides and back match your picture instead of being guessed."),
+        tradeoff=("Needs Pixal3D and Qwen-Image set up first. Each model takes a few minutes "
+                  "more on a Mac for the back picture, under a minute on NVIDIA."),
+        license_name="MIT + DINOv3 License (Pixal3D); Qwen Research License (vision projector)",
+        license_url="https://huggingface.co/raven38/pixal3d-q8_0-v1",
+        install="scripts/bootstrap_front_back.py",
+        runs_on=(APPLE, NVIDIA, AMD),
+        setup_minutes=10,
+        weights=(
+            WeightSet("Pixal3D multi-view flows (Q8_0)", "raven38/pixal3d-q8_0-v1", 5_856_899_828,
+                      REPO / "vendor" / "pixal3d-cpp" / "models" / "pixal3d-q8_0-v1",
+                      note="Only the four multi-view flows are fetched; the encoder and "
+                           "decoders are linked from the single-view set."),
+            WeightSet("Qwen3-VL vision projector (Q8_0)", "Qwen/Qwen3-VL-8B-Instruct-GGUF",
+                      752_289_728, HF_HUB_DIR / "models--Qwen--Qwen3-VL-8B-Instruct-GGUF",
+                      note="Lets Qwen-Image read the front picture to draw the back.",
+                      pattern="snapshots/*/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"),
+        ),
+    ),
 )
 
 BY_ID = {backend.id: backend for backend in CATALOG}

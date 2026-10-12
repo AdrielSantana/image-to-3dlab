@@ -35,6 +35,7 @@ game-ready LODs), start with [the prop sheet guide](../docs/prop-sheets.md).
 | `bootstrap_trellis_cuda.py` | Install TRELLIS.2 for Linux with an NVIDIA card: Microsoft's own code, built for CUDA. |
 | `bootstrap_hunyuan_cuda.py` | Install Hunyuan3D-2.1 for Linux with an NVIDIA card: Tencent's own code, built for CUDA. |
 | `bootstrap_sf3d.py` | Install Stable Fast 3D: its code and compiled extensions, then its gated weights. |
+| `bootstrap_front_back.py` | Install Front + back: the two downloads that build a model from a front and a back picture. |
 | `bootstrap_pixal3d.py` | Install Pixal3D (raven38/pixal3d.cpp): a `trellis-cli` build plus its Q8_0 weights. |
 | `bootstrap_blender.py` | Install Blender 4.2 LTS for Finish on Linux, from blender.org. |
 | `bootstrap_gltfpack.py` | Install gltfpack for split props, from meshoptimizer's GitHub release. |
