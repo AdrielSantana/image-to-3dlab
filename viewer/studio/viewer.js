@@ -259,10 +259,14 @@ export function createStudioViewer({ stage, logoUrl, onClipChange }) {
     resize();
   }
 
-  function showImage(url, caption) {
+  /** One picture, or a front and back pair side by side (`back` given). */
+  function showImage(url, caption, back = null) {
     ++loadToken;
     dispose();
-    setOverlay(`<figure class="sv-picture"><img src="${url}" alt=""><figcaption>${caption}</figcaption></figure>`);
+    const pictures = back
+      ? `<div class="pair"><div><img src="${url}" alt="Front"><span>Front</span></div><div><img src="${back}" alt="Back"><span>Back</span></div></div>`
+      : `<img src="${url}" alt="">`;
+    setOverlay(`<figure class="sv-picture${back ? ' two' : ''}">${pictures}<figcaption>${caption}</figcaption></figure>`);
     drawGizmo();
     clipBar.hidden = true;
   }

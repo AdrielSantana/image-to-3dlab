@@ -525,3 +525,58 @@ def test_weights_come_from_the_tested_revisions(monkeypatch, tmp_path):
     boot.install_weights(tmp_path)
     assert seen == {boot.WEIGHTS_REPO: boot.WEIGHTS_REVISION,
                     boot.MATTE_REPO: boot.MATTE_REVISION}
+
+
+# --- multi-view (front + back) weights -------------------------------------------------------
+
+
+def test_multiview_announcement_names_backend_route_size_and_licence():
+    text = boot.multiview_announcement()
+    assert "Pixal3D" in text and "front + back" in text
+    assert f"{boot.MV_GB:.1f} GB" in text and "pixal3d-q8_0-v1" in text
+    assert "DINOv3" in text
+
+
+def test_multiview_downloads_only_the_four_flows_and_the_manifest():
+    assert sorted(boot.MV_DOWNLOAD) == sorted([
+        "pixal3d_ss_flow_mv.gguf", "pixal3d_shape_flow_512_mv.gguf",
+        "pixal3d_shape_flow_1024_mv.gguf", "pixal3d_tex_flow_1024_mv.gguf",
+        "pixal3d-models.json"])
+    assert not set(boot.MV_DOWNLOAD) & set(boot.MV_SHARED)
+
+
+def test_shared_files_are_linked_from_the_single_view_set(tmp_path):
+    sv, mv = tmp_path / "sv", tmp_path / "mv"
+    sv.mkdir()
+    for name in boot.MV_SHARED:
+        (sv / name).write_bytes(name.encode())
+    missing = boot.link_shared(sv, mv)
+    assert missing == []
+    for name in boot.MV_SHARED:
+        assert (mv / name).read_bytes() == name.encode()
+        assert (mv / name).stat().st_ino == (sv / name).stat().st_ino  # stored once
+
+
+def test_shared_files_missing_from_the_single_view_set_are_reported(tmp_path):
+    sv, mv = tmp_path / "sv", tmp_path / "mv"
+    sv.mkdir()
+    (sv / "dinov3.gguf").write_bytes(b"x")
+    missing = boot.link_shared(sv, mv)
+    assert sorted(missing) == sorted(n for n in boot.MV_SHARED if n != "dinov3.gguf")
+
+
+def test_multiview_without_yes_and_no_terminal_downloads_nothing(monkeypatch, new_driver):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot.sys, "stdin", io.StringIO(""))
+    monkeypatch.setattr(boot, "install_multiview", lambda *a: pytest.fail("downloaded"))
+    assert boot.main(["--multiview"]) == 1
+
+
+def test_multiview_with_yes_fetches_only_the_multiview_set(monkeypatch, new_driver):
+    monkeypatch.setattr(boot, "target", lambda: "linux-nvidia")
+    monkeypatch.setattr(boot, "install_build", lambda *a: pytest.fail("built"))
+    monkeypatch.setattr(boot, "install_weights", lambda *a: pytest.fail("single-view fetched"))
+    fetched = []
+    monkeypatch.setattr(boot, "install_multiview", lambda *a: fetched.append(1))
+    assert boot.main(["--multiview", "--yes"]) == 0
+    assert fetched == [1]

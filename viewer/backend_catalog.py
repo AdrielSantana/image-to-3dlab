@@ -92,9 +92,28 @@ class WeightSet:
     bytes_expected: int
     path: Path
     note: str | None = None
+    # One file inside a folder another download owns (Qwen's vision projector sits in the
+    # same Hugging Face folder as its 5 GB text model): a glob under `path`. Presence,
+    # progress and Remove then see only the matching files, never the whole folder.
+    pattern: str | None = None
+
+    def files(self) -> list[Path]:
+        return sorted(self.path.glob(self.pattern)) if self.pattern and self.path.is_dir() else []
+
+    def state(self) -> tuple[bool, int]:
+        """Whether this download is on disk, and how many bytes of it."""
+        if self.pattern is None:
+            return _dir_state(self.path)
+        total = 0
+        for item in self.files():
+            try:
+                total += item.stat().st_size  # follows the snapshot link to its blob
+            except OSError:
+                continue
+        return total > 0, total
 
     def describe(self) -> dict[str, Any]:
-        present, actual = _dir_state(self.path)
+        present, actual = self.state()
         return {
             "label": self.label,
             "source": self.source,
@@ -593,9 +612,9 @@ CATALOG: tuple[Backend, ...] = (
         kind="tool",
         best_for=("Gives a humanoid model a skeleton and skin weights, so the Rig tab can "
                   "play preset animations on it."),
-        tradeoff="Humanoids in a T-pose only for now. Four-legged creatures are coming.",
+        tradeoff="Humanoids in an A-pose or T-pose only for now. Four-legged creatures are coming.",
         overrides_by_host={
-            AMD: {"tradeoff": "Humanoids in a T-pose only for now, and attention comes "
+            AMD: {"tradeoff": "Humanoids in an A-pose or T-pose only for now, and attention comes "
                               "from PyTorch rather than flash-attn, which has no ROCm "
                               "wheel: a little slower and a little heavier on memory."},
         },
@@ -615,6 +634,33 @@ CATALOG: tuple[Backend, ...] = (
                            "Qwen3-0.6B's config and tokenizer (~16 MB, no weights)."),
         ),
     ),
+    Backend(
+        id="front-back",
+        label="Front + back",
+        kind="tool",
+        best_for=("Builds characters and props from a front and a back picture: Qwen draws "
+                  "the back, Pixal3D builds the shape from both, and Pixel Match paints from "
+                  "both, so the sides and back match your picture instead of being guessed."),
+        tradeoff=("Needs Pixal3D and Qwen-Image set up first. Each model takes a few minutes "
+                  "more on a Mac for the back picture, under a minute on NVIDIA."),
+        license_name="MIT + DINOv3 License (Pixal3D); Qwen Research License (vision projector)",
+        license_url="https://huggingface.co/raven38/pixal3d-q8_0-v1",
+        install="scripts/bootstrap_front_back.py",
+        runs_on=(APPLE, NVIDIA, AMD),
+        setup_minutes=10,
+        weights=(
+            WeightSet("Pixal3D multi-view flows (Q8_0)", "raven38/pixal3d-q8_0-v1", 5_856_899_828,
+                      REPO / "vendor" / "pixal3d-cpp" / "models" / "pixal3d-q8_0-v1",
+                      note="Only the four multi-view flows are fetched; the encoder and "
+                           "decoders are linked from the single-view set.",
+                      # The flows alone: the linked files are the single-view set's bytes.
+                      pattern="*_mv.gguf"),
+            WeightSet("Qwen3-VL vision projector (Q8_0)", "Qwen/Qwen3-VL-8B-Instruct-GGUF",
+                      752_289_728, HF_HUB_DIR / "models--Qwen--Qwen3-VL-8B-Instruct-GGUF",
+                      note="Lets Qwen-Image read the front picture to draw the back.",
+                      pattern="snapshots/*/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"),
+        ),
+    ),
 )
 
 BY_ID = {backend.id: backend for backend in CATALOG}
@@ -627,7 +673,8 @@ def is_shared(backend: "Backend", weight: "WeightSet") -> bool:
     tool) can still remove it: that is the explicit choice."""
     if backend.kind == "tool":
         return False
-    return any(other.id != backend.id and any(w.path == weight.path for w in other.weights)
+    return any(other.id != backend.id and any(w.path == weight.path and w.pattern == weight.pattern
+                                              for w in other.weights)
                for other in BY_ID.values())
 
 

@@ -484,6 +484,26 @@ def test_pixal3d_build_args_carry_the_camera(tmp_path):
     assert "--fov" in args
 
 
+def test_pixal3d_build_args_pass_a_back_picture_the_server_saved(tmp_path):
+    settings = api._pixal3d_validate_settings({})
+    settings["back_name"] = "back.png"  # set by the server after it saved the upload
+    job = api.Job("0" * 32, tmp_path, tmp_path / "input.png", tmp_path / "model.glb",
+                  settings, "pixal3d")
+    args = api._pixal3d_build_args(job)
+    assert args[args.index("--back") + 1] == str(tmp_path / "back.png")
+
+
+def test_pixal3d_settings_never_take_a_back_path_from_the_client():
+    settings = api._pixal3d_validate_settings({"back_name": "../../etc/passwd"})
+    assert "back_name" not in settings
+
+
+def test_a_front_only_pixal3d_job_has_no_back(tmp_path):
+    job = api.Job("0" * 32, tmp_path, tmp_path / "input.png", tmp_path / "model.glb",
+                  api._pixal3d_validate_settings({}), "pixal3d")
+    assert "--back" not in api._pixal3d_build_args(job)
+
+
 def test_sf3d_build_args_matches_pipeline_cli(tmp_path):
     job = api.Job("0" * 32, tmp_path, tmp_path / "input.png", tmp_path / "model.glb",
                    api._sf3d_validate_settings({}), "sf3d")
@@ -1626,3 +1646,27 @@ def test_every_route_gets_a_real_cut_out(host):
 def test_the_mac_hunyuan_routes_have_the_server_cut_the_picture():
     assert api.BACKENDS["hunyuan-mlx"].requires_alpha is True
     assert api.BACKENDS["hunyuan-mlx-xiong"].requires_alpha is True
+
+def test_front_back_readiness_follows_the_multiview_manifest(tmp_path):
+    models = tmp_path / "pixal3d-q8_0-v1"
+    models.mkdir()
+    (models / "pixal3d-models.json").write_text(json.dumps(
+        {"files": [{"name": "a_mv.gguf", "required": True}, {"name": "b.gguf", "required": True}]}))
+    (models / "a_mv.gguf").write_text("")
+    ready, hint = api.pixal3d_front_back_ready(models)
+    assert not ready and "b.gguf" in hint and "--multiview" in hint
+    (models / "b.gguf").write_text("")
+    assert api.pixal3d_front_back_ready(models) == (True, None)
+
+
+def test_front_back_readiness_without_the_folder_says_how_to_get_it(tmp_path):
+    ready, hint = api.pixal3d_front_back_ready(tmp_path / "missing")
+    assert not ready and "5.9 GB" in hint
+
+
+def test_front_back_is_ready_only_with_both_downloads():
+    assert api.front_back_status(lambda: (True, None), lambda: Path("/w/mmproj.gguf")) == {
+        "ready": True, "hint": None}
+    for weights, vision in (((True, None), None), ((False, "x"), Path("/w/m.gguf")), ((False, "x"), None)):
+        status = api.front_back_status(lambda w=weights: w, lambda v=vision: v)
+        assert not status["ready"] and "Front + back" in status["hint"] and "6.6 GB" in status["hint"]

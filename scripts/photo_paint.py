@@ -12,7 +12,8 @@ The GLB must be one mesh with one base-colour texture and no node transforms, wh
 what Finish writes. Only the base-colour image changes; every other byte stays.
 
 `--weights` writes the per-texel trust map (white = photo, black = own paint), the first
-thing to look at when a result looks wrong.
+thing to look at when a result looks wrong. Each step can be switched off to compare:
+`--no-align`, `--no-local-colour`, `--cutout-edge 0`, `--inner-edge 0`.
 
 The logic lives in `image_to_3dlab/photo_paint.py`.
 """
@@ -43,6 +44,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--facing-low", type=float, default=defaults.facing_low)
     parser.add_argument("--facing-high", type=float, default=defaults.facing_high)
     parser.add_argument("--edge-px", type=int, default=defaults.edge_px)
+    parser.add_argument("--cutout-edge", type=float, default=defaults.cutout_edge,
+                        help="fade from the picture's cut-out edge, share of its width (0 = off)")
+    parser.add_argument("--inner-edge", type=float, default=defaults.inner_edge,
+                        help="fade beside inner depth edges, share of the view's width (0 = off)")
+    parser.add_argument("--no-local-colour", action="store_true",
+                        help="match colour with one shift for the whole model instead")
+    parser.add_argument("--no-align", action="store_true",
+                        help="paint from the pictures as they are, without nudging them onto the model")
     return parser
 
 
@@ -55,9 +64,16 @@ def main() -> int:
     positions, uvs, faces, texture = pp.read_glb(args.model)
     views, mesh_scale = pp.load_views(args.views)
     settings = pp.Settings(facing_low=args.facing_low, facing_high=args.facing_high,
-                           edge_px=args.edge_px)
+                           edge_px=args.edge_px, cutout_edge=args.cutout_edge,
+                           inner_edge=args.inner_edge, local_colour=not args.no_local_colour,
+                           align=not args.no_align)
+    reports: list = []
     painted, weight = pp.paint_texture(texture, positions, uvs, faces, views, mesh_scale,
-                                       settings=settings)
+                                       settings=settings, align_reports=reports)
+    for view, report in zip(views, reports):
+        print(f"[photo-paint] align {view.name}: outline {report.iou_before:.3f} -> "
+              f"{report.iou_after:.3f} (scale {report.scale:.3f}, shift {report.dx:+d},{report.dy:+d} px), "
+              f"{report.matches} feature matches", flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(pp.replace_base_colour(args.model.read_bytes(),
                                                    pp.encode_png(painted)))

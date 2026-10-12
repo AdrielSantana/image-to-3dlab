@@ -138,6 +138,8 @@ PIXAL3D_ROOT = REPO / "vendor" / "pixal3d-cpp"
 PIXAL3D_CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 PIXAL3D_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 PIXAL3D_WRAPPER = REPO / "scripts" / "pixal3d_generate.py"
+# Front + back: the multi-view set (scripts/bootstrap_pixal3d.py --multiview).
+PIXAL3D_MV_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-q8_0-v1"
 
 # Routes that cut their own picture out with our remover (image_to_3dlab/matte.py), so the
 # server need not (requires_alpha=False). (backend id, host or None for any) -> the file
@@ -369,10 +371,24 @@ def hf_sign_in_response(payload: Any) -> tuple[int, dict]:
     return (422 if "error" in result else 200), result
 
 
+def front_back_status(weights=None, vision=None) -> dict[str, Any]:
+    """Whether Create can build from a front and a back picture: Pixal3D's multi-view
+    weights for the shape, and Qwen's vision projector for drawing the back. One place to
+    get both: the Front + back card on the Setup page."""
+    weights_ready, _ = (weights or pixal3d_front_back_ready)()
+    vision_ready = (vision or image_api.resolve_vision)() is not None
+    if weights_ready and vision_ready:
+        return {"ready": True, "hint": None}
+    return {"ready": False,
+            "hint": "It needs two more downloads (6.6 GB): Setup & Status, Front + back, "
+                    "or python scripts/bootstrap_front_back.py."}
+
+
 def catalog_payload() -> dict:
     """The Setup page's catalogue, plus any setup already running so it can reattach."""
     payload = with_rebuild_reasons(catalog_status())
     payload["running_setup"] = running_payload()
+    payload["front_back"] = front_back_status()
     return payload
 
 
@@ -1768,7 +1784,8 @@ def _pixal3d_validate_settings(raw: Any) -> dict[str, Any]:
         raw = {}
     if not isinstance(raw, dict):
         raise ValueError("settings must be a JSON object")
-    settings = {**PIXAL3D_DEFAULT_SETTINGS, **raw}
+    # "back_name" is the server's own record of a saved back picture: never the client's.
+    settings = {**PIXAL3D_DEFAULT_SETTINGS, **{k: v for k, v in raw.items() if k != "back_name"}}
     try:
         settings["res"] = int(settings["res"])
         settings["seed"] = int(settings["seed"])
@@ -1796,7 +1813,8 @@ def _pixal3d_build_args(job: Job) -> list[str]:
         "--res", str(s["res"]),
         "--seed", str(s["seed"]),
         "--fov", str(s["fov"]),
-    ] + ([] if s.get("steps", "auto") == "auto" else ["--steps", str(s["steps"])])
+    ] + ([] if s.get("steps", "auto") == "auto" else ["--steps", str(s["steps"])]) + (
+        ["--back", str(job.directory / s["back_name"])] if s.get("back_name") else [])
 
 
 def _pixal3d_parse_line(job: Job, line: str) -> None:
@@ -1819,6 +1837,22 @@ def _pixal3d_parse_line(job: Job, line: str) -> None:
             "overall_pct": min(99, round(index / 6 * 100)),
             "message": PIXAL3D_STAGE_LABELS[stage],
         })
+
+
+def pixal3d_front_back_ready(models: Path = PIXAL3D_MV_MODELS) -> tuple[bool, str | None]:
+    """Whether every file the multi-view set's manifest requires is present, and if not,
+    what to say. The build itself is the single-view readiness check's business."""
+    listing = models / "pixal3d-models.json"
+    if not listing.is_file():
+        return False, ("Front + back needs Pixal3D's multi-view weights (5.9 GB). Get them from "
+                       "Setup & Status, or run python scripts/bootstrap_pixal3d.py --multiview.")
+    required = [entry["name"] for entry in json.loads(listing.read_text()).get("files", [])
+                if entry.get("required", True)]
+    missing = [name for name in required if not (models / name).is_file()]
+    if missing:
+        return False, ("Front + back is missing " + ", ".join(missing) + ". Run "
+                       "python scripts/bootstrap_pixal3d.py --multiview to finish the download.")
+    return True, None
 
 
 def _pixal3d_readiness() -> dict[str, Any]:
@@ -2175,6 +2209,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "image"]:
             self._create_image_job()
             return
+        if parts == ["api", "image", "back"]:
+            self._create_back_job()
+            return
         if len(parts) == 4 and parts[:2] == ["api", "assets"] and parts[3] == "name":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -2199,6 +2236,35 @@ class Handler(SimpleHTTPRequestHandler):
             self._cancel_image_job(parts[2])
             return
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def _create_back_job(self) -> None:
+        """Draw the back of a picture already in output/ (front + back builds)."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length)) if 0 < length <= 4096 else {}
+            front = image_api.back_source(OUTPUT_ROOT, str(payload.get("picture", "")))
+            seed = int(payload.get("seed", 3))
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json(422, {"error": str(exc)})
+            return
+        if not image_api.BINARY.exists():
+            self._send_json(503, {"error": "stable-diffusion.cpp is not installed.", "needs_setup": True})
+            return
+        try:
+            image_api.resolve_weights()
+            if image_api.resolve_vision() is None:
+                raise image_api.MissingWeights([image_api.VISION_FILE[1]])
+        except image_api.MissingWeights as exc:
+            self._send_json(503, {"error": str(exc), "needs_setup": True, "missing": exc.missing})
+            return
+        try:
+            job = image_api.start_back(front, seed)
+        except RuntimeError as exc:
+            self._send_json(409, {"error": str(exc)})
+            return
+        self._send_json(202, {"job_id": job.id, "settings": job.settings,
+                              "events_url": f"/api/image/{job.id}/events",
+                              "status_url": f"/api/image/{job.id}/status"})
 
     def _create_image_job(self) -> None:
         """Start one text-to-image run. The prompt is the only required field."""
@@ -2595,6 +2661,22 @@ class Handler(SimpleHTTPRequestHandler):
             except ValueError as exc:
                 self._send_json(422, {"error": str(exc)})
                 return
+            back_field = form.get("back")
+            if back_field is not None and back_field.get("filename"):
+                if backend_id != "pixal3d":
+                    self._send_json(422, {"error": "a back picture works with Pixal3D only"})
+                    return
+                ready, hint = pixal3d_front_back_ready()
+                if not ready:
+                    self._send_json(503, {"error": hint, "needs_setup": True})
+                    return
+                back_suffix = Path(str(back_field["filename"])).suffix.lower()
+                if back_suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+                    self._send_json(422, {"error": "unsupported back picture; use PNG, JPG or WebP"})
+                    return
+                settings["back_name"] = f"back{back_suffix}"
+            else:
+                back_field = None
             suffix = Path(str(image_field["filename"])).suffix.lower()
             if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
                 self._send_json(422, {"error": "unsupported image type; use PNG, JPG, WebP, or BMP"})
@@ -2606,6 +2688,8 @@ class Handler(SimpleHTTPRequestHandler):
             image_path = provisional / f"input{suffix}"
             with image_path.open("wb") as handle:
                 handle.write(image_field["data"])
+            if back_field is not None:
+                (provisional / settings["back_name"]).write_bytes(back_field["data"])
             try:
                 cut_needed = spec.requires_alpha and needs_cut(image_path)
             except RuntimeError as exc:

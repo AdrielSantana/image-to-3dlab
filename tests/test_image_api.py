@@ -290,3 +290,86 @@ def test_a_gpu_run_is_left_alone(tmp_path, monkeypatch):
     api.run_job(job, manager, weights=WEIGHTS)
     # The fake writes no PNG, so the run ends in the ordinary "no output" error, not ours.
     assert "libegl1" not in (job.error or "")
+
+
+# --- edit mode: a reference picture, read by the vision file --------------------------------
+
+
+def test_an_edit_carries_the_reference_and_the_vision_file():
+    settings = api.clean_settings({})
+    command = api.build_command("the back", settings, Path("/out/x.png"), WEIGHTS,
+                                binary=Path("/bin/sd-cli"), reference=Path("/in/front.png"),
+                                vision=Path("/w/mmproj.gguf"))
+    assert command[command.index("-r") + 1] == "/in/front.png"
+    assert command[command.index("--llm_vision") + 1] == "/w/mmproj.gguf"
+
+
+def test_a_plain_picture_has_no_reference():
+    assert "-r" not in command_for() and "--llm_vision" not in command_for()
+
+
+def test_an_edit_without_the_vision_file_is_refused():
+    with pytest.raises(ValueError, match="vision"):
+        api.build_command("the back", api.clean_settings({}), Path("/out/x.png"), WEIGHTS,
+                          binary=Path("/bin/sd-cli"), reference=Path("/in/front.png"))
+
+
+def test_the_vision_file_is_the_one_beside_the_qwen_llm():
+    directory, filename = api.VISION_FILE
+    assert directory == api.WEIGHT_FILES["llm"][0]
+    assert filename.startswith("mmproj") and filename.endswith(".gguf")
+
+
+# --- back-picture jobs ------------------------------------------------------------------------
+
+
+def _front(tmp_path):
+    from PIL import Image
+    folder = tmp_path / "an-orc__20261012-120000"
+    folder.mkdir(parents=True)
+    front = folder / "an-orc__20261012-120000.png"
+    rgba = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    rgba.paste((180, 60, 40, 255), (16, 8, 48, 60))
+    rgba.save(front)
+    return front
+
+
+def test_a_back_job_lands_beside_its_front(tmp_path):
+    manager = api.ImageJobManager(tmp_path)
+    front = _front(tmp_path)
+    job = api.create_back_job(manager, front, seed=3)
+    assert job.output_path == front.with_name("an-orc__20261012-120000__back.png")
+    assert job.prompt == api.back_view.BACK_PROMPT
+    assert job.settings["width"] == 768 and job.settings["steps"] == 8 and job.settings["seed"] == 3
+    assert job.reference.is_file() and job.reference.parent == front.parent
+
+
+def test_a_back_jobs_command_is_an_edit_from_its_reference(tmp_path):
+    manager = api.ImageJobManager(tmp_path)
+    job = api.create_back_job(manager, _front(tmp_path), seed=3)
+    command = api.job_command(job, WEIGHTS, vision=Path("/w/mmproj.gguf"), binary=Path("/bin/sd-cli"))
+    assert command[command.index("-r") + 1] == str(job.reference)
+
+
+def test_a_back_job_without_the_vision_file_asks_for_setup(tmp_path, monkeypatch):
+    manager = api.ImageJobManager(tmp_path)
+    job = api.create_back_job(manager, _front(tmp_path), seed=3)
+    monkeypatch.setattr(api, "resolve_vision", lambda: None)
+    api.run_job(job, manager, weights=WEIGHTS)
+    assert job.status == "error" and job.events[-1].get("needs_setup")
+    assert "mmproj" in job.error
+
+
+def test_a_plain_jobs_command_has_no_reference(tmp_path):
+    manager = api.ImageJobManager(tmp_path)
+    job = manager.create("a fox", api.clean_settings({}))
+    assert "-r" not in api.job_command(job, WEIGHTS, vision=None, binary=Path("/bin/sd-cli"))
+
+
+def test_a_back_job_only_reads_pictures_inside_the_output_folder(tmp_path):
+    images = tmp_path / "images"
+    front = _front(images)
+    assert api.back_source(tmp_path, f"images/{front.parent.name}/{front.name}") == front
+    for bad in ("../secrets.png", "/etc/passwd", "images/nope.png", f"images/{front.parent.name}"):
+        with pytest.raises(ValueError):
+            api.back_source(tmp_path, bad)

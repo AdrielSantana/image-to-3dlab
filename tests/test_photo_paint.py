@@ -289,3 +289,227 @@ def test_unseen_paint_takes_on_the_photo_palette():
     # The hidden back quad is untouched without matching, and shifted towards the photo with it.
     assert tuple(plain[32, 80]) == (120, 60, 60)
     assert matched[32, 80, 0] > 120 and matched[32, 80, 1] < 60
+
+
+# --- thin sheets: only surfaces that face the camera take its paint -------------------------
+
+
+def _slab(thickness: float = 0.002, flip: bool = False):
+    """A closed, very thin box: front face on the left half of the texture, back face on the
+    right half. Thinner than the visibility tolerance, so depth alone cannot tell them apart."""
+    t, h = thickness / 2, 0.5
+    corners = np.array([[-h, -h], [h, -h], [h, h], [-h, h]], dtype=np.float64)
+    front = np.column_stack([corners, np.full(4, t)])
+    back = np.column_stack([corners, np.full(4, -t)])
+    quad_uv = np.array([[0, 1], [1, 1], [1, 0], [0, 0]], dtype=np.float64) * [0.5, 1]
+    positions = [front, back]
+    uvs = [quad_uv, quad_uv + [0.5, 0]]
+    faces = [np.array([[0, 1, 2], [0, 2, 3]]), np.array([[4, 6, 5], [4, 7, 6]])]
+    # Four side walls, outward, on their own vertices with a collapsed UV (cover no texels).
+    for a, b in ((0, 1), (1, 2), (2, 3), (3, 0)):
+        base = 8 + 4 * (len(faces) - 2)
+        positions.append(np.array([front[a], back[a], back[b], front[b]]))
+        uvs.append(np.full((4, 2), 0.999))
+        faces.append(np.array([[base, base + 1, base + 2], [base, base + 2, base + 3]]))
+    positions, uvs, faces = np.vstack(positions), np.vstack(uvs), np.vstack(faces)
+    if flip:
+        faces = faces[:, ::-1]
+    return positions, faces, uvs
+
+
+def test_outward_sign_reads_the_winding_of_a_closed_mesh():
+    positions, faces, _ = _slab(thickness=0.5)
+    assert pp.outward_sign(positions, faces) == 1.0
+    assert pp.outward_sign(positions, faces[:, ::-1]) == -1.0
+
+
+def test_outward_sign_is_unknown_for_an_open_sheet():
+    positions, faces, _ = _quad()
+    assert pp.outward_sign(positions, faces) == 0.0
+
+
+def test_outward_sign_is_unknown_for_open_sheets_at_different_depths():
+    # Two parallel squares enclose no volume even though their signed sum is not zero.
+    positions, faces, _ = _occluded_scene()
+    assert pp.outward_sign(positions, faces) == 0.0
+
+
+def test_outward_sign_survives_vertices_split_at_a_uv_seam():
+    positions, faces, _ = _slab(thickness=0.5)
+    # The slab's walls already sit on their own vertices: a split mesh, welded back here.
+    assert pp.outward_sign(positions, faces) == 1.0
+
+
+@pytest.mark.parametrize("flip", [False, True])
+def test_the_far_side_of_a_thin_sheet_keeps_its_own_paint(flip):
+    positions, faces, uvs = _slab(flip=flip)
+    texture = np.full((32, 64, 3), 128, dtype=np.uint8)
+    view = _camera(size=64, image=_split_photo(64))
+    out, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                   settings=pp.Settings(match_colour=False))
+    assert weight[16, 8] == pytest.approx(1.0) and tuple(out[16, 8]) == (255, 0, 0)
+    assert weight[16, 40] == 0.0 and tuple(out[16, 40]) == (128, 128, 128)
+
+
+# --- the picture's own cut-out edge ---------------------------------------------------------
+
+
+def _half_cut_photo(size: int) -> np.ndarray:
+    photo = _split_photo(size)
+    photo[:, size // 2:, 3] = 0  # right half is outside the cut-out
+    return photo
+
+
+def test_paint_fades_out_towards_the_pictures_cut_out_edge():
+    positions, faces, uvs = _quad()
+    texture = np.full((256, 256, 3), 128, dtype=np.uint8)  # ~1.6 picture pixels per texel
+    view = _camera(size=768, image=_half_cut_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+    row = weight[128]
+    # The cut-out edge is near texel 128: texels right beside it are distrusted, ones well
+    # inside fully trusted, and the fade is monotonic in between.
+    assert row[127] < 0.5
+    assert row[110] == pytest.approx(1.0)
+    assert row[110] >= row[124] >= row[125] >= row[126] >= row[127]
+    assert 0.0 < row[125] < 1.0
+
+
+def test_the_cut_out_fade_scales_with_the_picture():
+    # Same scene at two picture sizes: the faded band covers the same share of the model.
+    positions, faces, uvs = _quad()
+    texture = np.full((64, 64, 3), 128, dtype=np.uint8)
+    bands = []
+    for size in (384, 1536):
+        view = _camera(size=size, image=_half_cut_photo(size))
+        _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+        bands.append(int((weight[32, 16:32] < 0.99).sum()))
+    assert bands[0] >= 1 and abs(bands[0] - bands[1]) <= 1
+
+
+def test_the_cut_out_fade_can_be_switched_off():
+    positions, faces, uvs = _quad()
+    texture = np.full((64, 64, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_half_cut_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                 settings=pp.Settings(cutout_edge=0.0))
+    assert weight[32, 31] == pytest.approx(1.0)
+
+
+# --- inner depth edges: an ear in front of a head, a collar in front of a neck ---------------
+
+
+def _occluded_scene():
+    """A big square at z=0 (left half of the texture) with a small one floating in front of
+    its middle at z=0.3 (right half). Their shared outline is an inner depth edge."""
+    back = _quad(z=0.0, half=0.5)
+    front = _quad(z=0.3, half=0.25)
+    positions = np.vstack([back[0], front[0]])
+    faces = np.vstack([back[1], front[1] + 4])
+    uvs = np.vstack([back[2] * [0.5, 1], front[2] * [0.5, 1] + [0.5, 0]])
+    return positions, faces, uvs
+
+
+def _full_photo(size: int) -> np.ndarray:
+    photo = np.full((size, size, 4), 200, dtype=np.uint8)
+    photo[..., 3] = 255
+    return photo
+
+
+def test_paint_fades_out_beside_an_inner_depth_edge():
+    positions, faces, uvs = _occluded_scene()
+    texture = np.full((256, 512, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_full_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                 settings=pp.Settings(match_colour=False))
+    row = weight[128]
+    # Back square: the occluder (closer, so it looks ~11% bigger) hides texels from 57 on.
+    # Right beside that edge the picture is distrusted; well away from it, fully trusted.
+    assert row[57] == 0.0
+    assert row[55] < 0.5
+    assert row[30] == pytest.approx(1.0)
+    # Front square: its own outline borders the back square, so its rim fades too.
+    assert row[256 + 2] < 0.5
+    assert row[256 + 128] == pytest.approx(1.0)
+
+
+def test_a_smoothly_tilted_surface_is_not_an_inner_edge():
+    # A square tilted 60 degrees: depth changes steadily, never jumps.
+    angle = np.radians(60)
+    positions, faces, uvs = _quad()
+    positions = positions @ np.array([[np.cos(angle), 0, np.sin(angle)], [0, 1, 0],
+                                      [-np.sin(angle), 0, np.cos(angle)]]).T
+    texture = np.full((128, 128, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_full_photo(768))
+    on = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)[1]
+    off = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                           settings=pp.Settings(inner_edge=0.0))[1]
+    assert np.allclose(on, off)
+
+
+def test_the_inner_edge_fade_can_be_switched_off():
+    positions, faces, uvs = _occluded_scene()
+    texture = np.full((256, 512, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_full_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                 settings=pp.Settings(match_colour=False, inner_edge=0.0))
+    assert weight[128, 55] == pytest.approx(1.0)
+
+
+# --- local colour: the unseen sides meet each picture's colours where they join --------------
+
+
+def _grid(n: int = 40):
+    """A flat n x n grid facing the camera, sharing vertices, UVs straight across."""
+    ticks = np.linspace(-0.5, 0.5, n + 1)
+    xs, ys = np.meshgrid(ticks, ticks[::-1])
+    positions = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
+    uvs = np.column_stack([(xs.ravel() + 0.5), (0.5 - ys.ravel())])
+    idx = np.arange((n + 1) ** 2).reshape(n + 1, n + 1)
+    a, b, c, d = idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]
+    faces = np.concatenate([np.stack([d, c, b], -1).reshape(-1, 3),
+                            np.stack([d, b, a], -1).reshape(-1, 3)])
+    return positions, faces, uvs
+
+
+def _side_strip_photo(size: int, top: int, bottom: int) -> np.ndarray:
+    """Grey photo seen on both sides with an unseen strip down the middle, like the side of
+    a model between its front and back pictures. Top half one shade, bottom half another."""
+    photo = np.zeros((size, size, 4), dtype=np.uint8)
+    photo[: size // 2, :, :3] = top
+    photo[size // 2:, :, :3] = bottom
+    photo[:, : int(size * 0.42), 3] = 255
+    photo[:, int(size * 0.58):, 3] = 255
+    return photo
+
+
+def test_local_colour_carries_each_regions_gap_into_the_unseen_strip():
+    positions, faces, uvs = _grid()
+    texture = np.full((128, 128, 3), 100, dtype=np.uint8)
+    view = _camera(size=768, image=_side_strip_photo(768, top=140, bottom=60))
+    out, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+    # The middle strip is outside the cut-out: no picture there, but each half should carry
+    # on its neighbours' colour (one global shift would leave both near 100).
+    assert weight[20, 64] == 0.0 and weight[108, 64] == 0.0
+    assert out[20, 64, 0] >= 125
+    assert out[108, 64, 0] <= 75
+
+
+def test_one_mismatched_patch_does_not_smear_into_the_unseen_part():
+    positions, faces, uvs = _grid()
+    texture = np.full((128, 128, 3), 100, dtype=np.uint8)
+    photo = _side_strip_photo(768, top=120, bottom=120)
+    photo[360:410, 230:310, :3] = 250  # a small feature the model painted differently
+    view = _camera(size=768, image=photo)
+    out, _ = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+    # Unseen texels beside the patch follow the typical +20 gap, not the patch's +150.
+    assert abs(int(out[64, 64, 0]) - 120) <= 10
+
+
+def test_local_colour_can_fall_back_to_the_global_match():
+    positions, faces, uvs = _grid()
+    texture = np.full((128, 128, 3), 100, dtype=np.uint8)
+    view = _camera(size=768, image=_side_strip_photo(768, top=140, bottom=60))
+    out, _ = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                              settings=pp.Settings(local_colour=False))
+    # The global fit sees a zero average gap, so the unseen halves stay alike.
+    assert abs(int(out[20, 64, 0]) - int(out[108, 64, 0])) < 20

@@ -185,7 +185,7 @@ def test_the_recipes_endpoint_serves_the_shared_file():
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}/api/recipes", timeout=30) as response:
             recipes = json.loads(response.read())
-        assert "T-pose" in recipes["goals"]["character"]["wording"]
+        assert "A-pose" in recipes["goals"]["character"]["wording"]
     finally:
         server.shutdown()
         server.server_close()
@@ -233,3 +233,55 @@ def test_a_rename_changes_only_the_label_and_an_empty_name_restores_the_old_one(
     assert len(aa.set_name(output, knight["id"], "x" * 500)) == aa.NAME_LIMIT
     with pytest.raises(ValueError):
         aa.set_name(output, "../../etc", "nope")
+
+
+# --- single props made through Create's prop route --------------------------------------------
+
+
+def _single_prop(output, stem="a-wooden-barrel__20261012-150000", prompt="A wooden barrel"):
+    _write(output / "images" / stem / f"{stem}.png", b"barrel-png", 6000)
+    _write(output / "images" / stem / f"{stem}.provenance.json", json.dumps({"prompt": prompt}), 6000)
+    gen = f"{stem}__pixal3d__20261012-150500"
+    _write(output / "commercial_conditional" / gen / f"{gen}.glb", b"BARREL", 6100)
+    return stem
+
+
+def test_a_prop_the_chain_asked_for_is_filed_as_a_prop(output):
+    from viewer import activity_api
+    stem = _single_prop(output)
+    activity_api.append_history(output, {"chain": "c1", "step": "picture", "result": "done", "want": "prop",
+                                         "made": f"images/{stem}/{stem}.png"})
+    assert _by_name(aa.list_assets(output))["a wooden barrel"]["kind"] == "prop"
+
+
+def test_an_older_prop_is_known_by_the_prop_wording_in_its_prompt(output):
+    wording = json.loads((Path(aa.__file__).resolve().parents[1] / "image_to_3dlab" / "prompt_recipes.json")
+                         .read_text())["goals"]["prop"]["wording"]
+    _single_prop(output, prompt=f"A wooden barrel, {wording}")
+    assert _by_name(aa.list_assets(output))["a wooden barrel"]["kind"] == "prop"
+
+
+def test_a_model_nobody_asked_to_be_a_prop_stays_a_model(output):
+    _single_prop(output)
+    assert _by_name(aa.list_assets(output))["a wooden barrel"]["kind"] == "model"
+
+
+def test_an_asset_carries_its_back_picture_when_there_is_one(output):
+    stem = _single_prop(output)
+    _write(output / "images" / stem / f"{stem}__back.png", b"back-png", 6050)
+    assets = _by_name(aa.list_assets(output))
+    assert assets["a wooden barrel"]["back"] == f"images/{stem}/{stem}__back.png"
+    assert assets["a lone fox"]["back"] is None
+    assert "a wooden barrel back" not in assets   # the back is not an asset of its own
+
+
+def test_an_asset_carries_each_steps_time_from_the_history(output):
+    from viewer import activity_api
+    for step, made, seconds in (("picture", f"images/{IMG}/{IMG}.png", 251.4),
+                                ("model", f"commercial_conditional/{GEN}/{GEN}.glb", 318.0),
+                                ("finished", f"finish/{FIN}/a-chunky-knight_40k.glb", 95.2)):
+        activity_api.append_history(output, {"step": step, "result": "done", "made": made, "seconds": seconds})
+    activity_api.append_history(output, {"step": "rigged", "result": "error", "made": None, "seconds": 3.0})
+    knight = _by_name(aa.list_assets(output))["a chunky knight"]
+    assert knight["timings"] == {"picture": 251.4, "model": 318.0, "finished": 95.2}
+    assert _by_name(aa.list_assets(output))["a lone fox"]["timings"] == {}

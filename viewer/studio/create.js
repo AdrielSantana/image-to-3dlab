@@ -24,18 +24,20 @@ export function freshSeed(random = Math.random) {
 }
 
 /** Show the Create sheet over the viewer. `onStart(plan)` runs it. */
-export function openCreate({ stage, recipes, engines, presets, onStart }) {
+export function openCreate({ stage, recipes, engines, presets, frontBack = null, onStart }) {
   const sheet = document.createElement('div');
   sheet.className = 'sheet';
   stage.appendChild(sheet);
   const state = { have: 'idea', want: 'character', stop: null, tips: false, useRecipe: true, text: '', file: null,
     engine: engines[0]?.id, firstMove: presets.find((p) => !p.take)?.id,
-    pic: { size: 768, steps: 8, newEachTime: true, seed: 42 }, keep: false };
+    pic: { size: 768, steps: 8, newEachTime: true, seed: 42 }, keep: false,
+    frontBack: Boolean(frontBack?.ready) };  // the best result by default, when it can run
   const close = () => sheet.remove();
 
   const render = () => {
     if (ALLOWED[state.have][state.want] !== true) state.want = Object.keys(ALLOWED[state.have]).find((k) => ALLOWED[state.have][k] === true);
-    const plan = planFor(state.have, state.want);
+    const pixal = state.engine === 'pixal3d';
+    const plan = planFor(state.have, state.want, { frontBack: state.frontBack && pixal && Boolean(frontBack?.ready) });
     if (state.stop && !plan.includes(state.stop)) state.stop = null;
     const active = stopAfter(plan, state.stop);
     const tipKey = state.have === 'idea' ? state.want : state.have === 'picture' ? 'upload' : null;
@@ -66,7 +68,7 @@ export function openCreate({ stage, recipes, engines, presets, onStart }) {
           <label class="check"><input type="checkbox" data-pic="newEachTime" ${state.pic.newEachTime ? 'checked' : ''}><span>New picture each time <span class="hint">untick to reuse a seed and get the same picture back</span></span></label>
           ${state.pic.newEachTime ? '' : `<label class="field">Seed<input type="number" data-pic="seed" step="1" value="${state.pic.seed}"></label>`}
         </div></details>` : ''}
-      ${active.includes('model') ? `<details class="adv"><summary>Advanced: 3D model</summary>${engines.length > 1 ? `<label class="field">Engine<select data-k="engine">${engines.map((e, i) => `<option value="${esc(e.id)}" ${e.id === state.engine ? 'selected' : ''}>${i ? '' : 'Best quality: '}${esc(e.label)}</option>`).join('')}</select></label>` : ''}<label class="check"><input type="checkbox" data-k="keep" ${state.keep ? 'checked' : ''}><span>Keep everything <span class="hint">textures, in-between meshes and resume files, for digging into a bad result. Takes a lot more disk.</span></span></label></details>` : ''}
+      ${active.includes('model') ? `<details class="adv"><summary>Advanced: 3D model</summary>${engines.length > 1 ? `<label class="field">Engine<select data-k="engine">${engines.map((e, i) => `<option value="${esc(e.id)}" ${e.id === state.engine ? 'selected' : ''}>${i ? '' : 'Best quality: '}${esc(e.label)}</option>`).join('')}</select></label>` : ''}${pixal && state.want !== 'set' ? (frontBack?.ready ? `<label class="check"><input type="checkbox" data-k="frontback" ${state.frontBack ? 'checked' : ''}><span>Front + back <span class="hint">draws the back too, so the sides and back match your picture instead of being guessed. A few minutes more on a Mac, under a minute on NVIDIA.</span></span></label>` : frontBack?.hint ? `<p class="hint">Front + back is off. ${esc(frontBack.hint)}</p>` : '') : ''}<label class="check"><input type="checkbox" data-k="keep" ${state.keep ? 'checked' : ''}><span>Keep everything <span class="hint">textures, in-between meshes and resume files, for digging into a bad result. Takes a lot more disk.</span></span></label></details>` : ''}
       <p class="error" data-error hidden></p>
       <div class="row end"><span class="hint">${active.length} step${active.length === 1 ? '' : 's'}${active.includes('picture') ? ' · the picture uses Qwen-Image, run on this machine' : ''}</span><button type="submit" class="primary">Make it</button></div>
     </form>`;
@@ -98,8 +100,10 @@ export function openCreate({ stage, recipes, engines, presets, onStart }) {
     if (text) { text.oninput = () => { state.text = text.value; warn(); }; warn(); }
     q('[data-k="recipe"]')?.addEventListener('change', (e) => { state.useRecipe = e.target.checked; });
     q('[data-k="move"]')?.addEventListener('change', (e) => { state.firstMove = e.target.value; });
-    q('[data-k="engine"]')?.addEventListener('change', (e) => { state.engine = e.target.value; });
+    q('[data-k="engine"]')?.addEventListener('change', (e) => { state.engine = e.target.value; render(); const d = sheet.querySelector('[data-k="keep"]')?.closest('details'); if (d) d.open = true; });
     q('[data-k="keep"]')?.addEventListener('change', (e) => { state.keep = e.target.checked; });
+    const reopen3d = () => { const d = sheet.querySelector('[data-k="keep"]')?.closest('details'); if (d) d.open = true; };
+    q('[data-k="frontback"]')?.addEventListener('change', (e) => { state.frontBack = e.target.checked; render(); reopen3d(); });
     sheet.querySelectorAll('[data-pic]').forEach((el) => el.addEventListener('change', () => {
       const key = el.dataset.pic;
       state.pic[key] = el.type === 'checkbox' ? el.checked : Number(el.value);
@@ -208,7 +212,7 @@ export async function runChain(plan, { ui, ctx, attach = null, fetchImpl = fetch
     if (!after?.steps) { ui.fail(plan.steps[0], 'This run is no longer known to the server (it was restarted). Anything finished is in your Library.', ''); return false; }
     made = after.made || {};
     for (const [kind, ...args] of chainEvents(before, after)) {
-      if (kind === 'done') { await ctx.reload(mine); ui.done(args[0], { ...made }); }
+      if (kind === 'done') { await ctx.reload(mine); ui.done(args[0], { ...made }, { ...(after.step_seconds || {}) }); }
       else if (kind === 'fail') { ui.fail(args[0], args[1], args[2] || ''); return false; }
       else if (kind === 'cancel') { ui.cancelled(args[0]); return false; }
       else if (kind === 'finish') { await ctx.reload(mine); ui.finish(mine); return true; }

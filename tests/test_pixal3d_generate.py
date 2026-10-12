@@ -274,8 +274,8 @@ def test_a_matted_image_is_not_sent_through_birefnet_again():
 
 
 def test_matting_writes_a_real_cutout_beside_the_source(tmp_path, monkeypatch):
-    from PIL import Image
     import numpy as np
+    from PIL import Image
 
     source = tmp_path / "fox.png"
     Image.new("RGB", (32, 32), (200, 120, 60)).save(source)
@@ -573,3 +573,77 @@ def test_the_manifest_records_the_licence_class_props_inherit(tmp_path):
     catalogue = resolve("pixal3d")
     assert (profile.license_name, profile.license_url) == (catalogue.license_name,
                                                            catalogue.license_url)
+
+
+# --- front + back (multi-view) ---------------------------------------------------------------
+
+
+def _cut(width: int, height: int, box):
+    from PIL import Image
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+    x0, y0, x1, y1 = box
+    rgba[y0:y1, x0:x1] = (200, 50, 50, 255)
+    return Image.fromarray(rgba, "RGBA")
+
+
+def test_a_view_is_centred_at_ninety_percent_of_the_square():
+    padded = np.asarray(px.pad_view(_cut(300, 600, (100, 50, 200, 450)), 768))
+    ys, xs = np.nonzero(padded[..., 3] > 127)
+    assert padded.shape == (768, 768, 4)
+    assert ys.max() - ys.min() + 1 == pytest.approx(0.9 * 768, abs=2)
+    assert (ys.min() + ys.max()) / 2 == pytest.approx(383.5, abs=2)
+    assert (xs.min() + xs.max()) / 2 == pytest.approx(383.5, abs=2)
+
+
+def test_a_wide_t_pose_is_fitted_by_its_width_and_stays_inside():
+    padded = np.asarray(px.pad_view(_cut(800, 400, (0, 100, 800, 300)), 768))
+    _, xs = np.nonzero(padded[..., 3] > 127)
+    assert xs.max() - xs.min() + 1 == pytest.approx(0.9 * 768, abs=2)
+
+
+def test_front_and_back_views_share_one_rig_half_a_turn_apart(tmp_path):
+    front, back = _cut(400, 400, (150, 40, 250, 360)), _cut(400, 400, (150, 40, 250, 360))
+    model_dir, paint_dir = tmp_path / "in", tmp_path / "out.svviews"
+    px.write_front_back_views(front, back, model_dir, paint_dir)
+    for folder, size in ((model_dir, 768), (paint_dir, 768)):
+        rig = json.loads((folder / "transforms.json").read_text())
+        names = [frame["file_path"] for frame in rig["frames"]]
+        assert names == ["view_000.png", "view_180.png"]
+        c0, c180 = (np.array(f["transform_matrix"]) for f in rig["frames"])
+        assert np.allclose(c180, np.diag([-1.0, -1.0, 1.0, 1.0]) @ c0)
+        assert rig["camera_angle_x"] == pytest.approx(px.DEFAULT_FOV)
+        from PIL import Image
+        assert Image.open(folder / "view_000.png").size == (size, size)
+
+
+def test_paint_copies_keep_a_bigger_pictures_detail(tmp_path):
+    big = _cut(1024, 1024, (400, 50, 620, 980))
+    px.write_front_back_views(big, big, tmp_path / "in", tmp_path / "out.svviews")
+    from PIL import Image
+    assert Image.open(tmp_path / "in" / "view_000.png").size == (768, 768)
+    assert Image.open(tmp_path / "out.svviews" / "view_000.png").size == (1024, 1024)
+
+
+def test_the_front_back_command_uses_the_views_and_the_multiview_weights():
+    command = px.build_multiview_command(Path("/v"), Path("/o.glb"), res=1024, seed=42,
+                                         models=Path("/mv"), cli=Path("/bin/trellis-cli"))
+    assert command[command.index("--views") + 1] == "/v"
+    assert command[command.index("--pixal3d-weights") + 1] == "mv"
+    assert command[command.index("--models") + 1] == "/mv"
+    assert command[command.index("--gss") + 1] == str(px.DEFAULT_GSS)
+    assert "--sv-image" not in command and command[-1] == "/o.glb"
+
+
+def test_multiview_readiness_checks_the_manifests_files(tmp_path):
+    cli = tmp_path / "trellis-cli"
+    cli.write_text("")
+    models = tmp_path / "mv"
+    models.mkdir()
+    names = ["a.gguf", "b.gguf"]
+    (models / "pixal3d-models.json").write_text(json.dumps(
+        {"files": [{"name": n, "required": True} for n in names]}))
+    (models / "a.gguf").write_text("")
+    state = px.multiview_readiness(cli, models)
+    assert not state["ready"] and state["missing"] == ["b.gguf"]
+    (models / "b.gguf").write_text("")
+    assert px.multiview_readiness(cli, models)["ready"]

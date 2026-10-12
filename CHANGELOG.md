@@ -8,11 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Front + back** in Create: for a character or a prop, Qwen draws the back of your picture,
+  Pixal3D builds the shape from both, and Pixel Match paints from both, so the sides and back
+  match your picture instead of being guessed. On by default when its downloads are present
+  (Pixal3D's multi-view weights, 5.9 GB, and Qwen's vision projector, 0.75 GB); Advanced has
+  the switch, and says what to fetch when they are missing. Scripts: `make_back_view.py`,
+  `pixal3d_generate.py --back`, `bootstrap_pixal3d.py --multiview`,
+  `bootstrap_qwen_image.py --vision`.
+- **Pixel Match** nudges each picture onto the model before painting: first the cut-out onto
+  the model's outline (a pixel or two, about 1% in size), then detailed spots such as brows,
+  eyes and ink lines onto where the model built them. It only moves what it is sure of, a
+  few pixels at most. `scripts/photo_paint.py` reports what moved; `--no-align` turns it off.
+- The studio's **Steps** panel shows how long each finished step took, while a run is going
+  and on any asset opened later (older assets too, from the run history).
 - A guide to **picking a picture** for 3D: soft 3D-render style over flat anime art, A-pose
   over T-pose, open hands, positive wording, and a prompt to start from
   ([docs/prompt-guide.md](docs/prompt-guide.md)).
 - **Walk (woman)** in the Animate presets: a walk made with Kimodo from "A woman walks
   forward.", with a narrower step than the plain walk.
+
+### Changed
+- **Create** now asks for characters in an **A-pose** (arms angled down, a gap from the body,
+  hands open) instead of a T-pose, without mentioning fingers or listing things to leave
+  out, both of which tended to add the very thing. New tips, linked to the picture guide.
+- **Pixel Match** matches colour spot by spot instead of with one shift for the whole model,
+  so the sides no picture sees meet each picture's colours instead of showing darker bands.
+  Slower on very dense meshes (about 12 s to 37 s on a million triangles).
 
 ### Fixed
 - The two **Mac Hunyuan3D routes** now get your picture cut out first. Their shape stage trusts
@@ -23,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   skin-weight clean-up was handing those hand points to the leg bones.
 - Animated characters no longer bend their wrists inward on every move: the hand now turns
   with its forearm when an A-pose rest is lined up with the motion's T-pose.
+- The studio shows the **front and back pictures side by side** while a Front + back run builds
+  its 3D model and when you open the asset, and no longer tells you to make a picture 3D while
+  it is already being made.
+- The studio's **Props** tab now shows single props made with Create's prop route, not only
+  prop sheets.
+- **Pixel Match** no longer paints the far side of thin parts (cloaks, capes, ponytails) with
+  the near side's colours, which left dark slits and holes down a cloak's back.
+- **Pixel Match** no longer draws thin dark lines on heads, ears and cheeks: it now fades out
+  near the edge of your picture's cut-out, where pixels are half background.
+- **Pixel Match** no longer spills colour across inner edges, such as an outline drawn round
+  an ear or robe colour on a neck above a collar: it fades out where one part sits in front
+  of another.
 
 ## [0.4.3] - 2026-10-10
 

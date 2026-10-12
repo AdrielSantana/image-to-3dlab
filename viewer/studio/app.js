@@ -1,7 +1,7 @@
 // AssetFurnace studio: Library | one viewer | Steps.
 // Steps run here through the server's job APIs, prop-sheet splitting included.
 
-import { STEPS, stepCount, doneCount, statusText, displayModel, stepFile, servedUrl, visibleAssets, openingView, isModelFile } from './library.js';
+import { STEPS, stepCount, doneCount, statusText, displayModel, stepFile, servedUrl, visibleAssets, openingView, isModelFile, duration } from './library.js';
 import { createStudioViewer } from './viewer.js';
 import { readyEngines, readableLog } from './jobs.js';
 import { stepBody, wireStep } from './steps.js';
@@ -16,7 +16,7 @@ let base = '/output/';
 let assets = [];
 let filter = 'all', query = '', showHidden = false, limit = 30;
 let current = null;
-let engines = [], presets = [], recipes = null, busy = false, playNext = null;
+let engines = [], presets = [], recipes = null, frontBack = null, busy = false, playNext = null;
 let making = null, viewingMaking = false;  // the asset Create is making right now
 
 const viewer = createStudioViewer({ stage: $('stage'), logoUrl: LOGO, onClipChange: (clip) => setDownload(clip.file) });
@@ -62,7 +62,7 @@ function summaries(asset) {
 }
 
 function renderSteps(asset) {
-  $('sideKind').textContent = { 'prop set': 'Prop set', character: 'Character', model: '3D model', picture: 'Picture' }[asset.kind] || '';
+  $('sideKind').textContent = { 'prop set': 'Prop set', prop: 'Prop', character: 'Character', model: '3D model', picture: 'Picture' }[asset.kind] || '';
   const done = doneCount(asset), total = stepCount(asset), sum = summaries(asset);
   $('steps').innerHTML = STEPS.map((step, i) => {
     if (i >= total) return `<li class="step na"><header><span class="dot">–</span><span><h3>${step.label}</h3><div class="sum">Not needed for props</div></span></header></li>`;
@@ -70,7 +70,7 @@ function renderSteps(asset) {
     const dot = state === 'done' ? '✓' : i + 1;
     const showBody = state === 'now' || (step.id === 'animated' && state === 'done');
     const body = showBody ? `<div class="body">${stepBody(step.id, asset, ctx)}</div>` : '';
-    return `<li class="step ${state}" data-step="${step.id}"><header><span class="dot">${dot}</span><span style="min-width:0"><h3>${step.label}</h3>${state === 'done' ? `<div class="sum">${escape(sum[step.id])}${stepLink(asset, step.id)}</div>` : ''}</span></header>${body}</li>`;
+    return `<li class="step ${state}" data-step="${step.id}"><header><span class="dot">${dot}</span><span style="min-width:0"><h3>${step.label}</h3>${state === 'done' ? `<div class="sum">${escape(sum[step.id])}${stepLink(asset, step.id)}</div>` : ''}</span>${state === 'done' && asset.timings?.[step.id] ? `<span class="time">${duration(asset.timings[step.id])}</span>` : ''}</header>${body}</li>`;
   }).join('');
   $('steps').querySelectorAll('.step').forEach((card) => {
     if (card.querySelector('.body [data-run]')) wireStep(card, card.dataset.step, asset, ctx);
@@ -107,6 +107,7 @@ function show(asset) {
   $('progress').hidden = true;
   renderLibrary();
   $('vTitle').textContent = asset?.name ?? '';
+  $('vTitle').classList.toggle('long', (asset?.name ?? '').length > 60);
   $('vMeta').textContent = asset ? statusText(asset) : '';
   if (!asset) {
     viewer.showEmpty('Nothing to show yet. Pick an asset on the left.');
@@ -129,7 +130,11 @@ function show(asset) {
     viewer.setClips([]);
     const model = displayModel(asset);
     if (model) viewer.load(url(model), { label: asset.name });
-    else if (asset.picture) viewer.showImage(url(asset.picture), 'A picture so far. Make it 3D from the Steps panel.');
+    else if (asset.picture) {
+      const inRun = making && !making.finished && !making.failed && making.made?.picture === asset.picture;
+      viewer.showImage(url(asset.picture), inRun ? 'Being made into 3D now. Its progress is above.'
+        : 'A picture so far. Make it 3D from the Steps panel.', asset.back ? url(asset.back) : null);
+    }
     else viewer.showEmpty('Nothing to show for this asset yet.');
   }
 }
@@ -198,6 +203,7 @@ async function loadTools() {
     fetch('/api/animate/models').then((r) => r.json()).catch(() => null),
   ]);
   engines = readyEngines(catalog);
+  frontBack = catalog?.front_back || null;
   presets = animate?.installed ? animate.presets : [];
   recipes = await fetch('/api/recipes').then((r) => r.json()).catch(() => null);
 }
@@ -205,7 +211,7 @@ async function loadTools() {
 // ------------------------------------------------------------------ Create
 function openCreateSheet() {
   closeSheet($('stage'));
-  openCreate({ stage: $('stage'), recipes, engines, presets, onStart: (plan) => startChain(plan) });
+  openCreate({ stage: $('stage'), recipes, engines, presets, frontBack, onStart: (plan) => startChain(plan) });
 }
 
 $('createBtn').addEventListener('click', () => {
@@ -234,6 +240,7 @@ function showMaking() {
   viewingMaking = true;
   renderLibrary();
   $('vTitle').textContent = making.title;
+  $('vTitle').classList.toggle('long', making.title.length > 60);
   $('vMeta').textContent = making.cancelled ? 'Cancelled' : making.failed ? 'Stopped' : making.finished ? 'Done' : 'Making…';
   $('hideBtn').hidden = true;
   viewer.setFacing(null);  // a run in progress shows its files as they come
@@ -243,14 +250,18 @@ function showMaking() {
     const state = making.done.includes(step) ? 'done' : step === making.current ? 'now' : 'later';
     const dot = state === 'done' ? '✓' : making.cancelled && step === making.current ? '–' : making.failed && step === making.current ? '■' : i + 1;
     const sum = state === 'done' ? 'Done' : state === 'now' ? (making.cancelled ? 'Cancelled' : making.failed ? 'Stopped. The reason is in the viewer.' : 'Running now') : making.cancelled ? 'Not run' : 'Waiting';
-    return `<li class="step ${state}"><header><span class="dot">${dot}</span><span><h3>${STEP_LABELS[step]}</h3><div class="sum">${sum}</div></span></header></li>`;
+    const took = state === 'done' ? duration(making.seconds?.[step]) : '';
+    return `<li class="step ${state}"><header><span class="dot">${dot}</span><span><h3>${STEP_LABELS[step]}</h3><div class="sum">${sum}</div></span>${took ? `<span class="time">${took}</span>` : ''}</header></li>`;
   }).join('');
   // show the newest result while the next step runs
   const m = making.made;
   viewer.setClips([]);
   const shown = m.rigged || m.finished || m.model;
   if (shown && making.shown !== shown) { viewer.load(url(shown), { label: making.title }); making.shown = shown; }
-  else if (!shown && m.picture && making.shown !== m.picture) { viewer.showImage(url(m.picture), ''); making.shown = m.picture; }
+  else if (!shown && m.picture && making.shown !== `${m.picture}|${m.back || ''}`) {
+    viewer.showImage(url(m.picture), '', m.back ? url(m.back) : null);   // front + back side by side
+    making.shown = `${m.picture}|${m.back || ''}`;
+  }
   else if (!shown && !m.picture && making.shown !== 'empty') { viewer.showEmpty(''); making.shown = 'empty'; }
   drawProgress();
 }
@@ -296,7 +307,7 @@ async function startChain(plan, attach = null) {
       Object.assign(making, { percent, message: event.message || event.phase || 'Working…', log: readableLog(log), fullLog: log, stalled });
       if (viewingMaking) drawProgress();
     },
-    done: (step, made) => { making.done.push(step); making.made = made; renderLibrary(); if (viewingMaking) showMaking(); },
+    done: (step, made, seconds) => { making.done.push(step); making.made = made; making.seconds = seconds || {}; renderLibrary(); if (viewingMaking) showMaking(); },
     cancelled: () => { Object.assign(making, { failed: true, cancelled: true, why: 'Cancelled. Everything finished before this step is kept.', log: '', fullLog: '' }); renderLibrary(); if (viewingMaking) showMaking(); },
     fail: (step, why, log) => { Object.assign(making, { failed: true, why, log: readableLog(log, 12), fullLog: log }); renderLibrary(); if (viewingMaking) showMaking(); },
     finish: (mine) => {

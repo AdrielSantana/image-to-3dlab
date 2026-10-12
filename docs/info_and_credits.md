@@ -43,7 +43,7 @@ Only the ones everyone can hit:
   [picking a picture](trellis2-flat-illustration-colour-drift.md).
 - **NVIDIA: Pixal3D's ready-made build needs driver 575 or newer.** On an older driver the
   installer compiles it instead, if the CUDA toolkit is installed.
-- **Animate: humanoids in a T-pose only.** Four-legged creatures are coming.
+- **Animate: humanoids in an A-pose or T-pose only.** Four-legged creatures are coming.
 - **Animate: some humanoids are wrongly called "not a humanoid".** Extra bones (hair, a
   cape, a sword) no longer cause it. If it happens, please attach the rigged GLB to an issue.
 - **Pixel Match can look worse than the raw model on some assets.** Each step in the

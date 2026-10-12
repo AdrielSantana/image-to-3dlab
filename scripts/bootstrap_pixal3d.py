@@ -31,6 +31,12 @@ for non-interactive use. Defaulting to yes is not allowed, so it does not.
     python scripts/bootstrap_pixal3d.py --yes      # for the viewer and for agents
     python scripts/bootstrap_pixal3d.py --build-only
     python scripts/bootstrap_pixal3d.py --weights-only
+    python scripts/bootstrap_pixal3d.py --multiview   # front + back weights, 5.9 GB more
+
+**Front + back** (`--multiview`) adds Pixal3D's multi-view flows, which build the shape
+from a front and a back picture. Only the four flow files are new: the image encoder and
+decoders are byte-identical to the single-view set, so they are hard-linked from it rather
+than stored twice (or fetched, if the single-view set is not there).
 """
 
 from __future__ import annotations
@@ -87,6 +93,18 @@ PREBUILTS = {
 # What the "Building (...)" line says, so a compile that runs for 20 minutes names the
 # backend it is on.
 BUILD_LABELS = {"metal-source": "Metal", "cuda-source": "CUDA", "hip-source": "HIP"}
+
+# Front + back: the multi-view set. Its encoder and decoders are byte-identical to the
+# single-view set's (upstream says so in pixal3d-models.json, and the hashes agree), so
+# only the flows and the manifest are fetched. The folder name is upstream's model set.
+MV_MODELS = VENDOR / "models" / "pixal3d-q8_0-v1"
+MV_REPO = "raven38/pixal3d-q8_0-v1"
+MV_REVISION = "1c4f4bdddb5fef1dc5efa512d4b88e899b10bd91"
+MV_DOWNLOAD = ("pixal3d_ss_flow_mv.gguf", "pixal3d_shape_flow_512_mv.gguf",
+               "pixal3d_shape_flow_1024_mv.gguf", "pixal3d_tex_flow_1024_mv.gguf",
+               "pixal3d-models.json")
+MV_SHARED = ("dinov3.gguf", "pixal3d_naf.gguf", "ss_dec.gguf", "shape_dec.gguf", "tex_dec.gguf")
+MV_GB = 5.9
 
 LICENCE = (
     "MIT (code and flow weights); the bundled image encoder is under the\n"
@@ -443,6 +461,55 @@ def install_build(key: str, kind: str) -> Path:
     return install_prebuilt(key) if kind == "prebuilt" else build_from_source(kind)
 
 
+def multiview_announcement() -> str:
+    """What `--multiview` fetches, before anything is."""
+    return "\n".join([
+        "", "About to install:", "",
+        "  backend: Pixal3D (raven38/pixal3d.cpp)",
+        "  route:   front + back (multi-view flows)",
+        f"  weights: {MV_GB:.1f} GB -> vendor/pixal3d-cpp/models/{MV_MODELS.name}/",
+        f"             {MV_REPO}: the four multi-view flows only; the encoder and",
+        "             decoders are shared with the single-view set (linked, not copied)",
+        "", "  licence: " + LICENCE.replace("pixal3d-sv-q8_0-v1", MV_REPO.split("/")[1]), ""])
+
+
+def link_shared(single_view: Path, multi_view: Path) -> list[str]:
+    """Hard-link the files both sets share from `single_view` into `multi_view`.
+
+    Returns the shared files `single_view` does not have, which must be downloaded instead.
+    A filesystem that cannot hard-link gets a copy.
+    """
+    multi_view.mkdir(parents=True, exist_ok=True)
+    missing = []
+    for name in MV_SHARED:
+        source, target = single_view / name, multi_view / name
+        if target.exists():
+            continue
+        if not source.is_file():
+            missing.append(name)
+            continue
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copy2(source, target)
+    return missing
+
+
+def install_multiview(models: Path = MV_MODELS, single_view: Path = MODELS) -> None:
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        raise SystemExit(
+            "huggingface_hub is not installed. pip install -r requirements-dev.txt"
+        ) from exc
+    missing = link_shared(single_view, models)
+    print(f"\nFetching {MV_REPO} flows ({MV_GB:.1f} GB, resumable)...", flush=True)
+    snapshot_download(MV_REPO, revision=MV_REVISION, local_dir=models, max_workers=2,
+                      allow_patterns=list(MV_DOWNLOAD) + missing)
+    print(f"  weights in {models}")
+
+
 def flatten_matte(models: Path) -> None:
     """`trellis-cli` looks for models flat in `--models`; BiRefNet lands in `q8/`."""
     nested = models / "q8" / "birefnet.gguf"
@@ -525,6 +592,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="Compile for this card with nvcc even when the prebuilt would "
                              "run: ~2x faster per model, 15+ minutes once. AMD already "
                              "compiles; there is no prebuilt to skip.")
+    parser.add_argument("--multiview", action="store_true",
+                        help=f"Fetch the front + back (multi-view) weights only, "
+                             f"{MV_GB:.1f} GB. Needs trellis-cli from a normal install.")
     args = parser.parse_args(argv)
 
     key = target()
@@ -533,9 +603,10 @@ def main(argv: list[str] | None = None) -> int:
         print(no_route_message(key))
         return 1
 
-    build = not args.weights_only
-    weights = not args.build_only
-    print(announcement(build=build, weights=weights, prefer_compile=args.compile))
+    build = not args.weights_only and not args.multiview
+    weights = not args.build_only and not args.multiview
+    print(multiview_announcement() if args.multiview
+          else announcement(build=build, weights=weights, prefer_compile=args.compile))
 
     if not args.yes:
         # Non-interactive without --yes must not silently proceed, and must not hang
@@ -562,6 +633,11 @@ def main(argv: list[str] | None = None) -> int:
             install_build(key, kind)
     if weights:
         install_weights()
+    if args.multiview:
+        install_multiview()
+        print("\nDone. Generate from a front and a back picture with:\n"
+              "    python scripts/pixal3d_generate.py front.png output.glb --back back.png")
+        return 0
     print("\nDone. Generate with:\n"
           "    python scripts/pixal3d_generate.py input.png output.glb --res 1024")
     return 0

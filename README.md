@@ -60,6 +60,15 @@ picture, so text, logos and faces come back as garbled lookalikes. Pixel Match, 
 **Finish** step, copies the real pixels from your source image back onto every surface the
 image can see. "VANGUARD 07" on a chest stays "VANGUARD 07", even at ~5k faces. On by
 default for Pixal3D models; other backends are next.
+
+**Front + back.** Create can now draw the back of your picture too: Pixal3D builds the shape
+from both, and Pixel Match paints from both, so the back is your character rather than a
+guess. On by default once its two downloads are in (Setup & Status, Front + back, 6.6 GB).
+
+<p align="center">
+  <img src="docs/images/front-back-pixel-match.jpg" width="720"
+       alt="A friar in a wine-red habit from the front, side and back. Top, the generator's own paint: flat, darker, and the hood on his back is gone. Bottom, front + back Pixel Match: the habit's real colour and folds, with the hood on his back">
+</p>
 [How Pixel Match works](docs/pixel-match.md) · [How Finish works](#finishing-an-asset).
 
 <p align="center">

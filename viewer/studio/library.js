@@ -40,10 +40,13 @@ export function statusText(asset) {
   return { picture: 'Picture', model: '3D model', finished: 'Finished', rigged: 'Rigged, ready to animate' }[asset.stage] || asset.stage;
 }
 
-/** Library filter: all, characters (anything that could be one), or prop sets. */
+const PROP_KINDS = new Set(['prop set', 'prop']);
+
+/** Library filter: all, characters (anything that could be one), or props (single props
+ *  made as props, and prop sheets). */
 export function filterAssets(assets, filter) {
-  if (filter === 'props') return assets.filter((a) => a.kind === 'prop set');
-  if (filter === 'characters') return assets.filter((a) => a.kind !== 'prop set');
+  if (filter === 'props') return assets.filter((a) => PROP_KINDS.has(a.kind));
+  if (filter === 'characters') return assets.filter((a) => !PROP_KINDS.has(a.kind));
   return assets;
 }
 
@@ -89,4 +92,14 @@ export function openingView(running) {
 /** Whether a file can be opened in the viewer. GLB only: a .gltf points at files beside it that a dropped file doesn't bring. */
 export function isModelFile(name) {
   return /.\.glb$/i.test(name || '');
+}
+
+/** How long a step took, in plain words: "42s", "4m 12s", "1h 3m"; "" when unknown. */
+export function duration(seconds) {
+  const s = Number(seconds);
+  if (seconds == null || !Number.isFinite(s) || s < 0) return '';
+  const whole = Math.floor(s);
+  if (whole < 60) return `${whole}s`;
+  if (whole < 3600) return `${Math.floor(whole / 60)}m ${whole % 60}s`;
+  return `${Math.floor(whole / 3600)}h ${Math.floor((whole % 3600) / 60)}m`;
 }

@@ -33,6 +33,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy.sparse import coo_matrix, diags
+from scipy.sparse.linalg import cg
 
 # GLB axis order and signs for Pixal3D's camera frame. Found by the 48-way search in
 # pixal3d.cpp's silhouette_iou.py and identical on every asset tried (a robot and a small
@@ -163,6 +165,30 @@ def vertex_normals(positions: np.ndarray, faces: np.ndarray) -> np.ndarray:
     return normals / np.where(length > 0, length, 1.0)
 
 
+def outward_sign(positions: np.ndarray, faces: np.ndarray) -> float:
+    """+1 if `vertex_normals` point out of the mesh, -1 if the winding is inside out, 0 if
+    the mesh is open and has no inside to tell.
+
+    Closed means almost no edge belongs to a single triangle (a hole's rim), counted after
+    welding vertices that a UV seam split apart. Edges shared by three or more triangles
+    are untidy but not holes. Then the signed volume gives the winding.
+    """
+    _, weld = np.unique(np.round(positions, 6), axis=0, return_inverse=True)
+    welded = weld.reshape(-1)[faces]
+    edges = np.sort(np.concatenate([welded[:, [0, 1]], welded[:, [1, 2]], welded[:, [2, 0]]]), axis=1)
+    _, uses = np.unique(edges, axis=0, return_counts=True)
+    if (uses == 1).mean() > OPEN_EDGE_SHARE:
+        return 0.0
+    centred = positions - positions.mean(axis=0)
+    v0, v1, v2 = (centred[faces[:, k]] for k in range(3))
+    volume = np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum()
+    return 1.0 if volume > 0 else -1.0 if volume < 0 else 0.0
+
+
+# Generated meshes measure 0-0.02% hole edges (2026-10-12); a loose sheet is all rim.
+OPEN_EDGE_SHARE = 0.02
+
+
 def erode(mask: np.ndarray, pixels: int) -> np.ndarray:
     """Distance, in whole pixels up to `pixels`, from each True pixel to the nearest False.
 
@@ -181,6 +207,22 @@ def erode(mask: np.ndarray, pixels: int) -> np.ndarray:
         shrunk[:, 0] = shrunk[:, -1] = False
         current = shrunk
     return depth
+
+
+def inner_edges(zbuffer: np.ndarray, jump: float) -> np.ndarray:
+    """Pixels where the surface steps in depth by more than `jump` to a neighbour that is
+    also surface (one part in front of another). The outer silhouette, where surface meets
+    background (inf), is not counted: `edge_px` handles that."""
+    seen = np.isfinite(zbuffer)
+    depth = np.where(seen, zbuffer, 0.0)
+    cut = np.zeros(zbuffer.shape, dtype=bool)
+    for here, there in (((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+                        ((slice(1, None), slice(None)), (slice(None, -1), slice(None)))):
+        both = seen[here] & seen[there]
+        step = both & (np.abs(depth[here] - depth[there]) > jump)
+        cut[here] |= step
+        cut[there] |= step
+    return cut
 
 
 def smoothstep(value: np.ndarray, low: float, high: float) -> np.ndarray:
@@ -212,6 +254,17 @@ class Settings:
     # Fade in from the model's silhouette edge over this many view pixels. The edge is
     # where a matte bleeds backdrop colour and where a slightly-off camera misses.
     edge_px: int = 6
+    # Fade in from the picture's own cut-out edge over this share of its width (8 px at
+    # 768). Edge pixels are half backdrop and land a few pixels off the model, so they
+    # paint thin dark lines on heads, ears and cheeks. 0 turns it off.
+    cutout_edge: float = 8 / 768
+    # Fade in from inner depth edges (an ear in front of a head, a collar in front of a
+    # neck) over this share of the view's width. The drawn edge and the model's edge never
+    # line up exactly, so colour from one side spills onto the other. 0 turns it off.
+    inner_edge: float = 8 / 768
+    # A depth step between neighbouring view pixels bigger than this share of the model's
+    # size counts as an inner edge; a tilted surface changes depth far more gently.
+    inner_jump: float = 0.02
     # A texel counts as seen when its depth is within this fraction of the model's size
     # of the nearest surface in the view.
     depth_tolerance: float = 0.004
@@ -221,6 +274,16 @@ class Settings:
     # Shift the model's own paint to the photo's palette (see fit_colour_match), so the
     # parts no photo sees do not stay in the repaint's more saturated colours.
     match_colour: bool = True
+    # Match locally rather than with one shift for the whole model: the gap between the
+    # model's paint and the picture is measured spot by spot where the picture is trusted,
+    # spread smoothly over the surface, and added everywhere. Sides then meet each picture
+    # in colour (a robe's side next to a pale back, a belt beside a dark front). Falls back
+    # to the global match when too little of the picture is trusted.
+    local_colour: bool = True
+    # Nudge each picture onto the model before painting (see view_align): the cut-out onto
+    # the model's outline, then detailed spots onto where the model built them. Only moves
+    # what it is sure of, a few pixels at most.
+    align: bool = True
 
 
 DEFAULT_SETTINGS = Settings()
@@ -228,7 +291,8 @@ DEFAULT_SETTINGS = Settings()
 
 def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View,
                  view_positions: np.ndarray, faces: np.ndarray,
-                 settings: Settings | None = None) -> tuple[np.ndarray, np.ndarray]:
+                 settings: Settings | None = None, outward: float | None = None
+                 ) -> tuple[np.ndarray, np.ndarray]:
     """How much to trust this view's pixel at each texel, and that pixel's colour.
 
     Everything is in view space. `view_positions` are the mesh's vertices (for the
@@ -254,10 +318,24 @@ def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View
 
     to_camera = view.position - texel_points
     to_camera /= np.linalg.norm(to_camera, axis=1, keepdims=True)
-    facing = np.abs((texel_normals * to_camera).sum(axis=1))
+    facing = (texel_normals * to_camera).sum(axis=1)
+    # On a closed mesh, only surfaces facing the camera take its paint: the far side of a
+    # thin sheet (cloak, ponytail) sits inside the depth tolerance and would otherwise get
+    # the near side's colours. An open mesh has no outside to tell, so either side counts.
+    if outward is None:
+        outward = outward_sign(view_positions, faces)
+    facing = np.maximum(facing * outward, 0.0) if outward else np.abs(facing)
 
     edge = erode(seen, settings.edge_px)[iy, ix] / max(settings.edge_px, 1)
+    inner_px = round(settings.inner_edge * width)
+    if inner_px > 0:
+        away = erode(~inner_edges(zbuffer, settings.inner_jump * extent), inner_px)
+        edge = edge * smoothstep(away[iy, ix] / inner_px, 0.0, 1.0)
     matte = view.image[iy, ix, 3] / 255.0
+    cutout_px = round(settings.cutout_edge * width)
+    if cutout_px > 0:
+        inside = erode(view.image[..., 3] > 127, cutout_px)[iy, ix] / cutout_px
+        matte = matte * smoothstep(inside, 0.0, 1.0)
 
     weight = visible * smoothstep(facing, settings.facing_low, settings.facing_high) \
         * smoothstep(edge, 0.0, 1.0) * matte
@@ -266,14 +344,22 @@ def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View
 
 def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
                   faces: np.ndarray, views: list[View], mesh_scale: float = 1.0,
-                  frame=PIXAL3D_FRAME, settings: Settings | None = None
-                  ) -> tuple[np.ndarray, np.ndarray]:
+                  frame=PIXAL3D_FRAME, settings: Settings | None = None,
+                  align_reports: list | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Blend the views' pixels into `texture` (H x W x 3 or 4, uint8).
 
     `uvs` follow glTF: (0, 0) is the image's top-left corner. Returns the new texture and
     the per-texel weight actually applied (0..1), which is the debug map worth looking at.
+    Pass a list as `align_reports` to get one view_align.AlignReport per view.
     """
     settings = settings or DEFAULT_SETTINGS
+    if settings.align:
+        from image_to_3dlab import view_align  # imports this module; import late
+        aligned = [view_align.align_view(view, positions, uvs, faces, texture, frame, mesh_scale)
+                   for view in views]
+        views = [view for view, _ in aligned]
+        if align_reports is not None:
+            align_reports.extend(report for _, report in aligned)
     height, width = texture.shape[:2]
     uv_xy = np.stack([uvs[:, 0] * width, uvs[:, 1] * height], axis=1)[faces]
     face_of, bary = rasterize(uv_xy, np.zeros((len(faces), 3)), (height, width))
@@ -291,8 +377,9 @@ def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
     total_w = np.zeros(len(points))
     colour = np.zeros((len(points), 3))
     strongest = np.zeros(len(points))
+    outward = outward_sign(view_pos, faces)
     for view in views:
-        weight, rgb = view_weights(points, texel_n, view, view_pos, faces, settings)
+        weight, rgb = view_weights(points, texel_n, view, view_pos, faces, settings, outward)
         total_w += weight
         colour += weight[:, None] * rgb
         strongest = np.maximum(strongest, weight)
@@ -302,7 +389,13 @@ def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
     out = texture.astype(np.float64).copy()
     flat = out.reshape(-1, out.shape[2])
     index = np.flatnonzero(covered.ravel())
-    if settings.match_colour:
+    local = None
+    if settings.match_colour and settings.local_colour:
+        local = local_colour_offset(positions, faces, texel_face, texel_bary,
+                                    flat[index, :3], photo, blend)
+    if local is not None:
+        flat[index, :3] = np.clip(flat[index, :3] + local, 0, 255)
+    elif settings.match_colour:
         # The whole image, gutters included, or island borders keep the old palette.
         gain, offset = fit_colour_match(flat[index, :3], photo, blend)
         flat[:, :3] = np.clip(flat[:, :3] * gain + offset, 0, 255)
@@ -310,9 +403,67 @@ def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
     flat[index, :3] = own * (1 - blend[:, None]) + photo * blend[:, None]
     weight_map = np.zeros(height * width)
     weight_map[index] = blend
-    out, weight_map = _grow_into_gutter(out, weight_map.reshape(height, width), covered,
-                                        settings.gutter_px)
+    weight_map = weight_map.reshape(height, width)
+    if local is not None:
+        # Every texel changed colour, seen or not, so grow all of them into the gutter.
+        out, _ = _grow_into_gutter(out, covered.astype(np.float64), covered, settings.gutter_px)
+        _, weight_map = _grow_into_gutter(out.copy(), weight_map, covered, settings.gutter_px)
+    else:
+        out, weight_map = _grow_into_gutter(out, weight_map, covered, settings.gutter_px)
     return np.clip(np.rint(out), 0, 255).astype(np.uint8), weight_map
+
+
+def local_colour_offset(positions: np.ndarray, faces: np.ndarray, texel_face: np.ndarray,
+                        texel_bary: np.ndarray, own: np.ndarray, photo: np.ndarray,
+                        weight: np.ndarray, trusted: float = 0.9, min_texels: int = 500,
+                        smooth: float = 0.05, outlier: float = 3.0) -> np.ndarray | None:
+    """Per-texel colour offset taking the model's own paint towards the pictures, locally.
+
+    The gap (picture - own) is measured where a picture is fully trusted, splatted onto
+    the mesh's vertices (welded across UV seams so it flows over them), and spread to the
+    rest by a smooth interpolation over the mesh's edges: a graph Laplacian with the
+    measured vertices held loosely (`smooth`). What is spread is each spot's difference
+    from the typical gap, so a part no measurement can reach (a loose piece) still gets
+    the typical gap rather than none. A gap far from the typical one (more than
+    `outlier` x the median absolute deviation) is a mismatched feature, such as a rope the
+    model painted as robe, not colour drift, and is left out so it cannot smear.
+    Returns None when too little is trusted to measure.
+    """
+    mask = weight >= trusted
+    if mask.sum() < min_texels:
+        return None
+    gap = photo - own
+    typical = np.median(gap[mask], axis=0)
+    deviation = np.linalg.norm(gap - typical, axis=1)
+    limit = max(np.median(deviation[mask]) * 1.4826 * outlier, 1.0)
+    mask &= deviation <= limit
+
+    _, weld = np.unique(np.round(positions, 6), axis=0, return_inverse=True)
+    weld = weld.reshape(-1)
+    count = weld.max() + 1
+    corners = weld[faces]
+    total = np.zeros((count, 3))
+    seen = np.zeros(count)
+    for k in range(3):
+        vertex = corners[texel_face[mask], k]
+        share = texel_bary[mask, k]
+        np.add.at(seen, vertex, share)
+        np.add.at(total, vertex, share[:, None] * gap[mask])
+    known = seen > 0.5
+    target = np.zeros((count, 3))
+    target[known] = total[known] / seen[known][:, None] - typical
+
+    edges = np.concatenate([corners[:, [0, 1]], corners[:, [1, 2]], corners[:, [2, 0]]])
+    adjacency = coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(count, count))
+    adjacency = ((adjacency + adjacency.T) > 0).astype(np.float64)
+    hold = known * smooth
+    system = (diags(np.asarray(adjacency.sum(axis=1)).ravel() + hold) - adjacency).tocsr()
+    precondition = diags(1.0 / system.diagonal())
+    field = np.zeros((count, 3))
+    for channel in range(3):
+        field[:, channel], _ = cg(system, hold * target[:, channel], M=precondition,
+                                  maxiter=3000, rtol=1e-6)
+    return typical + (texel_bary[:, :, None] * field[corners[texel_face]]).sum(axis=1)
 
 
 def fit_colour_match(own: np.ndarray, photo: np.ndarray, weight: np.ndarray,

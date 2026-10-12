@@ -40,6 +40,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from image_to_3dlab import back_view, matte
 from image_to_3dlab.host import NVIDIA, executable, host_platform
 from image_to_3dlab.provenance import LICENSES, QWEN_OUTPUT_RIGHTS
 from image_to_3dlab.sdcpp import NO_GPU_HELP, BackendWatch
@@ -63,6 +64,10 @@ WEIGHT_FILES = {
     "llm": ("models--Qwen--Qwen3-VL-8B-Instruct-GGUF", "Qwen3VL-8B-Instruct-Q4_K_M.gguf"),
     "vae": ("models--Comfy-Org--Qwen-Image-2.1", "qwen_image_2.1_vae_bf16.safetensors"),
 }
+
+# Edit mode (a reference picture, such as the front for a back view) needs the LLM's vision
+# projector as well. Optional: plain pictures do not, so it is not part of WEIGHT_FILES.
+VISION_FILE = ("models--Qwen--Qwen3-VL-8B-Instruct-GGUF", "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf")
 
 DEFAULTS: dict[str, Any] = {
     "width": 768,
@@ -122,6 +127,11 @@ def resolve_weights() -> dict[str, Path]:
     return found
 
 
+def resolve_vision() -> Path | None:
+    """The vision projector edit mode needs, or None when it has not been downloaded."""
+    return find_weight(*VISION_FILE)
+
+
 def is_installed() -> bool:
     """Both halves, build and weights, the way the rest of the viewer separates them."""
     if not BINARY.exists():
@@ -168,8 +178,12 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_command(prompt: str, settings: dict[str, Any], output_path: Path,
-                  weights: dict[str, Path], binary: Path = BINARY) -> list[str]:
+                  weights: dict[str, Path], binary: Path = BINARY,
+                  reference: Path | None = None, vision: Path | None = None) -> list[str]:
     """The full argument list, as a pure function so a test can read it without a GPU.
+
+    With `reference`, an edit: Qwen reads that picture through the `vision` projector
+    (VISION_FILE), which is then required.
 
     `--offload-to-cpu` is deliberately absent. The upstream recipe includes it, but it
     shuttles weights between RAM and VRAM to save video memory a unified-memory Mac does
@@ -195,6 +209,10 @@ def build_command(prompt: str, settings: dict[str, Any], output_path: Path,
         command[command.index("-p") + 2:command.index("-p") + 2] = [
             "--negative-prompt", settings["negative_prompt"]
         ]
+    if reference is not None:
+        if vision is None:
+            raise ValueError("an edit needs the vision projector (VISION_FILE)")
+        command += ["-r", str(reference), "--llm_vision", str(vision)]
     return command
 
 
@@ -295,6 +313,7 @@ class ImageJob:
     output_path: Path
     prompt: str
     settings: dict[str, Any]
+    reference: Path | None = None   # an edit: Qwen reads this picture (a back view's front)
 
     def __post_init__(self) -> None:
         self.status = "queued"
@@ -345,18 +364,20 @@ class ImageJobManager:
         self.lock = threading.Lock()
         self.active: str | None = None
 
-    def create(self, prompt: str, settings: dict[str, Any]) -> ImageJob:
+    def create(self, prompt: str, settings: dict[str, Any], output_path: Path | None = None,
+               reference: Path | None = None) -> ImageJob:
         with self.lock:
             if self.active is not None:
                 running = self.jobs.get(self.active)
                 if running and running.status in {"queued", "running", "cancelling"}:
                     raise RuntimeError("an image is already being generated")
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            name = f"{slug(prompt)}__{stamp}"
-            directory = self.output_root / name
+            if output_path is None:
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                name = f"{slug(prompt)}__{stamp}"
+                output_path = self.output_root / name / f"{name}.png"
+            directory = output_path.parent
             directory.mkdir(parents=True, exist_ok=True)
-            job = ImageJob(uuid.uuid4().hex, directory, directory / f"{name}.png",
-                           prompt, settings)
+            job = ImageJob(uuid.uuid4().hex, directory, output_path, prompt, settings, reference)
             self.jobs[job.id] = job
             self.active = job.id
             return job
@@ -377,12 +398,50 @@ class ImageJobManager:
         return True
 
 
+def job_command(job: ImageJob, weights: dict[str, Path], vision: Path | None,
+                binary: Path = BINARY) -> list[str]:
+    """`build_command` for a job: an edit when the job has a reference picture."""
+    return build_command(job.prompt, job.settings, job.output_path, weights, binary=binary,
+                         reference=job.reference, vision=vision if job.reference else None)
+
+
+def create_back_job(manager: ImageJobManager, front: Path, seed: int = 3) -> ImageJob:
+    """A job drawing the back of the subject in `front`, saved beside it as `<front>__back`.
+
+    The reference is the front's cut-out on plain grey (image_to_3dlab/back_view.py), cut
+    out here unless the picture already is. Seed 3 drew every back in the eight-character
+    test of 2026-10-12.
+    """
+    from PIL import Image
+
+    with Image.open(front) as opened:
+        cut = opened.convert("RGBA") if matte.is_matted(opened) else matte.cut_out(
+            opened.convert("RGB"))[0]
+    reference = front.with_name(f"{front.stem}__back_reference.png")
+    back_view.reference_on_grey(cut).save(reference)
+    return manager.create(back_view.BACK_PROMPT, clean_settings({"seed": seed}),
+                          output_path=front.with_name(f"{front.stem}__back.png"),
+                          reference=reference)
+
+
+def back_source(output_root: Path, relative: str) -> Path:
+    """The front picture a back job may read: an existing file inside `output_root`."""
+    root = output_root.resolve()
+    path = (root / relative).resolve()
+    if root not in path.parents or not path.is_file():
+        raise ValueError(f"not a picture in output/: {relative}")
+    return path
+
+
 def run_job(job: ImageJob, manager: ImageJobManager,
             weights: dict[str, Path] | None = None) -> None:
     """Drive one sd-cli run to completion, emitting progress as it goes."""
     try:
         weights = weights or resolve_weights()
-        command = build_command(job.prompt, job.settings, job.output_path, weights)
+        vision = resolve_vision() if job.reference else None
+        if job.reference and vision is None:
+            raise MissingWeights([VISION_FILE[1]])
+        command = job_command(job, weights, vision)
         job.set_status("running", total_steps=job.settings["steps"])
         started = time.monotonic()
         job.process = subprocess.Popen(
@@ -434,8 +493,10 @@ def run_job(job: ImageJob, manager: ImageJobManager,
                            log="\n".join(list(job.log_lines)[-12:]))
         else:
             sidecar = job.output_path.with_suffix(".provenance.json")
-            sidecar.write_text(json.dumps(
-                provenance(job.prompt, job.settings, elapsed, job.output_path), indent=2))
+            record = provenance(job.prompt, job.settings, elapsed, job.output_path)
+            if job.reference:
+                record["reference"] = {"picture": job.reference.name, "mode": "edit (back view)"}
+            sidecar.write_text(json.dumps(record, indent=2))
             job.set_status("done", result_url=f"/api/image/{job.id}/result.png",
                            elapsed_seconds=round(elapsed, 1))
     except MissingWeights as exc:
@@ -449,6 +510,12 @@ def run_job(job: ImageJob, manager: ImageJobManager,
 
 
 MANAGER = ImageJobManager()
+
+
+def start_back(front: Path, seed: int = 3) -> ImageJob:
+    job = create_back_job(MANAGER, front, seed)
+    threading.Thread(target=run_job, args=(job, MANAGER), daemon=True).start()
+    return job
 
 
 def start(prompt: str, raw_settings: dict[str, Any]) -> ImageJob:

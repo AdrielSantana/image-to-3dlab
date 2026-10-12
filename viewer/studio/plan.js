@@ -17,10 +17,12 @@ export const ALLOWED = {
 };
 
 // Steps by id; `set` finishes by splitting the sheet into props.
-export const STEP_LABELS = { picture: 'Picture', model: '3D model', finished: 'Finish', split: 'Split into props', rigged: 'Rig', animated: 'Animate' };
+export const STEP_LABELS = { picture: 'Picture', back: 'Back picture', model: '3D model', finished: 'Finish', split: 'Split into props', rigged: 'Rig', animated: 'Animate' };
 
-/** The steps to run, in order, before any "stop after". */
-export function planFor(have, want, { finishUpload = false } = {}) {
+/** The steps to run, in order, before any "stop after".
+ *  `frontBack`: draw a back picture and build the 3D model from front and back (one prop or
+ *  a character; a sheet of nine has no back). */
+export function planFor(have, want, { finishUpload = false, frontBack = false } = {}) {
   const full = {
     picture: ['picture'],
     prop: ['picture', 'model', 'finished'],
@@ -31,6 +33,9 @@ export function planFor(have, want, { finishUpload = false } = {}) {
   let steps = full.filter((s) => !skip.includes(s));
   // an uploaded model may already be game-ready; finishing it is the user's choice
   if (have === 'model' && !finishUpload) steps = steps.filter((s) => s !== 'finished');
+  if (frontBack && want !== 'set' && steps.includes('model')) {
+    steps.splice(steps.indexOf('model'), 0, 'back');
+  }
   return steps;
 }
 

@@ -65,6 +65,7 @@ COMMANDS: dict[str, list[str]] = {
                    "--yes"],
     "matte": [sys.executable, str(REPO / "scripts" / "bootstrap_matte.py"), "--yes"],
     "autorig": [sys.executable, str(REPO / "scripts" / "bootstrap_autorig.py"), "--yes"],
+    "front-back": [sys.executable, str(REPO / "scripts" / "bootstrap_front_back.py"), "--yes"],
     # NVIDIA-only: Tencent's own Hunyuan3D-2.1, built for CUDA. The catalogue marks it
     # unsupported everywhere else, so start() refuses before this runs on a Mac.
     "hunyuan-cuda": [sys.executable, str(REPO / "scripts" / "bootstrap_hunyuan_cuda.py"),
@@ -217,8 +218,7 @@ class DownloadRun:
             self.condition.notify_all()
 
     def bytes_present(self) -> int:
-        from backend_catalog import _dir_state
-        return sum(_dir_state(w.path)[1] for w in self.backend.weights)
+        return sum(w.state()[1] for w in self.backend.weights)
 
 
 DOWNLOADS: dict[str, DownloadRun] = {}
@@ -298,6 +298,19 @@ def remove(backend_id: str) -> dict[str, Any]:
         path = weight.path.resolve()
         if not _inside_known_roots(path):
             raise RuntimeError(f"refusing to delete outside the repo or cache: {path}")
+        if weight.pattern is not None:
+            # One file in a folder another download owns: its snapshot link and the blob
+            # behind it go, the folder and everything else in it stay.
+            for item in weight.files():
+                target = item.resolve()
+                if not _inside_known_roots(target):
+                    raise RuntimeError(f"refusing to delete outside the repo or cache: {target}")
+                if target.is_file():
+                    freed += target.stat().st_size
+                    target.unlink()
+                item.unlink(missing_ok=True)
+                removed.append(str(item))
+            continue
         if path.is_file():
             # A single-file model (BiRefNet-lite) shares its folder with u2net: remove the
             # file, never the folder.

@@ -4,13 +4,16 @@
   "goals": {
     "character": {
       "label": "A moving character",
-      "wording": "full body, standing in a T-pose, arms straight out to the sides, palms down, fingers spread, empty hands, no cape or loose cloth, plain light grey background, soft even studio lighting",
+      "wording": "full body, front view, standing in an A-pose, arms straight and angled down about 45 degrees with a clear gap from the body, hands open, palms facing down, empty hands, feet slightly apart, eyes open, plain light grey background, soft even studio lighting",
       "tips": [
-        "One character, whole body, standing in a <b>T-pose</b>: arms straight out to the sides.",
+        "One character, whole body, standing in an <b>A-pose</b>: arms angled down about 45°, with a gap between arms and body. The pose words are added for you.",
         "<b>Empty hands.</b> Make swords and shields as separate props.",
-        "Skip capes, long coats, robes and aprons. Loose cloth tears when it moves.",
+        "A <b>soft 3D-render look</b> gives cleaner faces than flat anime or cel art.",
+        "Say what you want, not what you don't: \"smooth fabric\", not \"no wrinkles\". Naming a thing tends to add it.",
+        "Skip capes, long coats, robes and aprons if you will rig it. Loose cloth tears when it moves.",
         "Describe the look and materials (\"rusty iron armour\", \"leather boots\"), not a scene.",
-        "Plain light background, soft even light, no dramatic shadows."
+        "Plain light background, soft even light, no dramatic shadows.",
+        "More in the <a href=\"https://github.com/Bingeljell/image-to-3dlab/blob/main/docs/prompt-guide.md\" target=\"_blank\" rel=\"noopener\">picture guide</a>."
       ]
     },
     "prop": {
@@ -56,7 +59,7 @@
     {"words": ["holding", "wielding", "sword in hand", "with a sword", "with a shield", "carrying", "staff in hand"], "goals": ["character"],
      "message": "Held items get rigged as part of the hand. Make them as separate props instead."},
     {"words": ["running", "jumping", "action pose", "fighting pose", "sitting", "crouching", "dynamic pose"], "goals": ["character"],
-     "message": "A pose other than a T-pose makes rigging harder. The T-pose wording is added for you."},
+     "message": "A pose other than an A-pose makes rigging harder. The A-pose wording is added for you."},
     {"words": ["long hair", "flowing hair", "tentacles", "tail", "wings"], "goals": ["character"],
      "message": "Long hair, tails and wings may not rig well yet."},
     {"words": ["glowing", "smoke", "fire", "motion blur", "sparkles", "magic aura"], "goals": ["character", "prop", "set"],

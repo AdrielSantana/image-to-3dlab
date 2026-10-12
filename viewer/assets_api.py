@@ -41,6 +41,48 @@ STAGES = ("picture", "model", "finished", "rigged", "animated")
 INDEX_NAME = ".assets-index.json"
 META_NAME = ".assets-meta.json"   # the user's own choices about assets, e.g. hidden ones
 ASSET_ID = re.compile(r"^[0-9a-f]{12}$")
+RECIPES = Path(__file__).resolve().parents[1] / "image_to_3dlab" / "prompt_recipes.json"
+
+
+def _history(output: Path) -> list[dict[str, Any]]:
+    from activity_api import read_history  # same folder; imported late, it is only needed here
+
+    return read_history(output, limit=100_000)
+
+
+def _asked_for_props(history: list[dict[str, Any]]) -> set[str]:
+    """Files (relative to output/) of chains that were asked to make one prop."""
+    return {str(r["made"]) for r in history if r.get("want") == "prop" and r.get("made")}
+
+
+def _step_times(history: list[dict[str, Any]]) -> dict[str, tuple[str, float]]:
+    """How long the step that made each file took: {file relative to output/: (step, seconds)}.
+    History is newest first, so the first record for a file wins."""
+    times: dict[str, tuple[str, float]] = {}
+    for record in history:
+        made, seconds = record.get("made"), record.get("seconds")
+        if record.get("result") == "done" and made and isinstance(seconds, (int, float)):
+            times.setdefault(str(made), (str(record.get("step")), float(seconds)))
+    return times
+
+
+def _prop_wording() -> str | None:
+    try:
+        return json.loads(RECIPES.read_text())["goals"]["prop"]["wording"] or None
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _prompted_as_prop(picture: Path, wording: str | None) -> bool:
+    """Before the history said what a chain wanted: Create added the prop wording to the
+    prompt, and the picture's provenance record kept the prompt."""
+    if not wording:
+        return False
+    try:
+        record = json.loads(picture.with_suffix(".provenance.json").read_text())
+    except (OSError, ValueError):
+        return False
+    return wording in str(record.get("prompt", ""))
 
 
 def friendly_name(stem: str) -> str:
@@ -187,6 +229,8 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
     if not output.is_dir():
         return []
     hashes = _Hashes(output)
+    history = _history(output)
+    asked_props, step_times, prop_wording = _asked_for_props(history), _step_times(history), _prop_wording()
     pictures, models, finishes = _pictures(output), _models(output), _finishes(output)
     rigs, sets = _rigs(output), _prop_sets(output)
 
@@ -270,6 +314,9 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
         else:
             kind = "picture" if model is None and fin is None else "model"
             stage = "finished" if fin else "model" if model else "picture"
+            if kind == "model" and (any(rel(f) in asked_props for f in files)
+                                    or (picture and _prompted_as_prop(picture["file"], prop_wording))):
+                kind = "prop"
         first = picture or model or (prop_set if prop_set and prop_set.get("file") else None) or fin or rig
         # A person-given name ("rune_knight" at the finish or rig step) beats the prompt the
         # picture was named after; it is the shortest name in the chain.
@@ -281,12 +328,17 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
             "kind": kind,
             "stage": stage,
             "picture": rel(picture["file"]) if picture else None,
+            # Front + back: the drawn back sits beside its front as <front>__back.png.
+            "back": rel(back) if picture and (back := picture["file"].with_name(
+                f"{picture['file'].stem}__back.png")).is_file() else None,
             "model": rel(model["file"]) if model else None,
             "finished": rel(fin["file"]) if fin else None,
             "rigged": rel(rig["file"]) if rig else None,
             **(hashes.rig_facts(rig["file"]) if rig else {"fits_moves": None, "facing": None}),
             "clips": [{"name": c["name"], "file": rel(c["file"])} for c in clips],
             "props": [{"name": p["name"], "file": rel(p["file"])} for p in (prop_set["props"] if prop_set else [])],
+            "timings": {step: seconds for f in files if (rel(f) in step_times)
+                        for step, seconds in [step_times[rel(f)]]},
             "updated": max((f.stat().st_mtime for f in files), default=0),
         })
     hashes.save()

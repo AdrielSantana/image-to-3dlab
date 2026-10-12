@@ -22,11 +22,13 @@ from typing import Any
 HISTORY_NAME = ".activity.jsonl"
 TERMINAL = {"done", "error", "cancelled"}
 STALL_SECONDS = 180
-STEPS = ("picture", "model", "finished", "split", "rigged", "animated")
-LABELS = {"picture": "Picture", "model": "3D model", "finished": "Finish", "split": "Split into props",
-          "rigged": "Rig", "animated": "Animate"}
-KIND = {"picture": "image", "model": "generate", "finished": "finish", "split": "props",
+STEPS = ("picture", "back", "model", "finished", "split", "rigged", "animated")
+LABELS = {"picture": "Picture", "back": "Back picture", "model": "3D model", "finished": "Finish",
+          "split": "Split into props", "rigged": "Rig", "animated": "Animate"}
+KIND = {"picture": "image", "back": "image", "model": "generate", "finished": "finish", "split": "props",
         "rigged": "animate", "animated": "animate"}
+# Only Pixal3D builds from a front and a back picture.
+FRONT_BACK_ENGINES = {"pixal3d"}
 NOISE = re.compile(r"\[(VERBOSE|DEBUG)\]|ggml_|kernel_|compile_pipeline|th_max|^\s*[|\-=]*\s*$|^\s*0x[0-9a-f]+", re.IGNORECASE)
 
 # request(method, path, body, content_type) -> (http status, parsed JSON)
@@ -99,6 +101,7 @@ class Chain:
     cancel_requested: bool = False
     job: tuple[str, str] | None = None                               # (kind, job id) of the running step
     note: str = ""                                                   # why a run ended early, calmly
+    step_seconds: dict[str, float] = field(default_factory=dict)      # how long each finished step took
 
     def to_dict(self, now: float | None = None) -> dict[str, Any]:
         now = time.time() if now is None else now
@@ -107,6 +110,7 @@ class Chain:
             "current": self.current, "done": self.done, "percent": self.percent, "message": self.message,
             "log": self.log, "full_log": self.full_log[-4000:], "error": self.error,
             "made": {k: v for k, v in self.made.items() if v}, "first_move": self.first_move, "note": self.note,
+            "step_seconds": dict(self.step_seconds),
             "elapsed": round(now - self.started, 1), "step_elapsed": round(now - self.step_started, 1),
             "stalled": self.status == "running" and now - self.last_change > STALL_SECONDS,
         }
@@ -211,6 +215,7 @@ class ChainRunner:
                 chain.cancel_requested = True
             return self._fail(chain, step, why, payload.get("log_tail") or "", started, status)
         self._record(chain, step, payload)
+        chain.step_seconds[step] = round(self.now() - started, 1)
         self._history(chain, step, "done", started, chain.message, chain.full_log)
         return True
 
@@ -224,6 +229,8 @@ class ChainRunner:
         event = final.get("last_event") or {}
         if step == "picture":
             chain.made["picture"] = final.get("picture")
+        elif step == "back":
+            chain.made["back"] = final.get("picture")
         elif step == "model":
             chain.made["model"] = final.get("model")
         elif step == "finished":
@@ -247,19 +254,39 @@ class ChainRunner:
             return chain.upload
         raise ValueError("this step needs a picture, and there is none yet")
 
+    def _kept_upload(self, chain: Chain) -> str:
+        """An uploaded picture, saved under output/images/uploads/ so other jobs can read it by
+        path (the back job does). Recorded as the chain's picture from then on."""
+        name, data = chain.upload
+        stem = re.sub(r"[^a-z0-9]+", "-", Path(name).stem.lower()).strip("-") or "upload"
+        relative = f"images/uploads/{chain.id[:8]}__{stem}{Path(name).suffix.lower() or '.png'}"
+        path = self.output / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        chain.made["picture"] = relative
+        return relative
+
     def _start(self, chain: Chain, step: str) -> tuple[str, dict[str, Any]]:
         kind = KIND[step]
         if step == "picture":
             body = json.dumps({"prompt": chain.prompt or chain.title, "settings": chain.picture_settings}).encode()
             return kind, self._post("/api/image", body, "application/json")
+        if step == "back":
+            front = chain.made.get("picture") or (self._kept_upload(chain) if chain.upload else None)
+            if not front:
+                raise ValueError("the back picture needs a front picture, and there is none yet")
+            return kind, self._post("/api/image/back", json.dumps({"picture": front}).encode(),
+                                    "application/json")
         if step == "model":
             settings = {"backend": chain.engine} if chain.engine else {}
             if chain.model_seed is not None:
                 settings["seed"] = chain.model_seed
             if chain.keep_everything:
                 settings["debug"] = True
-            body, ctype = multipart({"settings": json.dumps(settings)},
-                                    {"image": self._picture(chain)})
+            files = {"image": self._picture(chain)}
+            if chain.made.get("back") and chain.engine in FRONT_BACK_ENGINES:
+                files["back"] = self._file(chain.made["back"])
+            body, ctype = multipart({"settings": json.dumps(settings)}, files)
             return kind, self._post("/api/generate", body, ctype)
         if step == "finished":
             if not chain.made.get("model"):
@@ -297,10 +324,10 @@ class ChainRunner:
     # ------------------------------------------------------------------ history
     def _history(self, chain: Chain, step: str, result: str, started: float, note: str, log: str) -> None:
         record = {"time": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(self.now())), "chain": chain.id,
-                  "title": chain.title, "step": step, "result": result,
+                  "title": chain.title, "want": chain.want, "step": step, "result": result,
                   "seconds": round(self.now() - started, 1), "note": note,
-                  "made": chain.made.get({"picture": "picture", "model": "model", "finished": "finished",
-                                          "rigged": "rigged"}.get(step, ""), None),
+                  "made": chain.made.get({"picture": "picture", "back": "back", "model": "model",
+                                          "finished": "finished", "rigged": "rigged"}.get(step, ""), None),
                   "log": str(log or "")[-3000:]}
         append_history(self.output, record)
 
@@ -380,6 +407,6 @@ def chain_from_form(form: dict[str, dict[str, Any]]) -> Chain:
         if isinstance(picture, dict) else {},
         model_seed=int(text("model_seed")) if (text("model_seed") or "").isdigit() else None,
         keep_everything=text("keep_everything") in ("1", "true"),
-        made={k: str(v) for k, v in made.items() if k in ("picture", "model", "finished", "rigged") and v},
+        made={k: str(v) for k, v in made.items() if k in ("picture", "back", "model", "finished", "rigged") and v},
         upload=(upload.get("filename") or "upload", upload["data"]) if upload and upload.get("filename") and upload.get("data") else None,
     )
