@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Pixel Match** no longer paints the far side of thin parts (cloaks, capes, ponytails) with
   the near side's colours, which left dark slits and holes down a cloak's back.
+- **Pixel Match** no longer draws thin dark lines on heads, ears and cheeks: it now fades out
+  near the edge of your picture's cut-out, where pixels are half background.
 
 ## [0.4.3] - 2026-10-10
 

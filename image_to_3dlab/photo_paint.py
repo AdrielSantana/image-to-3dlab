@@ -227,6 +227,10 @@ class Settings:
     # Fade in from the model's silhouette edge over this many view pixels. The edge is
     # where a matte bleeds backdrop colour and where a slightly-off camera misses.
     edge_px: int = 6
+    # Fade in from the picture's own cut-out edge over this share of its width (8 px at
+    # 768). Edge pixels are half backdrop and land a few pixels off the model, so they
+    # paint thin dark lines on heads, ears and cheeks. 0 turns it off.
+    cutout_edge: float = 8 / 768
     # A texel counts as seen when its depth is within this fraction of the model's size
     # of the nearest surface in the view.
     depth_tolerance: float = 0.004
@@ -278,6 +282,10 @@ def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View
 
     edge = erode(seen, settings.edge_px)[iy, ix] / max(settings.edge_px, 1)
     matte = view.image[iy, ix, 3] / 255.0
+    cutout_px = round(settings.cutout_edge * width)
+    if cutout_px > 0:
+        inside = erode(view.image[..., 3] > 127, cutout_px)[iy, ix] / cutout_px
+        matte = matte * smoothstep(inside, 0.0, 1.0)
 
     weight = visible * smoothstep(facing, settings.facing_low, settings.facing_high) \
         * smoothstep(edge, 0.0, 1.0) * matte

@@ -337,3 +337,47 @@ def test_the_far_side_of_a_thin_sheet_keeps_its_own_paint(flip):
                                    settings=pp.Settings(match_colour=False))
     assert weight[16, 8] == pytest.approx(1.0) and tuple(out[16, 8]) == (255, 0, 0)
     assert weight[16, 40] == 0.0 and tuple(out[16, 40]) == (128, 128, 128)
+
+
+# --- the picture's own cut-out edge ---------------------------------------------------------
+
+
+def _half_cut_photo(size: int) -> np.ndarray:
+    photo = _split_photo(size)
+    photo[:, size // 2:, 3] = 0  # right half is outside the cut-out
+    return photo
+
+
+def test_paint_fades_out_towards_the_pictures_cut_out_edge():
+    positions, faces, uvs = _quad()
+    texture = np.full((256, 256, 3), 128, dtype=np.uint8)  # ~1.6 picture pixels per texel
+    view = _camera(size=768, image=_half_cut_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+    row = weight[128]
+    # The cut-out edge is near texel 128: texels right beside it are distrusted, ones well
+    # inside fully trusted, and the fade is monotonic in between.
+    assert row[127] < 0.5
+    assert row[110] == pytest.approx(1.0)
+    assert row[110] >= row[124] >= row[125] >= row[126] >= row[127]
+    assert 0.0 < row[125] < 1.0
+
+
+def test_the_cut_out_fade_scales_with_the_picture():
+    # Same scene at two picture sizes: the faded band covers the same share of the model.
+    positions, faces, uvs = _quad()
+    texture = np.full((64, 64, 3), 128, dtype=np.uint8)
+    bands = []
+    for size in (384, 1536):
+        view = _camera(size=size, image=_half_cut_photo(size))
+        _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+        bands.append(int((weight[32, 16:32] < 0.99).sum()))
+    assert bands[0] >= 1 and abs(bands[0] - bands[1]) <= 1
+
+
+def test_the_cut_out_fade_can_be_switched_off():
+    positions, faces, uvs = _quad()
+    texture = np.full((64, 64, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_half_cut_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                 settings=pp.Settings(cutout_edge=0.0))
+    assert weight[32, 31] == pytest.approx(1.0)
