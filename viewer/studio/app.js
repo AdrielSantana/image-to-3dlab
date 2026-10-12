@@ -62,7 +62,7 @@ function summaries(asset) {
 }
 
 function renderSteps(asset) {
-  $('sideKind').textContent = { 'prop set': 'Prop set', character: 'Character', model: '3D model', picture: 'Picture' }[asset.kind] || '';
+  $('sideKind').textContent = { 'prop set': 'Prop set', prop: 'Prop', character: 'Character', model: '3D model', picture: 'Picture' }[asset.kind] || '';
   const done = doneCount(asset), total = stepCount(asset), sum = summaries(asset);
   $('steps').innerHTML = STEPS.map((step, i) => {
     if (i >= total) return `<li class="step na"><header><span class="dot">–</span><span><h3>${step.label}</h3><div class="sum">Not needed for props</div></span></header></li>`;

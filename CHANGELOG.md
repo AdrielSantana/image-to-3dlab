@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Slower on very dense meshes (about 12 s to 37 s on a million triangles).
 
 ### Fixed
+- The studio's **Props** tab now shows single props made with Create's prop route, not only
+  prop sheets.
 - **Pixel Match** no longer paints the far side of thin parts (cloaks, capes, ponytails) with
   the near side's colours, which left dark slits and holes down a cloak's back.
 - **Pixel Match** no longer draws thin dark lines on heads, ears and cheeks: it now fades out

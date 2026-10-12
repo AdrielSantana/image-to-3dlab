@@ -40,10 +40,13 @@ export function statusText(asset) {
   return { picture: 'Picture', model: '3D model', finished: 'Finished', rigged: 'Rigged, ready to animate' }[asset.stage] || asset.stage;
 }
 
-/** Library filter: all, characters (anything that could be one), or prop sets. */
+const PROP_KINDS = new Set(['prop set', 'prop']);
+
+/** Library filter: all, characters (anything that could be one), or props (single props
+ *  made as props, and prop sheets). */
 export function filterAssets(assets, filter) {
-  if (filter === 'props') return assets.filter((a) => a.kind === 'prop set');
-  if (filter === 'characters') return assets.filter((a) => a.kind !== 'prop set');
+  if (filter === 'props') return assets.filter((a) => PROP_KINDS.has(a.kind));
+  if (filter === 'characters') return assets.filter((a) => !PROP_KINDS.has(a.kind));
   return assets;
 }
 

@@ -63,6 +63,19 @@ def test_filters_and_what_the_viewer_shows():
 
 
 @needs_node
+def test_single_props_show_under_props_and_not_under_characters():
+    barrel = {"name": "barrel", "kind": "prop", "stage": "finished", "props": []}
+    out = _run("library.js", f"""
+      const a = {json.dumps([KNIGHT, FOX, SHEET, barrel])};
+      console.log(JSON.stringify({{
+        props: m.filterAssets(a, 'props').map(x => x.name),
+        characters: m.filterAssets(a, 'characters').map(x => x.name),
+      }}));""")
+    assert out["props"] == ["tavern", "barrel"]
+    assert out["characters"] == ["rune knight", "fox"]
+
+
+@needs_node
 def test_axis_map_from_the_front_puts_x_right_y_up_z_nearest():
     out = _run("gizmo.js", """
       const p = m.projectAxes([0, 0, 1]);

@@ -41,6 +41,34 @@ STAGES = ("picture", "model", "finished", "rigged", "animated")
 INDEX_NAME = ".assets-index.json"
 META_NAME = ".assets-meta.json"   # the user's own choices about assets, e.g. hidden ones
 ASSET_ID = re.compile(r"^[0-9a-f]{12}$")
+RECIPES = Path(__file__).resolve().parents[1] / "image_to_3dlab" / "prompt_recipes.json"
+
+
+def _asked_for_props(output: Path) -> set[str]:
+    """Files (relative to output/) of chains that were asked to make one prop."""
+    from activity_api import read_history  # same folder; imported late, it is only needed here
+
+    return {str(r["made"]) for r in read_history(output, limit=100_000)
+            if r.get("want") == "prop" and r.get("made")}
+
+
+def _prop_wording() -> str | None:
+    try:
+        return json.loads(RECIPES.read_text())["goals"]["prop"]["wording"] or None
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _prompted_as_prop(picture: Path, wording: str | None) -> bool:
+    """Before the history said what a chain wanted: Create added the prop wording to the
+    prompt, and the picture's provenance record kept the prompt."""
+    if not wording:
+        return False
+    try:
+        record = json.loads(picture.with_suffix(".provenance.json").read_text())
+    except (OSError, ValueError):
+        return False
+    return wording in str(record.get("prompt", ""))
 
 
 def friendly_name(stem: str) -> str:
@@ -187,6 +215,7 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
     if not output.is_dir():
         return []
     hashes = _Hashes(output)
+    asked_props, prop_wording = _asked_for_props(output), _prop_wording()
     pictures, models, finishes = _pictures(output), _models(output), _finishes(output)
     rigs, sets = _rigs(output), _prop_sets(output)
 
@@ -270,6 +299,9 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
         else:
             kind = "picture" if model is None and fin is None else "model"
             stage = "finished" if fin else "model" if model else "picture"
+            if kind == "model" and (any(rel(f) in asked_props for f in files)
+                                    or (picture and _prompted_as_prop(picture["file"], prop_wording))):
+                kind = "prop"
         first = picture or model or (prop_set if prop_set and prop_set.get("file") else None) or fin or rig
         # A person-given name ("rune_knight" at the finish or rig step) beats the prompt the
         # picture was named after; it is the shortest name in the chain.
