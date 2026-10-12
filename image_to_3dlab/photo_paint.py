@@ -280,6 +280,10 @@ class Settings:
     # in colour (a robe's side next to a pale back, a belt beside a dark front). Falls back
     # to the global match when too little of the picture is trusted.
     local_colour: bool = True
+    # Nudge each picture onto the model before painting (see view_align): the cut-out onto
+    # the model's outline, then detailed spots onto where the model built them. Only moves
+    # what it is sure of, a few pixels at most.
+    align: bool = True
 
 
 DEFAULT_SETTINGS = Settings()
@@ -340,14 +344,22 @@ def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View
 
 def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
                   faces: np.ndarray, views: list[View], mesh_scale: float = 1.0,
-                  frame=PIXAL3D_FRAME, settings: Settings | None = None
-                  ) -> tuple[np.ndarray, np.ndarray]:
+                  frame=PIXAL3D_FRAME, settings: Settings | None = None,
+                  align_reports: list | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Blend the views' pixels into `texture` (H x W x 3 or 4, uint8).
 
     `uvs` follow glTF: (0, 0) is the image's top-left corner. Returns the new texture and
     the per-texel weight actually applied (0..1), which is the debug map worth looking at.
+    Pass a list as `align_reports` to get one view_align.AlignReport per view.
     """
     settings = settings or DEFAULT_SETTINGS
+    if settings.align:
+        from image_to_3dlab import view_align  # imports this module; import late
+        aligned = [view_align.align_view(view, positions, uvs, faces, texture, frame, mesh_scale)
+                   for view in views]
+        views = [view for view, _ in aligned]
+        if align_reports is not None:
+            align_reports.extend(report for _, report in aligned)
     height, width = texture.shape[:2]
     uv_xy = np.stack([uvs[:, 0] * width, uvs[:, 1] * height], axis=1)[faces]
     face_of, bary = rasterize(uv_xy, np.zeros((len(faces), 3)), (height, width))

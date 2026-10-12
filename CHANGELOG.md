@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   skin-weight clean-up was handing those hand points to the leg bones.
 - Animated characters no longer bend their wrists inward on every move: the hand now turns
   with its forearm when an A-pose rest is lined up with the motion's T-pose.
+- **Pixel Match** nudges each picture onto the model before painting: first the cut-out onto
+  the model's outline (a pixel or two, about 1% in size), then detailed spots such as brows,
+  eyes and ink lines onto where the model built them. It only moves what it is sure of, a
+  few pixels at most. `scripts/photo_paint.py` reports what moved; `--no-align` turns it off.
+
 ### Changed
 - **Pixel Match** matches colour spot by spot instead of with one shift for the whole model,
   so the sides no picture sees meet each picture's colours instead of showing darker bands.
