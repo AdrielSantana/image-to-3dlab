@@ -64,6 +64,10 @@ WEIGHT_FILES = {
     "vae": ("models--Comfy-Org--Qwen-Image-2.1", "qwen_image_2.1_vae_bf16.safetensors"),
 }
 
+# Edit mode (a reference picture, such as the front for a back view) needs the LLM's vision
+# projector as well. Optional: plain pictures do not, so it is not part of WEIGHT_FILES.
+VISION_FILE = ("models--Qwen--Qwen3-VL-8B-Instruct-GGUF", "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf")
+
 DEFAULTS: dict[str, Any] = {
     "width": 768,
     "height": 768,
@@ -122,6 +126,11 @@ def resolve_weights() -> dict[str, Path]:
     return found
 
 
+def resolve_vision() -> Path | None:
+    """The vision projector edit mode needs, or None when it has not been downloaded."""
+    return find_weight(*VISION_FILE)
+
+
 def is_installed() -> bool:
     """Both halves, build and weights, the way the rest of the viewer separates them."""
     if not BINARY.exists():
@@ -168,8 +177,12 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_command(prompt: str, settings: dict[str, Any], output_path: Path,
-                  weights: dict[str, Path], binary: Path = BINARY) -> list[str]:
+                  weights: dict[str, Path], binary: Path = BINARY,
+                  reference: Path | None = None, vision: Path | None = None) -> list[str]:
     """The full argument list, as a pure function so a test can read it without a GPU.
+
+    With `reference`, an edit: Qwen reads that picture through the `vision` projector
+    (VISION_FILE), which is then required.
 
     `--offload-to-cpu` is deliberately absent. The upstream recipe includes it, but it
     shuttles weights between RAM and VRAM to save video memory a unified-memory Mac does
@@ -195,6 +208,10 @@ def build_command(prompt: str, settings: dict[str, Any], output_path: Path,
         command[command.index("-p") + 2:command.index("-p") + 2] = [
             "--negative-prompt", settings["negative_prompt"]
         ]
+    if reference is not None:
+        if vision is None:
+            raise ValueError("an edit needs the vision projector (VISION_FILE)")
+        command += ["-r", str(reference), "--llm_vision", str(vision)]
     return command
 
 

@@ -50,6 +50,10 @@ WEIGHTS = [
     ("Comfy-Org/Qwen-Image-2.1", "vae/qwen_image_2.1_vae_bf16.safetensors", 0.68),
 ]
 
+# Optional: the LLM's vision projector. Edit mode needs it (drawing a back picture from the
+# front for a front + back build); plain pictures do not. Fetched only with --vision.
+VISION = ("Qwen/Qwen3-VL-8B-Instruct-GGUF", "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf", 0.75)
+
 LICENCE = (
     "Qwen Research License. The pictures you generate are yours (Qwen confirmed it);\n"
     "  the weights stay on this machine. Built with Qwen.\n"
@@ -79,6 +83,27 @@ def announcement(build: bool = True, weights: bool = True) -> str:
             lines.append(f"             {size:>5.2f} GB  {filename}  ({repo})")
     lines += ["", "  licence: " + LICENCE, ""]
     return "\n".join(lines)
+
+
+def vision_announcement() -> str:
+    repo, filename, size = VISION
+    return "\n".join(["", "About to install:", "",
+                      "  backend: Qwen-Image 2.1, edit mode (draws the back picture for",
+                      "           front + back 3D builds)",
+                      f"  weights: {size:.2f} GB  {filename}  ({repo}) -> Hugging Face cache",
+                      "", "  licence: " + LICENCE, ""])
+
+
+def install_vision() -> None:
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as exc:
+        raise SystemExit(
+            "huggingface_hub is not installed. pip install -r requirements-dev.txt"
+        ) from exc
+    repo, filename, size = VISION
+    print(f"\nFetching {filename} ({size:.2f} GB) from {repo}...", flush=True)
+    print(f"  {hf_hub_download(repo_id=repo, filename=filename)}")
 
 
 def binary_present() -> bool:
@@ -273,11 +298,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="Install the binary and stop, leaving the weights.")
     parser.add_argument("--weights-only", action="store_true",
                         help="Fetch the weights only, assuming sd-cli is already present.")
+    parser.add_argument("--vision", action="store_true",
+                        help=f"Fetch only the {VISION[2]:.2f} GB vision projector edit mode "
+                             "needs (back pictures for front + back builds).")
     args = parser.parse_args(argv)
 
-    build = not args.weights_only
-    weights = not args.build_only
-    print(announcement(build=build, weights=weights))
+    build = not args.weights_only and not args.vision
+    weights = not args.build_only and not args.vision
+    print(vision_announcement() if args.vision else announcement(build=build, weights=weights))
 
     if not args.yes:
         # Non-interactive without --yes must not silently proceed, and must not hang
@@ -305,6 +333,10 @@ def main(argv: list[str] | None = None) -> int:
             print("sd-cli found the GPU.")
     if weights:
         install_weights()
+    if args.vision:
+        install_vision()
+        print("\nDone. Back pictures: python scripts/make_back_view.py front.png back.png")
+        return 0
     print("\nDone. In the studio, press + Create and start from an idea.")
     return 0
 

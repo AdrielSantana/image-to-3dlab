@@ -328,3 +328,35 @@ def test_probe_gpu_runs_the_binary_and_returns_its_chatter(tmp_path):
 
 def test_probe_gpu_survives_a_binary_that_will_not_start(tmp_path):
     assert boot.probe_gpu(tmp_path / "missing") == ""
+
+
+# --- --vision: the projector edit mode (back pictures) needs ---------------------------------
+
+
+def test_vision_announcement_names_the_file_size_and_why():
+    text = boot.vision_announcement()
+    assert "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf" in text and "0.75 GB" in text
+    assert "back" in text and "Qwen" in text
+
+
+def test_vision_is_the_file_the_image_tool_looks_for():
+    sys.path.insert(0, str(SCRIPTS.parent / "viewer"))
+    import image_api
+    repo, filename, _ = boot.VISION
+    assert filename == image_api.VISION_FILE[1]
+    assert "models--" + repo.replace("/", "--") == image_api.VISION_FILE[0]
+
+
+def test_vision_without_a_yes_downloads_nothing(monkeypatch):
+    monkeypatch.setattr(boot, "install_vision", lambda *a, **k: pytest.fail("downloaded"))
+    monkeypatch.setattr(boot.sys.stdin, "isatty", lambda: False)
+    assert boot.main(["--vision"]) == 1
+
+
+def test_vision_with_a_yes_fetches_only_the_projector(monkeypatch):
+    monkeypatch.setattr(boot, "install_binary", lambda *a, **k: pytest.fail("binary"))
+    monkeypatch.setattr(boot, "install_weights", lambda *a, **k: pytest.fail("weights"))
+    fetched = []
+    monkeypatch.setattr(boot, "install_vision", lambda *a, **k: fetched.append(1))
+    assert boot.main(["--vision", "--yes"]) == 0
+    assert fetched == [1]

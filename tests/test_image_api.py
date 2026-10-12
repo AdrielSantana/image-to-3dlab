@@ -290,3 +290,31 @@ def test_a_gpu_run_is_left_alone(tmp_path, monkeypatch):
     api.run_job(job, manager, weights=WEIGHTS)
     # The fake writes no PNG, so the run ends in the ordinary "no output" error, not ours.
     assert "libegl1" not in (job.error or "")
+
+
+# --- edit mode: a reference picture, read by the vision file --------------------------------
+
+
+def test_an_edit_carries_the_reference_and_the_vision_file():
+    settings = api.clean_settings({})
+    command = api.build_command("the back", settings, Path("/out/x.png"), WEIGHTS,
+                                binary=Path("/bin/sd-cli"), reference=Path("/in/front.png"),
+                                vision=Path("/w/mmproj.gguf"))
+    assert command[command.index("-r") + 1] == "/in/front.png"
+    assert command[command.index("--llm_vision") + 1] == "/w/mmproj.gguf"
+
+
+def test_a_plain_picture_has_no_reference():
+    assert "-r" not in command_for() and "--llm_vision" not in command_for()
+
+
+def test_an_edit_without_the_vision_file_is_refused():
+    with pytest.raises(ValueError, match="vision"):
+        api.build_command("the back", api.clean_settings({}), Path("/out/x.png"), WEIGHTS,
+                          binary=Path("/bin/sd-cli"), reference=Path("/in/front.png"))
+
+
+def test_the_vision_file_is_the_one_beside_the_qwen_llm():
+    directory, filename = api.VISION_FILE
+    assert directory == api.WEIGHT_FILES["llm"][0]
+    assert filename.startswith("mmproj") and filename.endswith(".gguf")
