@@ -51,6 +51,8 @@ def test_missing_routes_stop_it_before_anything_is_fetched(monkeypatch, capsys):
 def test_the_catalogue_entry_quotes_the_same_sizes():
     entry = backend_catalog.BY_ID["front-back"]
     assert [w.bytes_expected for w in entry.weights] == [boot.MV_BYTES, boot.VISION_BYTES]
+    flows = entry.weights[0]
+    assert flows.pattern == "*_mv.gguf"  # measured without the files linked from single-view
     assert boot.TOTAL_GB == pytest.approx(boot.pixal3d.MV_GB + boot.qwen.VISION[2], abs=0.1)
-    vision = next(w for w in entry.weights if w.pattern)
+    vision = next(w for w in entry.weights if "mmproj" in (w.pattern or ""))
     assert vision.pattern.endswith(boot.qwen.VISION[1])

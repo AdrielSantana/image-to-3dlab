@@ -652,7 +652,9 @@ CATALOG: tuple[Backend, ...] = (
             WeightSet("Pixal3D multi-view flows (Q8_0)", "raven38/pixal3d-q8_0-v1", 5_856_899_828,
                       REPO / "vendor" / "pixal3d-cpp" / "models" / "pixal3d-q8_0-v1",
                       note="Only the four multi-view flows are fetched; the encoder and "
-                           "decoders are linked from the single-view set."),
+                           "decoders are linked from the single-view set.",
+                      # The flows alone: the linked files are the single-view set's bytes.
+                      pattern="*_mv.gguf"),
             WeightSet("Qwen3-VL vision projector (Q8_0)", "Qwen/Qwen3-VL-8B-Instruct-GGUF",
                       752_289_728, HF_HUB_DIR / "models--Qwen--Qwen3-VL-8B-Instruct-GGUF",
                       note="Lets Qwen-Image read the front picture to draw the back.",
