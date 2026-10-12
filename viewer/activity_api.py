@@ -22,11 +22,13 @@ from typing import Any
 HISTORY_NAME = ".activity.jsonl"
 TERMINAL = {"done", "error", "cancelled"}
 STALL_SECONDS = 180
-STEPS = ("picture", "model", "finished", "split", "rigged", "animated")
-LABELS = {"picture": "Picture", "model": "3D model", "finished": "Finish", "split": "Split into props",
-          "rigged": "Rig", "animated": "Animate"}
-KIND = {"picture": "image", "model": "generate", "finished": "finish", "split": "props",
+STEPS = ("picture", "back", "model", "finished", "split", "rigged", "animated")
+LABELS = {"picture": "Picture", "back": "Back picture", "model": "3D model", "finished": "Finish",
+          "split": "Split into props", "rigged": "Rig", "animated": "Animate"}
+KIND = {"picture": "image", "back": "image", "model": "generate", "finished": "finish", "split": "props",
         "rigged": "animate", "animated": "animate"}
+# Only Pixal3D builds from a front and a back picture.
+FRONT_BACK_ENGINES = {"pixal3d"}
 NOISE = re.compile(r"\[(VERBOSE|DEBUG)\]|ggml_|kernel_|compile_pipeline|th_max|^\s*[|\-=]*\s*$|^\s*0x[0-9a-f]+", re.IGNORECASE)
 
 # request(method, path, body, content_type) -> (http status, parsed JSON)
@@ -224,6 +226,8 @@ class ChainRunner:
         event = final.get("last_event") or {}
         if step == "picture":
             chain.made["picture"] = final.get("picture")
+        elif step == "back":
+            chain.made["back"] = final.get("picture")
         elif step == "model":
             chain.made["model"] = final.get("model")
         elif step == "finished":
@@ -247,19 +251,39 @@ class ChainRunner:
             return chain.upload
         raise ValueError("this step needs a picture, and there is none yet")
 
+    def _kept_upload(self, chain: Chain) -> str:
+        """An uploaded picture, saved under output/images/uploads/ so other jobs can read it by
+        path (the back job does). Recorded as the chain's picture from then on."""
+        name, data = chain.upload
+        stem = re.sub(r"[^a-z0-9]+", "-", Path(name).stem.lower()).strip("-") or "upload"
+        relative = f"images/uploads/{chain.id[:8]}__{stem}{Path(name).suffix.lower() or '.png'}"
+        path = self.output / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        chain.made["picture"] = relative
+        return relative
+
     def _start(self, chain: Chain, step: str) -> tuple[str, dict[str, Any]]:
         kind = KIND[step]
         if step == "picture":
             body = json.dumps({"prompt": chain.prompt or chain.title, "settings": chain.picture_settings}).encode()
             return kind, self._post("/api/image", body, "application/json")
+        if step == "back":
+            front = chain.made.get("picture") or (self._kept_upload(chain) if chain.upload else None)
+            if not front:
+                raise ValueError("the back picture needs a front picture, and there is none yet")
+            return kind, self._post("/api/image/back", json.dumps({"picture": front}).encode(),
+                                    "application/json")
         if step == "model":
             settings = {"backend": chain.engine} if chain.engine else {}
             if chain.model_seed is not None:
                 settings["seed"] = chain.model_seed
             if chain.keep_everything:
                 settings["debug"] = True
-            body, ctype = multipart({"settings": json.dumps(settings)},
-                                    {"image": self._picture(chain)})
+            files = {"image": self._picture(chain)}
+            if chain.made.get("back") and chain.engine in FRONT_BACK_ENGINES:
+                files["back"] = self._file(chain.made["back"])
+            body, ctype = multipart({"settings": json.dumps(settings)}, files)
             return kind, self._post("/api/generate", body, ctype)
         if step == "finished":
             if not chain.made.get("model"):
@@ -380,6 +404,6 @@ def chain_from_form(form: dict[str, dict[str, Any]]) -> Chain:
         if isinstance(picture, dict) else {},
         model_seed=int(text("model_seed")) if (text("model_seed") or "").isdigit() else None,
         keep_everything=text("keep_everything") in ("1", "true"),
-        made={k: str(v) for k, v in made.items() if k in ("picture", "model", "finished", "rigged") and v},
+        made={k: str(v) for k, v in made.items() if k in ("picture", "back", "model", "finished", "rigged") and v},
         upload=(upload.get("filename") or "upload", upload["data"]) if upload and upload.get("filename") and upload.get("data") else None,
     )

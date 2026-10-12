@@ -1662,3 +1662,12 @@ def test_front_back_readiness_follows_the_multiview_manifest(tmp_path):
 def test_front_back_readiness_without_the_folder_says_how_to_get_it(tmp_path):
     ready, hint = api.pixal3d_front_back_ready(tmp_path / "missing")
     assert not ready and "5.9 GB" in hint
+
+
+def test_front_back_is_ready_only_with_both_downloads():
+    assert api.front_back_status(lambda: (True, None), lambda: Path("/w/mmproj.gguf")) == {
+        "ready": True, "hint": None}
+    no_vision = api.front_back_status(lambda: (True, None), lambda: None)
+    assert not no_vision["ready"] and "--vision" in no_vision["hint"] and "0.75 GB" in no_vision["hint"]
+    no_weights = api.front_back_status(lambda: (False, "needs 5.9 GB"), lambda: None)
+    assert not no_weights["ready"] and "5.9 GB" in no_weights["hint"] and "0.75 GB" in no_weights["hint"]

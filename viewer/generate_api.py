@@ -371,10 +371,23 @@ def hf_sign_in_response(payload: Any) -> tuple[int, dict]:
     return (422 if "error" in result else 200), result
 
 
+def front_back_status(weights=None, vision=None) -> dict[str, Any]:
+    """Whether Create can build from a front and a back picture: Pixal3D's multi-view
+    weights for the shape, and Qwen's vision projector for drawing the back."""
+    weights_ready, hint = (weights or pixal3d_front_back_ready)()
+    vision_ready = (vision or image_api.resolve_vision)() is not None
+    missing = [] if weights_ready else [hint]
+    if not vision_ready:
+        missing.append("Drawing the back needs Qwen's vision projector (0.75 GB): get it from "
+                       "Setup & Status, or run python scripts/bootstrap_qwen_image.py --vision.")
+    return {"ready": not missing, "hint": " ".join(missing) or None}
+
+
 def catalog_payload() -> dict:
     """The Setup page's catalogue, plus any setup already running so it can reattach."""
     payload = with_rebuild_reasons(catalog_status())
     payload["running_setup"] = running_payload()
+    payload["front_back"] = front_back_status()
     return payload
 
 

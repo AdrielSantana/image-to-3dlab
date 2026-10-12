@@ -23,7 +23,7 @@ class FakeJobs:
         if method == "POST" and path.endswith("/cancel"):
             return 200, {"ok": True}
         if method == "POST":
-            kind = {"/api/image": "picture", "/api/generate": "model", "/api/finish": "finished",
+            kind = {"/api/image": "picture", "/api/image/back": "back", "/api/generate": "model", "/api/finish": "finished",
                     "/api/animate/rig": "rigged", "/api/animate/play": "animated", "/api/props": "split"}[path]
             if kind == self.refuse:
                 return 409, {"error": "another job is running; wait for it to finish"}
@@ -34,7 +34,7 @@ class FakeJobs:
         kind = self.jobs[path.split("/")[3]]
         if kind == self.fail:
             return 200, {"status": "error", "error": "MemoryError: out of memory", "log_tail": "ggml_noise\nKilled"}
-        made = {"picture": "images/p/pic.png", "model": "pixal3d/m/model.glb",
+        made = {"picture": "images/p/pic.png", "back": "images/p/pic__back.png", "model": "pixal3d/m/model.glb",
                 "finished": "finish/f/finished.glb", "rigged": "animate/r/rigged.glb"}
         for rel in made.values():
             (self.output / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -45,7 +45,7 @@ class FakeJobs:
         if kind in ("finished", "rigged"):
             event["path"] = made[kind]
         return 200, {"status": "done", "last_event": event, "log_tail": f"{kind} ok",
-                     "picture": made["picture"] if kind == "picture" else None,
+                     "picture": made[kind] if kind in ("picture", "back") else None,
                      "model": made["model"] if kind == "model" else None}
 
 
@@ -216,3 +216,41 @@ def test_keep_everything_is_off_unless_asked(tmp_path):
     runner, jobs = _runner(tmp_path)
     runner.submit(chain, background=False)
     assert b"debug" not in next(b for m, p, b in jobs.calls if p == "/api/generate")
+
+
+
+def test_a_front_and_back_character_draws_the_back_then_builds_from_both(tmp_path):
+    runner, jobs = _runner(tmp_path)
+    chain = aa.Chain(title="viking", prompt="a viking", engine="pixal3d", first_move="walk",
+                     steps=["picture", "back", "model", "finished", "rigged", "animated"])
+    runner.submit(chain, background=False)
+    assert chain.status == "done" and chain.made["back"] == "images/p/pic__back.png"
+    posts = [(p, b) for m, p, b in jobs.calls if m == "POST"]
+    assert [p for p, _ in posts][:3] == ["/api/image", "/api/image/back", "/api/generate"]
+    assert json.loads(posts[1][1])["picture"] == "images/p/pic.png"
+    assert b'name="back"; filename="pic__back.png"' in posts[2][1]
+
+
+def test_an_uploaded_picture_is_kept_in_output_so_its_back_can_be_drawn(tmp_path):
+    runner, jobs = _runner(tmp_path)
+    chain = aa.Chain(title="mine", engine="pixal3d", steps=["back", "model"],
+                     upload=("my orc.png", b"\x89PNG-bytes"))
+    runner.submit(chain, background=False)
+    assert chain.status == "done"
+    sent = json.loads([b for m, p, b in jobs.calls if p == "/api/image/back"][0])["picture"]
+    assert sent.startswith("images/uploads/") and (tmp_path / sent).read_bytes() == b"\x89PNG-bytes"
+
+
+def test_the_back_only_goes_to_pixal3d(tmp_path):
+    runner, jobs = _runner(tmp_path)
+    chain = aa.Chain(title="x", prompt="x", engine="trellis", steps=["picture", "back", "model"])
+    runner.submit(chain, background=False)
+    model_post = [b for m, p, b in jobs.calls if p == "/api/generate"][0]
+    assert b'name="back"' not in model_post
+
+
+def test_no_named_engine_means_no_back_since_the_default_engine_is_not_pixal3d(tmp_path):
+    runner, jobs = _runner(tmp_path)
+    chain = aa.Chain(title="x", prompt="x", steps=["picture", "back", "model"])
+    runner.submit(chain, background=False)
+    assert b'name="back"' not in [b for m, p, b in jobs.calls if p == "/api/generate"][0]

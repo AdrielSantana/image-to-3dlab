@@ -337,6 +337,26 @@ def test_each_starting_point_gets_only_the_steps_it_needs():
 
 
 @needs_node
+def test_front_and_back_adds_a_back_picture_before_the_3d_model():
+    out = _run("plan.js", """console.log(JSON.stringify({
+      ideaChar: m.planFor('idea', 'character', { frontBack: true }),
+      pictureProp: m.planFor('picture', 'prop', { frontBack: true }),
+      ideaSet: m.planFor('idea', 'set', { frontBack: true }),
+      ideaPicture: m.planFor('idea', 'picture', { frontBack: true }),
+      glbChar: m.planFor('model', 'character', { frontBack: true }),
+      off: m.planFor('idea', 'character'),
+      label: m.STEP_LABELS.back,
+    }));""")
+    assert out["ideaChar"] == ["picture", "back", "model", "finished", "rigged", "animated"]
+    assert out["pictureProp"] == ["back", "model", "finished"]
+    assert out["ideaSet"] == ["picture", "model", "split"]        # a sheet of nine has no back
+    assert out["ideaPicture"] == ["picture"]                       # no 3D, no back
+    assert out["glbChar"] == ["rigged", "animated"]                # the model exists already
+    assert out["off"] == ["picture", "model", "finished", "rigged", "animated"]
+    assert out["label"] == "Back picture"
+
+
+@needs_node
 def test_the_prompt_gets_the_goals_wording_and_warnings_for_trouble_words():
     out = _run("plan.js", f"""
       const r = {json.dumps(RECIPES)};

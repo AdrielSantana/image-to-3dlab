@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   skin-weight clean-up was handing those hand points to the leg bones.
 - Animated characters no longer bend their wrists inward on every move: the hand now turns
   with its forearm when an A-pose rest is lined up with the motion's T-pose.
+- **Front + back** in Create: for a character or a prop, Qwen draws the back of your picture,
+  Pixal3D builds the shape from both, and Pixel Match paints from both, so the sides and back
+  match your picture instead of being guessed. On by default when its downloads are present
+  (Pixal3D's multi-view weights, 5.9 GB, and Qwen's vision projector, 0.75 GB); Advanced has
+  the switch, and says what to fetch when they are missing. Scripts: `make_back_view.py`,
+  `pixal3d_generate.py --back`, `bootstrap_pixal3d.py --multiview`,
+  `bootstrap_qwen_image.py --vision`.
 - **Pixel Match** nudges each picture onto the model before painting: first the cut-out onto
   the model's outline (a pixel or two, about 1% in size), then detailed spots such as brows,
   eyes and ink lines onto where the model built them. It only moves what it is sure of, a

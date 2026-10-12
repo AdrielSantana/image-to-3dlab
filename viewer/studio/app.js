@@ -16,7 +16,7 @@ let base = '/output/';
 let assets = [];
 let filter = 'all', query = '', showHidden = false, limit = 30;
 let current = null;
-let engines = [], presets = [], recipes = null, busy = false, playNext = null;
+let engines = [], presets = [], recipes = null, frontBack = null, busy = false, playNext = null;
 let making = null, viewingMaking = false;  // the asset Create is making right now
 
 const viewer = createStudioViewer({ stage: $('stage'), logoUrl: LOGO, onClipChange: (clip) => setDownload(clip.file) });
@@ -198,6 +198,7 @@ async function loadTools() {
     fetch('/api/animate/models').then((r) => r.json()).catch(() => null),
   ]);
   engines = readyEngines(catalog);
+  frontBack = catalog?.front_back || null;
   presets = animate?.installed ? animate.presets : [];
   recipes = await fetch('/api/recipes').then((r) => r.json()).catch(() => null);
 }
@@ -205,7 +206,7 @@ async function loadTools() {
 // ------------------------------------------------------------------ Create
 function openCreateSheet() {
   closeSheet($('stage'));
-  openCreate({ stage: $('stage'), recipes, engines, presets, onStart: (plan) => startChain(plan) });
+  openCreate({ stage: $('stage'), recipes, engines, presets, frontBack, onStart: (plan) => startChain(plan) });
 }
 
 $('createBtn').addEventListener('click', () => {
