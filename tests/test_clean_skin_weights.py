@@ -65,3 +65,35 @@ def test_nearest_bone_measures_to_the_segment_not_the_head():
                 "toe": (np.array([0.9, -1.0, 0]), np.array([1.0, -1.0, 0]))}
     assert cw.nearest_bone(np.array([0.95, -0.3, 0]), segments) == "arm"
     assert cw.nearest_bone(np.array([0.95, -0.8, 0]), segments) == "toe"
+
+
+def test_a_hand_hanging_beside_the_thigh_keeps_its_hand_weight():
+    """Arms-down characters: a hand point sits nearer the thigh than the hand bone, so the
+    thigh became its anchor and the hand weight (9 hops away) was dropped. The rigger had
+    it right; the clean-up glued hands to thighs. A bone right beside the point stays."""
+    hops = cw.tree_hops(PARENTS)
+    weights = {"hand": 0.9, "leg": 0.1}
+    assert cw.prune_weights(weights, hops, "leg", close={"hand", "leg"}) == weights
+    assert cw.prune_weights({"hand": 1.0}, hops, "leg", close={"hand", "leg"}) == {"hand": 1.0}
+
+
+def test_close_bones_are_within_slack_of_the_nearest_not_across_the_body():
+    import numpy as np
+    segments = {"hand": (np.array([0.30, 0.0, 0]), np.array([0.30, -0.10, 0])),
+                "leg": (np.array([0.20, 0.0, 0]), np.array([0.20, -0.40, 0])),
+                "toe": (np.array([0.20, -0.90, 0]), np.array([0.20, -0.95, 0]))}
+    point = np.array([0.26, -0.05, 0])  # between hand and thigh, a touch nearer the thigh
+    assert cw.close_bones(point, segments, slack=0.05) == {"hand", "leg"}
+    assert "toe" not in cw.close_bones(np.array([0.30, -0.12, 0]), segments, slack=0.05)
+
+
+def test_the_toe_is_still_dropped_from_a_fingertip_when_it_is_far_away():
+    import numpy as np
+    hops = cw.tree_hops(PARENTS)
+    segments = {"finger2": (np.array([0.5, 0.0, 0]), np.array([0.55, 0.0, 0])),
+                "finger1": (np.array([0.45, 0.0, 0]), np.array([0.5, 0.0, 0])),
+                "toe": (np.array([0.1, -0.9, 0]), np.array([0.1, -0.95, 0]))}
+    point = np.array([0.54, 0.0, 0])
+    close = cw.close_bones(point, segments, slack=0.05)
+    cleaned = cw.prune_weights({"finger2": 0.6, "finger1": 0.2, "toe": 0.2}, hops, "finger2", close=close)
+    assert set(cleaned) == {"finger2", "finger1"}

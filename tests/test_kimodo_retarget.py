@@ -216,6 +216,22 @@ def test_end_bones_turn_with_their_parent_so_no_joint_is_kinked():
     assert np.allclose(align[roles["Lindex2"]], align[roles["Lindex1"]])
 
 
+def test_a_hand_turns_with_its_forearm_so_the_wrist_keeps_its_rest_bend():
+    """An A-pose forearm is swung up to SOMA's T-pose; the hand forks into fingers, so it
+    kept its rest and pointed down at the old angle: every move bent the wrist inward by
+    the A-pose droop (shark girl: Kimodo 5-13 degrees, ours 29-40)."""
+    parents, heads, roles = _humanoid(face=+1)
+    elbow = heads[roles["Lfa"]].copy()
+    ang = np.radians(30)
+    turn = np.array([[np.cos(ang), 0, np.sin(ang)], [0, 1, 0], [-np.sin(ang), 0, np.cos(ang)]])
+    for b in kr._subtree(roles["Lhand"], parents):  # droop the forearm and all below it
+        heads[b] = elbow + turn @ (heads[b] - elbow)
+    m, frame = kr.map_skintokens_to_soma(parents, heads)
+    align = kr.rest_alignment(parents, heads, m, kr.soma_to_rig_axes(frame), _soma_like_tpose())
+    assert not np.allclose(align[roles["Lfa"]], np.eye(3))  # the forearm really was swung
+    assert np.allclose(align[roles["Lhand"]], align[roles["Lfa"]])
+
+
 def test_arm_spread_only_while_hanging():
     frame = np.stack([[-1.0, 0, 0], [0, 0, 1.0], [0, 1.0, 0]], axis=1)  # left -X, up Z, fwd Y
     level = frame[:, 0]  # left arm rest direction in rig space

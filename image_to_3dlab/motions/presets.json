@@ -39,6 +39,15 @@
       "take": 1
     },
     {
+      "id": "walk_woman",
+      "label": "Walk (woman)",
+      "seconds": 4.0,
+      "prompt": "A woman walks forward.",
+      "made_with": "Kimodo-SOMA-RP-v1.1",
+      "seed": 1,
+      "take": 1
+    },
+    {
       "id": "run",
       "label": "Run",
       "seconds": 3.0,

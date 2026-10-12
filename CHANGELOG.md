@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A guide to **picking a picture** for 3D: soft 3D-render style over flat anime art, A-pose
+  over T-pose, open hands, positive wording, and a prompt to start from
+  ([docs/prompt-guide.md](docs/prompt-guide.md)).
+- **Walk (woman)** in the Animate presets: a walk made with Kimodo from "A woman walks
+  forward.", with a narrower step than the plain walk.
+
 ### Fixed
 - The two **Mac Hunyuan3D routes** now get your picture cut out first. Their shape stage trusts
   the picture's transparency, and a picture from Create has none that means anything, so the
   backdrop was built as a wall behind the model. A test now checks that every route gets a
   real cut-out.
+- Hands that hang close to the thighs no longer stick to them when a character walks: the
+  skin-weight clean-up was handing those hand points to the leg bones.
+- Animated characters no longer bend their wrists inward on every move: the hand now turns
+  with its forearm when an A-pose rest is lined up with the motion's T-pose.
 
 ## [0.4.3] - 2026-10-10
 

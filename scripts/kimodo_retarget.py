@@ -289,8 +289,8 @@ def rest_alignment(parents, heads, mapping, axes, tpose) -> dict[str, np.ndarray
     Generated characters rarely stand in a clean T-pose: legs splay, feet turn out, arms
     droop. Copying Kimodo's turns on top of that keeps the error in every frame (a wide,
     duck-footed walk; hands sunk into the hips). Bones with one child are swung so the
-    bone points where SOMA's matching bone points; forks (hips, chest, hands) and the
-    spine, neck and head keep their rest. Leaves (toes, head, fingertips) have no direction of their own to fix, so they
+    bone points where SOMA's matching bone points; forks (hips, chest) and the spine,
+    neck and head keep their rest, and a hand turns with its forearm. Leaves (toes, head, fingertips) have no direction of their own to fix, so they
     turn with their parent: left at rest, a toe under a swung foot kept a permanent bend
     at the ball of the foot, which showed as a deformed toe.
     """
@@ -308,6 +308,11 @@ def rest_alignment(parents, heads, mapping, axes, tpose) -> dict[str, np.ndarray
         have = heads[c] - heads[b]
         if np.linalg.norm(want) > 1e-6 and np.linalg.norm(have) > 1e-6:
             out[b] = rotation_between(have, want)
+    # A hand forks into fingers, so it has no single direction to swing; left at rest it
+    # kept the A-pose angle while its forearm was swung up, bending every wrist inward.
+    for b, p in parents.items():
+        if len(kids[b]) > 1 and p is not None and mapping[b].endswith("Hand"):
+            out[b] = out[p]
     for b, p in parents.items():  # a leaf's parent is never a leaf, so it is settled above
         if not kids[b] and p is not None:
             out[b] = out[p]
