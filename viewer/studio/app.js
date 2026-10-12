@@ -1,7 +1,7 @@
 // AssetFurnace studio: Library | one viewer | Steps.
 // Steps run here through the server's job APIs, prop-sheet splitting included.
 
-import { STEPS, stepCount, doneCount, statusText, displayModel, stepFile, servedUrl, visibleAssets, openingView, isModelFile } from './library.js';
+import { STEPS, stepCount, doneCount, statusText, displayModel, stepFile, servedUrl, visibleAssets, openingView, isModelFile, duration } from './library.js';
 import { createStudioViewer } from './viewer.js';
 import { readyEngines, readableLog } from './jobs.js';
 import { stepBody, wireStep } from './steps.js';
@@ -70,7 +70,7 @@ function renderSteps(asset) {
     const dot = state === 'done' ? '✓' : i + 1;
     const showBody = state === 'now' || (step.id === 'animated' && state === 'done');
     const body = showBody ? `<div class="body">${stepBody(step.id, asset, ctx)}</div>` : '';
-    return `<li class="step ${state}" data-step="${step.id}"><header><span class="dot">${dot}</span><span style="min-width:0"><h3>${step.label}</h3>${state === 'done' ? `<div class="sum">${escape(sum[step.id])}${stepLink(asset, step.id)}</div>` : ''}</span></header>${body}</li>`;
+    return `<li class="step ${state}" data-step="${step.id}"><header><span class="dot">${dot}</span><span style="min-width:0"><h3>${step.label}</h3>${state === 'done' ? `<div class="sum">${escape(sum[step.id])}${stepLink(asset, step.id)}</div>` : ''}</span>${state === 'done' && asset.timings?.[step.id] ? `<span class="time">${duration(asset.timings[step.id])}</span>` : ''}</header>${body}</li>`;
   }).join('');
   $('steps').querySelectorAll('.step').forEach((card) => {
     if (card.querySelector('.body [data-run]')) wireStep(card, card.dataset.step, asset, ctx);
@@ -250,7 +250,8 @@ function showMaking() {
     const state = making.done.includes(step) ? 'done' : step === making.current ? 'now' : 'later';
     const dot = state === 'done' ? '✓' : making.cancelled && step === making.current ? '–' : making.failed && step === making.current ? '■' : i + 1;
     const sum = state === 'done' ? 'Done' : state === 'now' ? (making.cancelled ? 'Cancelled' : making.failed ? 'Stopped. The reason is in the viewer.' : 'Running now') : making.cancelled ? 'Not run' : 'Waiting';
-    return `<li class="step ${state}"><header><span class="dot">${dot}</span><span><h3>${STEP_LABELS[step]}</h3><div class="sum">${sum}</div></span></header></li>`;
+    const took = state === 'done' ? duration(making.seconds?.[step]) : '';
+    return `<li class="step ${state}"><header><span class="dot">${dot}</span><span><h3>${STEP_LABELS[step]}</h3><div class="sum">${sum}</div></span>${took ? `<span class="time">${took}</span>` : ''}</header></li>`;
   }).join('');
   // show the newest result while the next step runs
   const m = making.made;
@@ -306,7 +307,7 @@ async function startChain(plan, attach = null) {
       Object.assign(making, { percent, message: event.message || event.phase || 'Working…', log: readableLog(log), fullLog: log, stalled });
       if (viewingMaking) drawProgress();
     },
-    done: (step, made) => { making.done.push(step); making.made = made; renderLibrary(); if (viewingMaking) showMaking(); },
+    done: (step, made, seconds) => { making.done.push(step); making.made = made; making.seconds = seconds || {}; renderLibrary(); if (viewingMaking) showMaking(); },
     cancelled: () => { Object.assign(making, { failed: true, cancelled: true, why: 'Cancelled. Everything finished before this step is kept.', log: '', fullLog: '' }); renderLibrary(); if (viewingMaking) showMaking(); },
     fail: (step, why, log) => { Object.assign(making, { failed: true, why, log: readableLog(log, 12), fullLog: log }); renderLibrary(); if (viewingMaking) showMaking(); },
     finish: (mine) => {

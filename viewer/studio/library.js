@@ -93,3 +93,13 @@ export function openingView(running) {
 export function isModelFile(name) {
   return /.\.glb$/i.test(name || '');
 }
+
+/** How long a step took, in plain words: "42s", "4m 12s", "1h 3m"; "" when unknown. */
+export function duration(seconds) {
+  const s = Number(seconds);
+  if (seconds == null || !Number.isFinite(s) || s < 0) return '';
+  const whole = Math.floor(s);
+  if (whole < 60) return `${whole}s`;
+  if (whole < 3600) return `${Math.floor(whole / 60)}m ${whole % 60}s`;
+  return `${Math.floor(whole / 3600)}h ${Math.floor((whole % 3600) / 60)}m`;
+}

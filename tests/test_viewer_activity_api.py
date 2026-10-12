@@ -254,3 +254,14 @@ def test_no_named_engine_means_no_back_since_the_default_engine_is_not_pixal3d(t
     chain = aa.Chain(title="x", prompt="x", steps=["picture", "back", "model"])
     runner.submit(chain, background=False)
     assert b'name="back"' not in [b for m, p, b in jobs.calls if p == "/api/generate"][0]
+
+
+def test_each_finished_step_reports_how_long_it_took(tmp_path):
+    clock = iter(range(0, 1000, 5))
+    jobs = FakeJobs(tmp_path)
+    runner = aa.ChainRunner(tmp_path, jobs, poll=0, sleep=lambda s: None, now=lambda: float(next(clock)))
+    chain = aa.Chain(title="x", prompt="x", engine="pixal3d", steps=["picture", "back", "model"])
+    runner.submit(chain, background=False)
+    seconds = chain.to_dict()["step_seconds"]
+    assert set(seconds) == {"picture", "back", "model"} and all(s > 0 for s in seconds.values())
+    assert [h["made"] for h in aa.read_history(tmp_path) if h["step"] == "back"] == ["images/p/pic__back.png"]

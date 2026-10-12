@@ -273,3 +273,15 @@ def test_an_asset_carries_its_back_picture_when_there_is_one(output):
     assert assets["a wooden barrel"]["back"] == f"images/{stem}/{stem}__back.png"
     assert assets["a lone fox"]["back"] is None
     assert "a wooden barrel back" not in assets   # the back is not an asset of its own
+
+
+def test_an_asset_carries_each_steps_time_from_the_history(output):
+    from viewer import activity_api
+    for step, made, seconds in (("picture", f"images/{IMG}/{IMG}.png", 251.4),
+                                ("model", f"commercial_conditional/{GEN}/{GEN}.glb", 318.0),
+                                ("finished", f"finish/{FIN}/a-chunky-knight_40k.glb", 95.2)):
+        activity_api.append_history(output, {"step": step, "result": "done", "made": made, "seconds": seconds})
+    activity_api.append_history(output, {"step": "rigged", "result": "error", "made": None, "seconds": 3.0})
+    knight = _by_name(aa.list_assets(output))["a chunky knight"]
+    assert knight["timings"] == {"picture": 251.4, "model": 318.0, "finished": 95.2}
+    assert _by_name(aa.list_assets(output))["a lone fox"]["timings"] == {}

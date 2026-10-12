@@ -212,7 +212,7 @@ export async function runChain(plan, { ui, ctx, attach = null, fetchImpl = fetch
     if (!after?.steps) { ui.fail(plan.steps[0], 'This run is no longer known to the server (it was restarted). Anything finished is in your Library.', ''); return false; }
     made = after.made || {};
     for (const [kind, ...args] of chainEvents(before, after)) {
-      if (kind === 'done') { await ctx.reload(mine); ui.done(args[0], { ...made }); }
+      if (kind === 'done') { await ctx.reload(mine); ui.done(args[0], { ...made }, { ...(after.step_seconds || {}) }); }
       else if (kind === 'fail') { ui.fail(args[0], args[1], args[2] || ''); return false; }
       else if (kind === 'cancel') { ui.cancelled(args[0]); return false; }
       else if (kind === 'finish') { await ctx.reload(mine); ui.finish(mine); return true; }

@@ -76,6 +76,13 @@ def test_single_props_show_under_props_and_not_under_characters():
 
 
 @needs_node
+def test_a_steps_time_reads_in_plain_minutes_and_seconds():
+    out = _run("library.js", """console.log(JSON.stringify(
+      [7, 42.4, 60, 252, 3599, 3780, null, -1].map(m.duration)));""")
+    assert out == ["7s", "42s", "1m 0s", "4m 12s", "59m 59s", "1h 3m", "", ""]
+
+
+@needs_node
 def test_axis_map_from_the_front_puts_x_right_y_up_z_nearest():
     out = _run("gizmo.js", """
       const p = m.projectAxes([0, 0, 1]);

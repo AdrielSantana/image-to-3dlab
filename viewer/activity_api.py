@@ -101,6 +101,7 @@ class Chain:
     cancel_requested: bool = False
     job: tuple[str, str] | None = None                               # (kind, job id) of the running step
     note: str = ""                                                   # why a run ended early, calmly
+    step_seconds: dict[str, float] = field(default_factory=dict)      # how long each finished step took
 
     def to_dict(self, now: float | None = None) -> dict[str, Any]:
         now = time.time() if now is None else now
@@ -109,6 +110,7 @@ class Chain:
             "current": self.current, "done": self.done, "percent": self.percent, "message": self.message,
             "log": self.log, "full_log": self.full_log[-4000:], "error": self.error,
             "made": {k: v for k, v in self.made.items() if v}, "first_move": self.first_move, "note": self.note,
+            "step_seconds": dict(self.step_seconds),
             "elapsed": round(now - self.started, 1), "step_elapsed": round(now - self.step_started, 1),
             "stalled": self.status == "running" and now - self.last_change > STALL_SECONDS,
         }
@@ -213,6 +215,7 @@ class ChainRunner:
                 chain.cancel_requested = True
             return self._fail(chain, step, why, payload.get("log_tail") or "", started, status)
         self._record(chain, step, payload)
+        chain.step_seconds[step] = round(self.now() - started, 1)
         self._history(chain, step, "done", started, chain.message, chain.full_log)
         return True
 
@@ -323,8 +326,8 @@ class ChainRunner:
         record = {"time": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(self.now())), "chain": chain.id,
                   "title": chain.title, "want": chain.want, "step": step, "result": result,
                   "seconds": round(self.now() - started, 1), "note": note,
-                  "made": chain.made.get({"picture": "picture", "model": "model", "finished": "finished",
-                                          "rigged": "rigged"}.get(step, ""), None),
+                  "made": chain.made.get({"picture": "picture", "back": "back", "model": "model",
+                                          "finished": "finished", "rigged": "rigged"}.get(step, ""), None),
                   "log": str(log or "")[-3000:]}
         append_history(self.output, record)
 

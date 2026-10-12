@@ -44,12 +44,26 @@ ASSET_ID = re.compile(r"^[0-9a-f]{12}$")
 RECIPES = Path(__file__).resolve().parents[1] / "image_to_3dlab" / "prompt_recipes.json"
 
 
-def _asked_for_props(output: Path) -> set[str]:
-    """Files (relative to output/) of chains that were asked to make one prop."""
+def _history(output: Path) -> list[dict[str, Any]]:
     from activity_api import read_history  # same folder; imported late, it is only needed here
 
-    return {str(r["made"]) for r in read_history(output, limit=100_000)
-            if r.get("want") == "prop" and r.get("made")}
+    return read_history(output, limit=100_000)
+
+
+def _asked_for_props(history: list[dict[str, Any]]) -> set[str]:
+    """Files (relative to output/) of chains that were asked to make one prop."""
+    return {str(r["made"]) for r in history if r.get("want") == "prop" and r.get("made")}
+
+
+def _step_times(history: list[dict[str, Any]]) -> dict[str, tuple[str, float]]:
+    """How long the step that made each file took: {file relative to output/: (step, seconds)}.
+    History is newest first, so the first record for a file wins."""
+    times: dict[str, tuple[str, float]] = {}
+    for record in history:
+        made, seconds = record.get("made"), record.get("seconds")
+        if record.get("result") == "done" and made and isinstance(seconds, (int, float)):
+            times.setdefault(str(made), (str(record.get("step")), float(seconds)))
+    return times
 
 
 def _prop_wording() -> str | None:
@@ -215,7 +229,8 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
     if not output.is_dir():
         return []
     hashes = _Hashes(output)
-    asked_props, prop_wording = _asked_for_props(output), _prop_wording()
+    history = _history(output)
+    asked_props, step_times, prop_wording = _asked_for_props(history), _step_times(history), _prop_wording()
     pictures, models, finishes = _pictures(output), _models(output), _finishes(output)
     rigs, sets = _rigs(output), _prop_sets(output)
 
@@ -322,6 +337,8 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
             **(hashes.rig_facts(rig["file"]) if rig else {"fits_moves": None, "facing": None}),
             "clips": [{"name": c["name"], "file": rel(c["file"])} for c in clips],
             "props": [{"name": p["name"], "file": rel(p["file"])} for p in (prop_set["props"] if prop_set else [])],
+            "timings": {step: seconds for f in files if (rel(f) in step_times)
+                        for step, seconds in [step_times[rel(f)]]},
             "updated": max((f.stat().st_mtime for f in files), default=0),
         })
     hashes.save()
