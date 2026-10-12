@@ -593,9 +593,9 @@ CATALOG: tuple[Backend, ...] = (
         kind="tool",
         best_for=("Gives a humanoid model a skeleton and skin weights, so the Rig tab can "
                   "play preset animations on it."),
-        tradeoff="Humanoids in a T-pose only for now. Four-legged creatures are coming.",
+        tradeoff="Humanoids in an A-pose or T-pose only for now. Four-legged creatures are coming.",
         overrides_by_host={
-            AMD: {"tradeoff": "Humanoids in a T-pose only for now, and attention comes "
+            AMD: {"tradeoff": "Humanoids in an A-pose or T-pose only for now, and attention comes "
                               "from PyTorch rather than flash-attn, which has no ROCm "
                               "wheel: a little slower and a little heavier on memory."},
         },

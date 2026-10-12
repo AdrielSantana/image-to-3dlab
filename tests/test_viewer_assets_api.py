@@ -185,7 +185,7 @@ def test_the_recipes_endpoint_serves_the_shared_file():
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}/api/recipes", timeout=30) as response:
             recipes = json.loads(response.read())
-        assert "T-pose" in recipes["goals"]["character"]["wording"]
+        assert "A-pose" in recipes["goals"]["character"]["wording"]
     finally:
         server.shutdown()
         server.server_close()

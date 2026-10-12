@@ -49,7 +49,7 @@ export function stepBody(stepId, asset, ctx) {
       <button class="primary" data-run="finished">Finish model</button>`;
   }
   if (stepId === 'rigged') {
-    return `<p class="hint">Adds a skeleton so it can move. About a minute. Works best on a character standing in a T-pose with empty hands.</p>
+    return `<p class="hint">Adds a skeleton so it can move. About a minute. Works best on a character standing in an A-pose (a T-pose works too) with empty hands.</p>
       <p class="ask">Is this a humanoid: two arms, two legs, standing upright?</p>
       <div class="row"><button class="primary" data-run="rigged" data-humanoid="yes">Yes, rig it</button>
       <button class="ghost" data-run="rigged" data-humanoid="no" data-tip="Four-legged and other creatures can be rigged but not animated with the preset moves, and the rig may be wonky.">No, rig it anyway</button></div>`;

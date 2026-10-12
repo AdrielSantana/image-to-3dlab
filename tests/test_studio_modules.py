@@ -301,7 +301,17 @@ def test_every_goal_has_tips_and_the_3d_goals_add_wording():
     assert all(goal["tips"] for goal in goals.values())
     for key in ("character", "prop", "set"):
         assert goals[key]["wording"]
-    assert "T-pose" in goals["character"]["wording"] and "empty hands" in goals["character"]["wording"]
+    assert "A-pose" in goals["character"]["wording"] and "empty hands" in goals["character"]["wording"]
+
+
+def test_the_added_wording_names_only_what_it_wants_and_leaves_fingers_alone():
+    # Naming a thing summons it ("no cape" draws a cape), and asking about fingers curls or
+    # doubles them (2026-10-12). The words the studio adds follow both rules.
+    import re
+    for key, goal in RECIPES["goals"].items():
+        words = set(re.findall(r"[a-z']+", goal["wording"].lower()))
+        assert not words & {"no", "not", "never", "without", "don't"}, key
+        assert not words & {"finger", "fingers"}, key
 
 
 @needs_node
@@ -338,7 +348,8 @@ def test_the_prompt_gets_the_goals_wording_and_warnings_for_trouble_words():
         propCape: m.troubleFor('a cape on a hook', 'prop', r).length,
         notInside: m.troubleFor('a landscaper gnome', 'character', r).length,
       }}));""")
-    assert out["added"].startswith("An orc blacksmith with short tusks, full body, standing in a T-pose")
+    assert out["added"].startswith("An orc blacksmith with short tusks, full body, front view, "
+                                   "standing in an A-pose")
     assert out["off"] == "An orc blacksmith"
     assert out["picture"] == "A sunset over hills"
     assert out["warnCape"] == ["cape", "holding"]

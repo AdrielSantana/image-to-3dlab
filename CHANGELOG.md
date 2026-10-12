@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   few pixels at most. `scripts/photo_paint.py` reports what moved; `--no-align` turns it off.
 
 ### Changed
+- **Create** now asks for characters in an **A-pose** (arms angled down, a gap from the body,
+  hands open) instead of a T-pose, without mentioning fingers or listing things to leave
+  out, both of which tended to add the very thing. New tips, linked to the picture guide.
 - **Pixel Match** matches colour spot by spot instead of with one shift for the whole model,
   so the sides no picture sees meet each picture's colours instead of showing darker bands.
   Slower on very dense meshes (about 12 s to 37 s on a million triangles).
