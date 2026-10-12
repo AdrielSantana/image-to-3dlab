@@ -130,7 +130,11 @@ function show(asset) {
     viewer.setClips([]);
     const model = displayModel(asset);
     if (model) viewer.load(url(model), { label: asset.name });
-    else if (asset.picture) viewer.showImage(url(asset.picture), 'A picture so far. Make it 3D from the Steps panel.');
+    else if (asset.picture) {
+      const inRun = making && !making.finished && !making.failed && making.made?.picture === asset.picture;
+      viewer.showImage(url(asset.picture), inRun ? 'Being made into 3D now. Its progress is above.'
+        : 'A picture so far. Make it 3D from the Steps panel.', asset.back ? url(asset.back) : null);
+    }
     else viewer.showEmpty('Nothing to show for this asset yet.');
   }
 }
@@ -253,7 +257,10 @@ function showMaking() {
   viewer.setClips([]);
   const shown = m.rigged || m.finished || m.model;
   if (shown && making.shown !== shown) { viewer.load(url(shown), { label: making.title }); making.shown = shown; }
-  else if (!shown && m.picture && making.shown !== m.picture) { viewer.showImage(url(m.picture), ''); making.shown = m.picture; }
+  else if (!shown && m.picture && making.shown !== `${m.picture}|${m.back || ''}`) {
+    viewer.showImage(url(m.picture), '', m.back ? url(m.back) : null);   // front + back side by side
+    making.shown = `${m.picture}|${m.back || ''}`;
+  }
   else if (!shown && !m.picture && making.shown !== 'empty') { viewer.showEmpty(''); making.shown = 'empty'; }
   drawProgress();
 }

@@ -94,6 +94,10 @@ a { color: inherit; }
 .sv-picture { margin: 0; display: grid; gap: 10px; place-items: center; max-height: 100%; }
 .sv-picture img { max-width: min(560px, 90%); max-height: 70vh; border-radius: 12px; border: 1px solid var(--line); }
 .sv-picture figcaption { color: var(--ash); font-size: 13px; }
+.sv-picture .pair { display: flex; gap: 14px; justify-content: center; }
+.sv-picture .pair > div { display: grid; gap: 6px; justify-items: center; }
+.sv-picture.two img { max-width: min(400px, 42vw); max-height: 62vh; }
+.sv-picture .pair span { color: var(--ash); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
 .hud { position: absolute; z-index: 5; }
 .hud.tl { top: 14px; left: 14px; right: 260px; display: grid; gap: 4px; pointer-events: none; }  /* clear of the tools and the axis widget */
 .hud.tl .title { pointer-events: auto; justify-self: start; max-width: 100%;

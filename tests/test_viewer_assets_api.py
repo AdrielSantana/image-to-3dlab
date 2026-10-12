@@ -264,3 +264,12 @@ def test_an_older_prop_is_known_by_the_prop_wording_in_its_prompt(output):
 def test_a_model_nobody_asked_to_be_a_prop_stays_a_model(output):
     _single_prop(output)
     assert _by_name(aa.list_assets(output))["a wooden barrel"]["kind"] == "model"
+
+
+def test_an_asset_carries_its_back_picture_when_there_is_one(output):
+    stem = _single_prop(output)
+    _write(output / "images" / stem / f"{stem}__back.png", b"back-png", 6050)
+    assets = _by_name(aa.list_assets(output))
+    assert assets["a wooden barrel"]["back"] == f"images/{stem}/{stem}__back.png"
+    assert assets["a lone fox"]["back"] is None
+    assert "a wooden barrel back" not in assets   # the back is not an asset of its own

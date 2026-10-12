@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Slower on very dense meshes (about 12 s to 37 s on a million triangles).
 
 ### Fixed
+- The studio shows the **front and back pictures side by side** while a Front + back run builds
+  its 3D model and when you open the asset, and no longer tells you to make a picture 3D while
+  it is already being made.
 - The studio's **Props** tab now shows single props made with Create's prop route, not only
   prop sheets.
 - **Pixel Match** no longer paints the far side of thin parts (cloaks, capes, ponytails) with

@@ -313,6 +313,9 @@ def list_assets(output: Path) -> list[dict[str, Any]]:
             "kind": kind,
             "stage": stage,
             "picture": rel(picture["file"]) if picture else None,
+            # Front + back: the drawn back sits beside its front as <front>__back.png.
+            "back": rel(back) if picture and (back := picture["file"].with_name(
+                f"{picture['file'].stem}__back.png")).is_file() else None,
             "model": rel(model["file"]) if model else None,
             "finished": rel(fin["file"]) if fin else None,
             "rigged": rel(rig["file"]) if rig else None,
