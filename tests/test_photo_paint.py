@@ -453,3 +453,63 @@ def test_the_inner_edge_fade_can_be_switched_off():
     _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
                                  settings=pp.Settings(match_colour=False, inner_edge=0.0))
     assert weight[128, 55] == pytest.approx(1.0)
+
+
+# --- local colour: the unseen sides meet each picture's colours where they join --------------
+
+
+def _grid(n: int = 40):
+    """A flat n x n grid facing the camera, sharing vertices, UVs straight across."""
+    ticks = np.linspace(-0.5, 0.5, n + 1)
+    xs, ys = np.meshgrid(ticks, ticks[::-1])
+    positions = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
+    uvs = np.column_stack([(xs.ravel() + 0.5), (0.5 - ys.ravel())])
+    idx = np.arange((n + 1) ** 2).reshape(n + 1, n + 1)
+    a, b, c, d = idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]
+    faces = np.concatenate([np.stack([d, c, b], -1).reshape(-1, 3),
+                            np.stack([d, b, a], -1).reshape(-1, 3)])
+    return positions, faces, uvs
+
+
+def _side_strip_photo(size: int, top: int, bottom: int) -> np.ndarray:
+    """Grey photo seen on both sides with an unseen strip down the middle, like the side of
+    a model between its front and back pictures. Top half one shade, bottom half another."""
+    photo = np.zeros((size, size, 4), dtype=np.uint8)
+    photo[: size // 2, :, :3] = top
+    photo[size // 2:, :, :3] = bottom
+    photo[:, : int(size * 0.42), 3] = 255
+    photo[:, int(size * 0.58):, 3] = 255
+    return photo
+
+
+def test_local_colour_carries_each_regions_gap_into_the_unseen_strip():
+    positions, faces, uvs = _grid()
+    texture = np.full((128, 128, 3), 100, dtype=np.uint8)
+    view = _camera(size=768, image=_side_strip_photo(768, top=140, bottom=60))
+    out, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+    # The middle strip is outside the cut-out: no picture there, but each half should carry
+    # on its neighbours' colour (one global shift would leave both near 100).
+    assert weight[20, 64] == 0.0 and weight[108, 64] == 0.0
+    assert out[20, 64, 0] >= 125
+    assert out[108, 64, 0] <= 75
+
+
+def test_one_mismatched_patch_does_not_smear_into_the_unseen_part():
+    positions, faces, uvs = _grid()
+    texture = np.full((128, 128, 3), 100, dtype=np.uint8)
+    photo = _side_strip_photo(768, top=120, bottom=120)
+    photo[360:410, 230:310, :3] = 250  # a small feature the model painted differently
+    view = _camera(size=768, image=photo)
+    out, _ = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)
+    # Unseen texels beside the patch follow the typical +20 gap, not the patch's +150.
+    assert abs(int(out[64, 64, 0]) - 120) <= 10
+
+
+def test_local_colour_can_fall_back_to_the_global_match():
+    positions, faces, uvs = _grid()
+    texture = np.full((128, 128, 3), 100, dtype=np.uint8)
+    view = _camera(size=768, image=_side_strip_photo(768, top=140, bottom=60))
+    out, _ = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                              settings=pp.Settings(local_colour=False))
+    # The global fit sees a zero average gap, so the unseen halves stay alike.
+    assert abs(int(out[20, 64, 0]) - int(out[108, 64, 0])) < 20

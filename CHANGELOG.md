@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   skin-weight clean-up was handing those hand points to the leg bones.
 - Animated characters no longer bend their wrists inward on every move: the hand now turns
   with its forearm when an A-pose rest is lined up with the motion's T-pose.
+### Changed
+- **Pixel Match** matches colour spot by spot instead of with one shift for the whole model,
+  so the sides no picture sees meet each picture's colours instead of showing darker bands.
+  Slower on very dense meshes (about 12 s to 37 s on a million triangles).
+
 ### Fixed
 - **Pixel Match** no longer paints the far side of thin parts (cloaks, capes, ponytails) with
   the near side's colours, which left dark slits and holes down a cloak's back.

@@ -33,6 +33,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy.sparse import coo_matrix, diags
+from scipy.sparse.linalg import cg
 
 # GLB axis order and signs for Pixal3D's camera frame. Found by the 48-way search in
 # pixal3d.cpp's silhouette_iou.py and identical on every asset tried (a robot and a small
@@ -272,6 +274,12 @@ class Settings:
     # Shift the model's own paint to the photo's palette (see fit_colour_match), so the
     # parts no photo sees do not stay in the repaint's more saturated colours.
     match_colour: bool = True
+    # Match locally rather than with one shift for the whole model: the gap between the
+    # model's paint and the picture is measured spot by spot where the picture is trusted,
+    # spread smoothly over the surface, and added everywhere. Sides then meet each picture
+    # in colour (a robe's side next to a pale back, a belt beside a dark front). Falls back
+    # to the global match when too little of the picture is trusted.
+    local_colour: bool = True
 
 
 DEFAULT_SETTINGS = Settings()
@@ -369,7 +377,13 @@ def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
     out = texture.astype(np.float64).copy()
     flat = out.reshape(-1, out.shape[2])
     index = np.flatnonzero(covered.ravel())
-    if settings.match_colour:
+    local = None
+    if settings.match_colour and settings.local_colour:
+        local = local_colour_offset(positions, faces, texel_face, texel_bary,
+                                    flat[index, :3], photo, blend)
+    if local is not None:
+        flat[index, :3] = np.clip(flat[index, :3] + local, 0, 255)
+    elif settings.match_colour:
         # The whole image, gutters included, or island borders keep the old palette.
         gain, offset = fit_colour_match(flat[index, :3], photo, blend)
         flat[:, :3] = np.clip(flat[:, :3] * gain + offset, 0, 255)
@@ -377,9 +391,67 @@ def paint_texture(texture: np.ndarray, positions: np.ndarray, uvs: np.ndarray,
     flat[index, :3] = own * (1 - blend[:, None]) + photo * blend[:, None]
     weight_map = np.zeros(height * width)
     weight_map[index] = blend
-    out, weight_map = _grow_into_gutter(out, weight_map.reshape(height, width), covered,
-                                        settings.gutter_px)
+    weight_map = weight_map.reshape(height, width)
+    if local is not None:
+        # Every texel changed colour, seen or not, so grow all of them into the gutter.
+        out, _ = _grow_into_gutter(out, covered.astype(np.float64), covered, settings.gutter_px)
+        _, weight_map = _grow_into_gutter(out.copy(), weight_map, covered, settings.gutter_px)
+    else:
+        out, weight_map = _grow_into_gutter(out, weight_map, covered, settings.gutter_px)
     return np.clip(np.rint(out), 0, 255).astype(np.uint8), weight_map
+
+
+def local_colour_offset(positions: np.ndarray, faces: np.ndarray, texel_face: np.ndarray,
+                        texel_bary: np.ndarray, own: np.ndarray, photo: np.ndarray,
+                        weight: np.ndarray, trusted: float = 0.9, min_texels: int = 500,
+                        smooth: float = 0.05, outlier: float = 3.0) -> np.ndarray | None:
+    """Per-texel colour offset taking the model's own paint towards the pictures, locally.
+
+    The gap (picture - own) is measured where a picture is fully trusted, splatted onto
+    the mesh's vertices (welded across UV seams so it flows over them), and spread to the
+    rest by a smooth interpolation over the mesh's edges: a graph Laplacian with the
+    measured vertices held loosely (`smooth`). What is spread is each spot's difference
+    from the typical gap, so a part no measurement can reach (a loose piece) still gets
+    the typical gap rather than none. A gap far from the typical one (more than
+    `outlier` x the median absolute deviation) is a mismatched feature, such as a rope the
+    model painted as robe, not colour drift, and is left out so it cannot smear.
+    Returns None when too little is trusted to measure.
+    """
+    mask = weight >= trusted
+    if mask.sum() < min_texels:
+        return None
+    gap = photo - own
+    typical = np.median(gap[mask], axis=0)
+    deviation = np.linalg.norm(gap - typical, axis=1)
+    limit = max(np.median(deviation[mask]) * 1.4826 * outlier, 1.0)
+    mask &= deviation <= limit
+
+    _, weld = np.unique(np.round(positions, 6), axis=0, return_inverse=True)
+    weld = weld.reshape(-1)
+    count = weld.max() + 1
+    corners = weld[faces]
+    total = np.zeros((count, 3))
+    seen = np.zeros(count)
+    for k in range(3):
+        vertex = corners[texel_face[mask], k]
+        share = texel_bary[mask, k]
+        np.add.at(seen, vertex, share)
+        np.add.at(total, vertex, share[:, None] * gap[mask])
+    known = seen > 0.5
+    target = np.zeros((count, 3))
+    target[known] = total[known] / seen[known][:, None] - typical
+
+    edges = np.concatenate([corners[:, [0, 1]], corners[:, [1, 2]], corners[:, [2, 0]]])
+    adjacency = coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(count, count))
+    adjacency = ((adjacency + adjacency.T) > 0).astype(np.float64)
+    hold = known * smooth
+    system = (diags(np.asarray(adjacency.sum(axis=1)).ravel() + hold) - adjacency).tocsr()
+    precondition = diags(1.0 / system.diagonal())
+    field = np.zeros((count, 3))
+    for channel in range(3):
+        field[:, channel], _ = cg(system, hold * target[:, channel], M=precondition,
+                                  maxiter=3000, rtol=1e-6)
+    return typical + (texel_bary[:, :, None] * field[corners[texel_face]]).sum(axis=1)
 
 
 def fit_colour_match(own: np.ndarray, photo: np.ndarray, weight: np.ndarray,
