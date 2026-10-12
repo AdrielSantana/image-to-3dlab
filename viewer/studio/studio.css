@@ -95,9 +95,11 @@ a { color: inherit; }
 .sv-picture img { max-width: min(560px, 90%); max-height: 70vh; border-radius: 12px; border: 1px solid var(--line); }
 .sv-picture figcaption { color: var(--ash); font-size: 13px; }
 .hud { position: absolute; z-index: 5; }
-.hud.tl { top: 14px; left: 14px; display: grid; gap: 4px; pointer-events: none; }
-.hud.tl .title { pointer-events: auto; justify-self: start; }
+.hud.tl { top: 14px; left: 14px; right: 260px; display: grid; gap: 4px; pointer-events: none; }  /* clear of the tools and the axis widget */
+.hud.tl .title { pointer-events: auto; justify-self: start; max-width: 100%;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .title { font: 800 18px/1.2 var(--f-display); letter-spacing: -.01em; }
+.title.long { font: 700 15px/1.3 var(--f-display); letter-spacing: 0; }  /* a whole description, not a name */
 .sv-tools { position: absolute; top: 14px; right: 14px; z-index: 5; display: grid; justify-items: end; gap: 8px; }
 .sv-toolrow { display: flex; gap: 6px; }
 .tool { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--line); background: rgb(23 18 15 / .85); color: var(--bone); backdrop-filter: blur(6px); }

@@ -107,6 +107,7 @@ function show(asset) {
   $('progress').hidden = true;
   renderLibrary();
   $('vTitle').textContent = asset?.name ?? '';
+  $('vTitle').classList.toggle('long', (asset?.name ?? '').length > 60);
   $('vMeta').textContent = asset ? statusText(asset) : '';
   if (!asset) {
     viewer.showEmpty('Nothing to show yet. Pick an asset on the left.');
@@ -235,6 +236,7 @@ function showMaking() {
   viewingMaking = true;
   renderLibrary();
   $('vTitle').textContent = making.title;
+  $('vTitle').classList.toggle('long', making.title.length > 60);
   $('vMeta').textContent = making.cancelled ? 'Cancelled' : making.failed ? 'Stopped' : making.finished ? 'Done' : 'Making…';
   $('hideBtn').hidden = true;
   viewer.setFacing(null);  // a run in progress shows its files as they come
