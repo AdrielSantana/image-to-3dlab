@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A guide to **picking a picture** for 3D: soft 3D-render style over flat anime art, A-pose
+  over T-pose, open hands, positive wording, and a prompt to start from
+  ([docs/prompt-guide.md](docs/prompt-guide.md)).
 - **Walk (woman)** in the Animate presets: a walk made with Kimodo from "A woman walks
   forward.", with a narrower step than the plain walk.
 
