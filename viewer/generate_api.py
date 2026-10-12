@@ -139,6 +139,17 @@ PIXAL3D_CLI = executable(PIXAL3D_ROOT / "build", "trellis-cli")
 PIXAL3D_MODELS = PIXAL3D_ROOT / "models" / "pixal3d-sv"
 PIXAL3D_WRAPPER = REPO / "scripts" / "pixal3d_generate.py"
 
+# Routes that cut their own picture out with our remover (image_to_3dlab/matte.py), so the
+# server need not (requires_alpha=False). (backend id, host or None for any) -> the file
+# that does it. Every other route must set requires_alpha: an engine that trusts the alpha
+# of a Qwen picture (opaque noise) builds the backdrop as geometry.
+SELF_CUTTING: dict[tuple[str, str | None], str] = {
+    ("sf3d", None): "image_to_3dlab/sf3d_backend.py",
+    ("pixal3d", None): "scripts/pixal3d_generate.py",
+    ("hunyuan-cuda", None): "scripts/hunyuan_cuda_generate.py",
+    ("trellis", "nvidia"): "scripts/trellis_cuda_generate.py",
+}
+
 # Xiong's paint+shape code is MIT and tracked in-repo at hunyuan_mlx/ (moved out of
 # vendor/hunyuan-mlx-paint 2026-08-19) — a fresh clone of this repo alone has the code;
 # only weights/ (git-ignored, downloaded) and .venv/ (uv sync) are still local-only.
@@ -1973,7 +1984,7 @@ BACKENDS.update({
         id="hunyuan-mlx", label="Hunyuan3D-MLX (dgrauet shape + Xiong paint)",
         interpreter=HUNYUAN_PYTHON, wrapper=HUNYUAN_WRAPPER,
         default_settings=HUNYUAN_DEFAULT_SETTINGS, stages=HUNYUAN_STAGES,
-        stage_labels=HUNYUAN_STAGE_LABELS, requires_alpha=False,
+        stage_labels=HUNYUAN_STAGE_LABELS, requires_alpha=True,  # its shape stage trusts alpha
         validate_settings=_hunyuan_validate_settings, build_args=_hunyuan_build_args,
         parse_line=_hunyuan_parse_line, readiness=_hunyuan_readiness,
     ),
@@ -1981,7 +1992,7 @@ BACKENDS.update({
         id="hunyuan-mlx-xiong", label="Hunyuan3D-MLX (Xiong, full pipeline)",
         interpreter=HUNYUAN_XIONG_SHAPE_VENV, wrapper=HUNYUAN_XIONG_WRAPPER,
         default_settings=HUNYUAN_XIONG_DEFAULT_SETTINGS, stages=HUNYUAN_STAGES,
-        stage_labels=HUNYUAN_STAGE_LABELS, requires_alpha=False,
+        stage_labels=HUNYUAN_STAGE_LABELS, requires_alpha=True,  # its shape stage trusts alpha
         validate_settings=_hunyuan_xiong_validate_settings, build_args=_hunyuan_xiong_build_args,
         parse_line=_hunyuan_parse_line, readiness=_hunyuan_xiong_readiness,
     ),

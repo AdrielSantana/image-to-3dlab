@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The two **Mac Hunyuan3D routes** now get your picture cut out first. Their shape stage trusts
+  the picture's transparency, and a picture from Create has none that means anything, so the
+  backdrop was built as a wall behind the model. A test now checks that every route gets a
+  real cut-out.
+
 ## [0.4.3] - 2026-10-10
 
 ### Added
