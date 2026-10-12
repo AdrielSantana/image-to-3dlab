@@ -207,6 +207,22 @@ def erode(mask: np.ndarray, pixels: int) -> np.ndarray:
     return depth
 
 
+def inner_edges(zbuffer: np.ndarray, jump: float) -> np.ndarray:
+    """Pixels where the surface steps in depth by more than `jump` to a neighbour that is
+    also surface (one part in front of another). The outer silhouette, where surface meets
+    background (inf), is not counted: `edge_px` handles that."""
+    seen = np.isfinite(zbuffer)
+    depth = np.where(seen, zbuffer, 0.0)
+    cut = np.zeros(zbuffer.shape, dtype=bool)
+    for here, there in (((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+                        ((slice(1, None), slice(None)), (slice(None, -1), slice(None)))):
+        both = seen[here] & seen[there]
+        step = both & (np.abs(depth[here] - depth[there]) > jump)
+        cut[here] |= step
+        cut[there] |= step
+    return cut
+
+
 def smoothstep(value: np.ndarray, low: float, high: float) -> np.ndarray:
     t = np.clip((value - low) / (high - low), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
@@ -240,6 +256,13 @@ class Settings:
     # 768). Edge pixels are half backdrop and land a few pixels off the model, so they
     # paint thin dark lines on heads, ears and cheeks. 0 turns it off.
     cutout_edge: float = 8 / 768
+    # Fade in from inner depth edges (an ear in front of a head, a collar in front of a
+    # neck) over this share of the view's width. The drawn edge and the model's edge never
+    # line up exactly, so colour from one side spills onto the other. 0 turns it off.
+    inner_edge: float = 8 / 768
+    # A depth step between neighbouring view pixels bigger than this share of the model's
+    # size counts as an inner edge; a tilted surface changes depth far more gently.
+    inner_jump: float = 0.02
     # A texel counts as seen when its depth is within this fraction of the model's size
     # of the nearest surface in the view.
     depth_tolerance: float = 0.004
@@ -292,6 +315,10 @@ def view_weights(texel_points: np.ndarray, texel_normals: np.ndarray, view: View
     facing = np.maximum(facing * outward, 0.0) if outward else np.abs(facing)
 
     edge = erode(seen, settings.edge_px)[iy, ix] / max(settings.edge_px, 1)
+    inner_px = round(settings.inner_edge * width)
+    if inner_px > 0:
+        away = erode(~inner_edges(zbuffer, settings.inner_jump * extent), inner_px)
+        edge = edge * smoothstep(away[iy, ix] / inner_px, 0.0, 1.0)
     matte = view.image[iy, ix, 3] / 255.0
     cutout_px = round(settings.cutout_edge * width)
     if cutout_px > 0:

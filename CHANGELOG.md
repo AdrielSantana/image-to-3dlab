@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the near side's colours, which left dark slits and holes down a cloak's back.
 - **Pixel Match** no longer draws thin dark lines on heads, ears and cheeks: it now fades out
   near the edge of your picture's cut-out, where pixels are half background.
+- **Pixel Match** no longer spills colour across inner edges, such as an outline drawn round
+  an ear or robe colour on a neck above a collar: it fades out where one part sits in front
+  of another.
 
 ## [0.4.3] - 2026-10-10
 

@@ -413,3 +413,43 @@ def _full_photo(size: int) -> np.ndarray:
     photo = np.full((size, size, 4), 200, dtype=np.uint8)
     photo[..., 3] = 255
     return photo
+
+
+def test_paint_fades_out_beside_an_inner_depth_edge():
+    positions, faces, uvs = _occluded_scene()
+    texture = np.full((256, 512, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_full_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                 settings=pp.Settings(match_colour=False))
+    row = weight[128]
+    # Back square: the occluder (closer, so it looks ~11% bigger) hides texels from 57 on.
+    # Right beside that edge the picture is distrusted; well away from it, fully trusted.
+    assert row[57] == 0.0
+    assert row[55] < 0.5
+    assert row[30] == pytest.approx(1.0)
+    # Front square: its own outline borders the back square, so its rim fades too.
+    assert row[256 + 2] < 0.5
+    assert row[256 + 128] == pytest.approx(1.0)
+
+
+def test_a_smoothly_tilted_surface_is_not_an_inner_edge():
+    # A square tilted 60 degrees: depth changes steadily, never jumps.
+    angle = np.radians(60)
+    positions, faces, uvs = _quad()
+    positions = positions @ np.array([[np.cos(angle), 0, np.sin(angle)], [0, 1, 0],
+                                      [-np.sin(angle), 0, np.cos(angle)]]).T
+    texture = np.full((128, 128, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_full_photo(768))
+    on = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY)[1]
+    off = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                           settings=pp.Settings(inner_edge=0.0))[1]
+    assert np.allclose(on, off)
+
+
+def test_the_inner_edge_fade_can_be_switched_off():
+    positions, faces, uvs = _occluded_scene()
+    texture = np.full((256, 512, 3), 128, dtype=np.uint8)
+    view = _camera(size=768, image=_full_photo(768))
+    _, weight = pp.paint_texture(texture, positions, uvs, faces, [view], frame=IDENTITY,
+                                 settings=pp.Settings(match_colour=False, inner_edge=0.0))
+    assert weight[128, 55] == pytest.approx(1.0)
